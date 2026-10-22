@@ -1,7 +1,7 @@
 import { requestWidgetUpdate, type WidgetInfo, type WidgetTaskHandlerProps } from 'react-native-android-widget';
 
-import { toggleLight, toggleRoom } from '../lib/actions';
-import { cachedSnapshot, fetchSnapshot, type Snapshot } from '../lib/hue/client';
+import { planToggleLight, planToggleRoom, type Planned } from '../lib/actions';
+import { cachedSnapshot, fetchSnapshot, saveCachedSnapshot, type Snapshot } from '../lib/hue/client';
 import { loadMap, toPlan } from '../lib/map/map';
 import { MapWidget, RoomsWidget } from './widgets';
 
@@ -42,16 +42,20 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
       break;
     }
     case 'WIDGET_CLICK': {
-      try {
-        if (clickAction === 'TOGGLE_LIGHT' && typeof clickActionData?.lightId === 'string') {
-          await toggleLight(clickActionData.lightId);
-        } else if (clickAction === 'TOGGLE_ROOM' && typeof clickActionData?.roomId === 'string') {
-          await toggleRoom(clickActionData.roomId);
-        }
-      } catch {
-        // The fresh fetch below brings the widget back to the real state.
+      const cached = await cachedSnapshot();
+      let plan: Planned | null = null;
+      if (cached && clickAction === 'TOGGLE_LIGHT' && typeof clickActionData?.lightId === 'string') {
+        plan = planToggleLight(cached, clickActionData.lightId);
+      } else if (cached && clickAction === 'TOGGLE_ROOM' && typeof clickActionData?.roomId === 'string') {
+        plan = planToggleRoom(cached, clickActionData.roomId);
       }
-      // Update every widget, not only the one tapped, so they stay consistent.
+      if (plan) {
+        // Send first, then redraw with the expected state while the bridge applies it.
+        const sent = plan.send().catch(() => null);
+        renderWidget(await render(widgetInfo, plan.next));
+        await Promise.all([sent, saveCachedSnapshot(plan.next)]);
+      }
+      // Bring every widget to the real state, so they stay consistent.
       await refreshAllWidgets(await fresh());
       break;
     }

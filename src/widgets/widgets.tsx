@@ -37,7 +37,7 @@ export function RoomsWidget({ snapshot, pendingRoomId }: { snapshot: Snapshot | 
           {row.map((room) => {
             const lights = snapshot.lights.filter((l) => room.lightIds.includes(l.id));
             const on = roomIsOn(room, snapshot.lights);
-            const color = (lights.find((l) => l.on)?.color ?? TILE_OFF) as Hex;
+            const color = (lights.find((l) => l.on && l.reachable)?.color ?? TILE_OFF) as Hex;
             return (
               <FlexWidget
                 key={room.id}
@@ -58,7 +58,7 @@ export function RoomsWidget({ snapshot, pendingRoomId }: { snapshot: Snapshot | 
               >
                 <TextWidget text={room.name} maxLines={2} style={{ color: on ? '#141418' : TEXT, fontSize: 13, fontWeight: '500' }} />
                 <TextWidget
-                  text={on ? `${lights.filter((l) => l.on).length}/${lights.length} on` : 'Off'}
+                  text={on ? `${lights.filter((l) => l.on && l.reachable).length}/${lights.length} on` : 'Off'}
                   style={{ color: on ? '#3a3a42' : MUTED, fontSize: 11 }}
                 />
               </FlexWidget>

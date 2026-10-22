@@ -116,13 +116,8 @@ export async function cachedSnapshot(): Promise<Snapshot | null> {
   return raw ? (JSON.parse(raw) as Snapshot) : null;
 }
 
-/** Applies a local change to the cached snapshot, so widgets can render it before the bridge confirms. */
-export async function patchCachedSnapshot(patch: (s: Snapshot) => Snapshot): Promise<Snapshot | null> {
-  const s = await cachedSnapshot();
-  if (!s) return null;
-  const next = patch(s);
-  await AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(next));
-  return next;
+export async function saveCachedSnapshot(snapshot: Snapshot) {
+  await AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
 }
 
 export function setLight(id: string, state: { on?: boolean; brightness?: number }) {
@@ -144,6 +139,7 @@ export function identifyLight(id: string) {
   return call(`light/${id}`, 'PUT', { identify: { action: 'identify' } });
 }
 
+/** A room is on if any reachable light in it is on (unreachable lights report a stale state). */
 export function roomIsOn(room: Room, lights: Light[]) {
-  return lights.some((l) => room.lightIds.includes(l.id) && l.on);
+  return lights.some((l) => room.lightIds.includes(l.id) && l.on && l.reachable);
 }
