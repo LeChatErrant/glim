@@ -3,6 +3,10 @@
 A personal mobile app to control the maintainer's Philips Hue lights, talking to
 the bridge over its local API (CLIP v2). Working name, to be renamed.
 
+**Prototype for the maintainer, built to be sellable.** Ship fast for one home,
+but never in a way that would need a rewrite to sell it later (see
+[Keep it sellable](#keep-it-sellable)).
+
 ## Product goals
 
 - **Main feature:** fully customizable home-screen widgets: room cards, light
@@ -43,6 +47,12 @@ the bridge over its local API (CLIP v2). Working name, to be renamed.
 - 2026-10-22: Away-from-home control via the Hue Remote API. The OAuth client
   secret stays server-side (EAS Hosting API route), never in the app bundle.
 - 2026-10-22: AR scan is part of the first map phase, not a later extra.
+- 2026-10-22: Prototype for personal use, but keep it sellable (paid app, Hue
+  Essentials-style). Repo stays private, no open-source license. Main
+  competitor feature: Hue SpatialAware (official app, 2026) does an AR room scan
+  and position-aware scenes, but needs a Bridge Pro, works per room, and only
+  supports some presets. Our edge: whole-home map, map widget, user-editable
+  map-aware scenes, any bridge.
 - 2026-10-22: Design goes through Claude Design first, using
   docs/design-spec.md, before building screens.
 
@@ -109,6 +119,26 @@ and `adb logcat` for native errors.
 - **Auto-update on deploy is a strong preference** (the maintainer's other app,
   Ream, is a PWA for this reason), but not a hard constraint. It must not block
   the main feature (widgets).
+
+## Keep it sellable
+
+Cheap rules now, so selling later is extra work and not a rewrite. None of these
+should slow down the prototype; if one does, ask.
+
+- **No home-specific data in code.** Bridge IP/ID, room and light names live in
+  storage, discovered at runtime. The values under "Hue bridge" below are for
+  dev and testing only.
+- **Multi-bridge-ready data model.** Key stored data (maps, scenes, widgets) by
+  bridge ID, even though the maintainer uses one.
+- **Handle what the maintainer doesn't own.** Unknown light types, gradient
+  strips, no rooms, 50+ lights: degrade gracefully, never crash.
+- **User-facing strings in English**, kept easy to extract for i18n (French
+  next). No French in UI code.
+- **Dependencies:** permissive licenses only (MIT, Apache, BSD). No GPL/AGPL.
+- **Naming:** the final name must not contain "Philips" or "Hue" as its own
+  brand ("… for Hue" style only, per Signify's brand rules). Pick it before the
+  first Play Store upload: the package ID `io.lechaterrant.huelab` is permanent
+  once published.
 
 ## Hue bridge
 
