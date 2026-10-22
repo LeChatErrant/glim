@@ -198,9 +198,13 @@ should slow down the prototype; if one does, ask.
 - **User-facing strings in English**, kept easy to extract for i18n (French
   next). No French in UI code.
 - **Dependencies:** permissive licenses only (MIT, Apache, BSD). No GPL/AGPL.
-- **Naming:** the final name must not contain "Philips" or "Hue" as its own
-  brand ("… for Hue" style only, per Signify's brand rules). Pick it before the
-  first Play Store upload: the package ID `io.lechaterrant.huelab` is permanent
+- **Naming:** the final name is a standalone brand with no "Hue" or "Philips"
+  in it. Mention Hue only in descriptive text ("works with Philips Hue" in the
+  store subtitle/description), never in the logo or icon, plus a "not affiliated
+  with Signify" line. Third-party apps using "for Philips Hue" in their name
+  have had trademark complaints on the App Store. Verify against the current
+  Hue developer terms before publishing. Pick the name before the first Play
+  Store upload: the package ID (`io.lechaterrant.huelab` today) is permanent
   once published.
 
 ## Hue bridge
