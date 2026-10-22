@@ -1,6 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, G, Path, Text as SvgText } from 'react-native-svg';
 
 import { toggleLight, toggleRoom } from '../lib/actions';
@@ -13,6 +14,7 @@ import { theme } from '../ui/theme';
 import { refreshAllWidgets } from '../widgets/task-handler';
 
 export default function MapScreen() {
+  const insets = useSafeAreaInsets();
   const [map, setMap] = useState<HomeMap | null | undefined>(undefined);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const { snapshot, setSnapshot, refresh } = useSnapshot(2000);
@@ -42,6 +44,7 @@ export default function MapScreen() {
       <View style={{ flex: 1, padding: 24, gap: 16, justifyContent: 'center' }}>
         <Body>Your map isn't set up yet.</Body>
         <Button title="Scan with camera" primary onPress={() => router.push('/scan')} />
+        <Button title="Draw it by hand" onPress={() => router.push('/editor')} />
       </View>
     );
   }
@@ -57,8 +60,9 @@ export default function MapScreen() {
             {plan.rooms.map((r) => {
               if (r.pts.length < 2) return null;
               const d = r.pts.map((p, i) => `${i ? 'L' : 'M'}${f.x(p.u)},${f.y(p.v)}`).join(' ') + ' Z';
+              // Label at the top of the room, where it's less likely to sit under a light.
               const cx = r.pts.reduce((s, p) => s + f.x(p.u), 0) / r.pts.length;
-              const cy = r.pts.reduce((s, p) => s + f.y(p.v), 0) / r.pts.length;
+              const cy = Math.min(...r.pts.map((p) => f.y(p.v))) + 22;
               return (
                 <G key={r.id} onPress={r.hueRoomId ? () => run(() => toggleRoom(r.hueRoomId!)) : undefined}>
                   <Path
@@ -100,8 +104,9 @@ export default function MapScreen() {
           </Svg>
         )}
       </View>
-      <View style={{ padding: 16 }}>
-        <Button title="Rescan" onPress={() => router.push('/scan')} />
+      <View style={{ padding: 16, paddingBottom: insets.bottom + 12, flexDirection: 'row', gap: 10 }}>
+        <Button title="Edit" style={{ flex: 1 }} onPress={() => router.push('/editor')} />
+        <Button title="Scan more" style={{ flex: 1 }} onPress={() => router.push('/scan')} />
       </View>
     </View>
   );

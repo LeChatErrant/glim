@@ -24,7 +24,7 @@ export function planToSvg(plan: Plan, lights: Light[], width: number, height: nu
     );
     if (opts.labels !== false) {
       const cx = room.pts.reduce((s, p) => s + f.x(p.u), 0) / room.pts.length;
-      const cy = room.pts.reduce((s, p) => s + f.y(p.v), 0) / room.pts.length;
+      const cy = Math.min(...room.pts.map((p) => f.y(p.v))) + 14;
       parts.push(
         `<text x="${cx.toFixed(1)}" y="${(cy + 3).toFixed(1)}" font-size="10" fill="${PLAN_COLORS.label}" text-anchor="middle" font-family="sans-serif">${escapeXml(room.name)}</text>`,
       );

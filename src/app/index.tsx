@@ -41,8 +41,9 @@ function Rooms() {
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 40 }}>
       <View style={{ flexDirection: 'row', gap: 10 }}>
-        <Button title="Scan map (AR)" primary style={{ flex: 1 }} onPress={() => router.push('/scan')} />
-        <Button title="Map" style={{ flex: 1 }} onPress={() => router.push('/map')} />
+        <Button title="Map" primary style={{ flex: 1 }} onPress={() => router.push('/map')} />
+        <Button title="Scan (AR)" style={{ flex: 1 }} onPress={() => router.push('/scan')} />
+        <Button title="Edit map" style={{ flex: 1 }} onPress={() => router.push('/editor')} />
       </View>
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <Button title="Add rooms widget" style={{ flex: 1 }} onPress={() => requestPinWidget({ widgetName: 'Rooms' }).catch(() => null)} />

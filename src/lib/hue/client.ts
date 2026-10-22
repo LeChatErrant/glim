@@ -33,7 +33,7 @@ export type Snapshot = { rooms: Room[]; lights: Light[]; fetchedAt: number };
 
 type Resource = Record<string, any> & { id: string; type: string };
 
-async function call(path: string, method: 'GET' | 'PUT' = 'GET', body?: unknown): Promise<Resource[]> {
+async function call(path: string, method: 'GET' | 'PUT' | 'POST' | 'DELETE' = 'GET', body?: unknown): Promise<Resource[]> {
   const bridge = await getBridge();
   if (!bridge) throw new Error('No bridge paired');
   const res = await HueHttp.request({
@@ -142,4 +142,47 @@ export function identifyLight(id: string) {
 /** A room is on if any reachable light in it is on (unreachable lights report a stale state). */
 export function roomIsOn(room: Room, lights: Light[]) {
   return lights.some((l) => room.lightIds.includes(l.id) && l.on && l.reachable);
+}
+
+/** Hue room types offered when creating a room from the app (subset of the bridge's archetypes). */
+export const ROOM_ARCHETYPES = [
+  { id: 'living_room', label: 'Living room' },
+  { id: 'kitchen', label: 'Kitchen' },
+  { id: 'bedroom', label: 'Bedroom' },
+  { id: 'bathroom', label: 'Bathroom' },
+  { id: 'office', label: 'Office' },
+  { id: 'dining', label: 'Dining room' },
+  { id: 'hallway', label: 'Hallway' },
+  { id: 'balcony', label: 'Balcony' },
+  { id: 'terrace', label: 'Terrace' },
+  { id: 'other', label: 'Other' },
+] as const;
+
+/** Creates an empty room on the bridge and returns its ID. */
+export async function createRoom(name: string, archetype: string): Promise<string> {
+  const data = await call('room', 'POST', { metadata: { name, archetype }, children: [] });
+  const id = (data[0] as unknown as { rid?: string })?.rid;
+  if (!id) throw new Error("The bridge didn't return the new room");
+  return id;
+}
+
+/**
+ * Moves a light's device into a room. A device belongs to at most one room, so it's
+ * removed from its current room first.
+ */
+export async function moveDeviceToRoom(deviceId: string, roomId: string) {
+  const rooms = await call('room');
+  for (const room of rooms) {
+    if (room.id === roomId) continue;
+    const children = room.children as { rid: string; rtype: string }[];
+    if (children.some((c) => c.rid === deviceId)) {
+      await call(`room/${room.id}`, 'PUT', { children: children.filter((c) => c.rid !== deviceId) });
+    }
+  }
+  const target = rooms.find((r) => r.id === roomId);
+  if (!target) throw new Error('Room not found');
+  const children = target.children as { rid: string; rtype: string }[];
+  if (!children.some((c) => c.rid === deviceId)) {
+    await call(`room/${roomId}`, 'PUT', { children: [...children, { rid: deviceId, rtype: 'device' }] });
+  }
 }

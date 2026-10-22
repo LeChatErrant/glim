@@ -18,6 +18,7 @@ export default function RootLayout() {
         <Stack.Screen name="pair" options={{ title: 'Pair your bridge' }} />
         <Stack.Screen name="scan" options={{ headerShown: false }} />
         <Stack.Screen name="map" options={{ title: 'Map' }} />
+        <Stack.Screen name="editor" options={{ title: 'Edit map' }} />
       </Stack>
     </>
   );
