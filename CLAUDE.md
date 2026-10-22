@@ -9,9 +9,14 @@ the bridge over its local API (CLIP v2). Working name, to be renamed.
   grid, scene buttons, and a **map widget** (the floor plan itself; tap a light
   to toggle it).
 - **Map:** a floor plan of the home with the lights placed on it. Tap to toggle,
-  drag for brightness, long-press for color. Setup: import a floor-plan image
-  and trace it, then place lights with "blink and tap" (the app flashes a
-  light, the user taps where it is).
+  drag for brightness, long-press for color.
+- **AR map scan: the maintainer's favorite feature, in scope now (not later).**
+  One continuous AR session (ARCore on Android, ARKit on iOS) through the whole
+  home: detect the floor, tap room corners on the floor (snap to right angles),
+  name each room from the Hue rooms, then place lights (the real light blinks,
+  the user aims at the floor below it and taps). Goal: an *approximately*
+  correct simple layout in ~3 minutes. Speed over precision; keep it simple.
+  Then a 2D review editor. Fallback: draw the plan manually in the same editor.
 - **Scenes:** never hardcode modes. Scenes are data: a large library of preset
   scenes, fully user-editable and user-creatable, plus map-aware presets that
   use light positions (e.g. night path bedroom → bathroom, gradient across the
@@ -25,7 +30,29 @@ the bridge over its local API (CLIP v2). Working name, to be renamed.
   transports.
 - **Customization is a core principle.** Widgets, scenes, automations: expose
   options and presets instead of fixed behavior.
-- Out of scope for now: paint mode, tap dial remapping, music sync.
+- **Every feature listed above will be implemented.** Out of scope for now:
+  paint mode, tap dial remapping, music sync.
+- The full screen-by-screen spec is in [docs/design-spec.md](docs/design-spec.md)
+  (written as a handoff to Claude Design). Keep it in sync when scope changes.
+
+## Decisions log
+
+- 2026-10-22: Native app (Expo), not a PWA. A PWA can't create Android widgets,
+  and browsers can't reach the bridge (untrusted certificate, Chrome blocks
+  public sites from calling local IPs).
+- 2026-10-22: Away-from-home control via the Hue Remote API. The OAuth client
+  secret stays server-side (EAS Hosting API route), never in the app bundle.
+- 2026-10-22: AR scan is part of the first map phase, not a later extra.
+- 2026-10-22: Design goes through Claude Design first, using
+  docs/design-spec.md, before building screens.
+
+## Build order
+
+1. App skeleton, bridge pairing, rooms and lights control, 1 room widget.
+2. Map: AR scan + 2D editor + map screen + map widget prototype.
+3. Scenes: preset library, editor, map-aware generators, scene widget.
+4. Cloud access (Remote API) and arriving/leaving home geofence.
+5. Quick Settings tile, sunrise wake-up, sleep fade, day rhythm.
 
 ## Stack
 
@@ -56,6 +83,11 @@ the bridge over its local API (CLIP v2). Working name, to be renamed.
   `discovery.meethue.com` but didn't answer on the local network.
 - Auth: header `hue-application-key: $HUE_APP_KEY`. API base:
   `https://<bridge>/clip/v2/resource/...`.
+- Display names: use the **device** name (`device.metadata.name`), not the
+  light resource name, which is often a default like "Hue color lamp 3".
+- Home: 5 rooms (Salon, Chambre, Table de nuit, Salle de bain, Terrasse),
+  9 lights (2 are on/off smart plugs: Guirlande, Terrasse), 1 tap dial switch.
+  "Table de nuit" sits physically inside Chambre.
 
 ## Secrets
 
