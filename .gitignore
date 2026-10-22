@@ -27,3 +27,7 @@ expo-env.d.ts
 npm-debug.*
 *.tsbuildinfo
 *.apk
+
+# Local module build output
+modules/*/android/build/
+modules/*/android/.cxx/
