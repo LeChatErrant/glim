@@ -1,7 +1,8 @@
 # hue-lab
 
 A personal mobile app to control the maintainer's Philips Hue lights, talking to
-the bridge over its local API (CLIP v2). Working name, to be renamed.
+the bridge over its local API (CLIP v2). Product name: **Glim** (see
+[Decisions log](#decisions-log)); `hue-lab` is the repo's working name.
 
 **Prototype for the maintainer, built to be sellable.** Ship fast for one home,
 but never in a way that would need a rewrite to sell it later (see
@@ -26,6 +27,17 @@ but never in a way that would need a rewrite to sell it later (see
   visible (numbered corners, a Start marker with an off-screen arrow), and
   near-misses are forgiven (closing within 0.4 m snaps; Finish room merges a
   last corner within 0.6 m of the first).
+- **Map from scratch, in several sessions.** Never assume the Hue setup already
+  exists: a user may unbox their lights and set everything up from this app.
+  The scan can create Hue rooms, offers lights that are in no room, and offers
+  to move a light into the room it was placed in. The map is saved after every
+  change; a later scan continues it by matching 2 already-scanned corners
+  (rigid 2D transform, `src/lib/map/geometry.ts`). Maps are stored per bridge,
+  in map coordinates (first scanned wall along +x).
+- **2D map editor** (`src/app/editor.tsx`): draw rooms by hand when AR isn't
+  available, and fine-tune scanned maps (drag corners/rooms/lights, add or
+  delete corners, assign rooms, wall lengths shown, snapping to other corners,
+  undo). Every change is saved immediately.
 - **Scenes:** never hardcode modes. Scenes are data: a large library of preset
   scenes, fully user-editable and user-creatable, plus map-aware presets that
   use light positions (e.g. night path bedroom → bathroom, gradient across the
@@ -58,12 +70,23 @@ but never in a way that would need a rewrite to sell it later (see
   and position-aware scenes, but needs a Bridge Pro, works per room, and only
   supports some presets. Our edge: whole-home map, map widget, user-editable
   map-aware scenes, any bridge.
+- 2026-10-22: Setup must work from a fresh, unconfigured bridge; scans can span
+  several sessions; a manual 2D editor is required (AR isn't always available,
+  and scans need fine-tuning).
 - 2026-10-22: Design goes through Claude Design first, using
   docs/design-spec.md, before building screens.
 - 2026-10-22: Visual direction chosen: **Nocturne** (bold, toned down). See
   [Design direction](#design-direction). Rejected: Blueprint (technical),
   Pebble (playful), a "refined" sans-only Nocturne, and a serif display font
   (felt like too much).
+- 2026-10-22: Name chosen: **Glim** (old word for a small, steady light). Mark:
+  the app's own jewel light marker (warm core, dark gap, ivory ring, glow);
+  wordmark in lowercase Jost 300. Canvas with all options:
+  <https://claude.ai/artifact/YXKHZbWT6s5PGMcXcQTZQJ>. Alternatives kept for
+  later: Lightmap (room-glow mark), Nocturne (night-path constellation mark),
+  Oriel (glowing arched window), Candela (open ring), Lucerna (wall lantern
+  half pool). Store and trademark availability not yet checked: do it before
+  renaming the package ID.
 
 ## Design direction
 
@@ -203,9 +226,9 @@ should slow down the prototype; if one does, ask.
   store subtitle/description), never in the logo or icon, plus a "not affiliated
   with Signify" line. Third-party apps using "for Philips Hue" in their name
   have had trademark complaints on the App Store. Verify against the current
-  Hue developer terms before publishing. Pick the name before the first Play
-  Store upload: the package ID (`io.lechaterrant.huelab` today) is permanent
-  once published.
+  Hue developer terms before publishing. The name is Glim; switch the package
+  ID (`io.lechaterrant.huelab` today) before the first Play Store upload, as
+  it is permanent once published.
 
 ## Hue bridge
 
