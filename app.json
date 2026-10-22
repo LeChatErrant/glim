@@ -60,6 +60,15 @@
         }
       ],
       [
+        "./plugins/with-fast-widgets",
+        {
+          "widgets": [
+            "Rooms",
+            "Map"
+          ]
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {

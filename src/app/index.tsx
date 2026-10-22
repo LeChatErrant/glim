@@ -5,7 +5,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { requestPinWidget } from 'react-native-android-widget';
 
 import { setRoomBrightness, toggleLight, toggleRoom } from '../lib/actions';
-import { getBridge } from '../lib/hue/bridge';
+import { getBridge, syncFastConfig } from '../lib/hue/bridge';
 import { cachedSnapshot, roomIsOn, type Light } from '../lib/hue/client';
 import { useSnapshot } from '../lib/hue/useSnapshot';
 import { Body, Button } from '../ui/components';
@@ -16,6 +16,7 @@ export default function Home() {
   const [paired, setPaired] = useState<boolean | null>(null);
   useEffect(() => {
     getBridge().then((b) => setPaired(!!b));
+    syncFastConfig().catch(() => null);
   }, []);
   if (paired === null) return null;
   if (!paired) return <Redirect href="/pair" />;

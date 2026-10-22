@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PermissionsAndroid, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, PermissionsAndroid, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Polygon, Polyline } from 'react-native-svg';
 
@@ -45,19 +45,41 @@ export default function Scan() {
   );
 }
 
+/** Everything the user builds during a scan. Each change is recorded so it can be undone. */
+type ScanState = { step: Step; rooms: MapRoom[]; current: FloorPoint[]; lights: MapLight[] };
+
+const EMPTY: ScanState = { step: 'corners', rooms: [], current: [], lights: [] };
+
+/** If the last corner lands this close to the first one, Finish room treats it as a missed close. */
+const MERGE_RADIUS_M = 0.6;
+
+const START_COLOR = '#5fd39a';
+
 function Scanner() {
   const insets = useSafeAreaInsets();
   const ar = useRef<ArScanHandle>(null);
   const { snapshot } = useSnapshot(5000);
   const [status, setStatus] = useState<ArStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [step, setStep] = useState<Step>('corners');
-  const [rooms, setRooms] = useState<MapRoom[]>([]);
-  const [current, setCurrent] = useState<FloorPoint[]>([]);
-  const [lights, setLights] = useState<MapLight[]>([]);
+  const [scan, setScan] = useState<ScanState>(EMPTY);
+  const [history, setHistory] = useState<ScanState[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [snap, setSnap] = useState(true);
   const [showOthers, setShowOthers] = useState(false);
+  const [outdoor, setOutdoor] = useState(false);
+  const { step, rooms, current, lights } = scan;
+
+  function commit(next: ScanState) {
+    setHistory((h) => [...h, scan]);
+    setScan(next);
+  }
+
+  function undo() {
+    if (!history.length) return;
+    setScan(history[history.length - 1]);
+    setHistory(history.slice(0, -1));
+    setSelected(null);
+  }
 
   const lightById = useMemo(() => new Map((snapshot?.lights ?? []).map((l) => [l.id, l])), [snapshot]);
 
@@ -67,7 +89,16 @@ function Scanner() {
         ...rooms.map((r) => ({ points: r.points, closed: true, color: '#c8c8d0' })),
         { points: current, closed: false, color: theme.accent },
       ],
-      markers: lights.map((l) => ({ x: l.x, z: l.z, color: lightById.get(l.lightId)?.color ?? '#ffcc66', label: lightById.get(l.lightId)?.name })),
+      markers: [
+        // Numbered corners of the room being traced; the first one is the target to close it.
+        ...current.map((p, i) => ({
+          ...p,
+          color: i === 0 ? START_COLOR : theme.accent,
+          label: i === 0 ? 'Start' : String(i + 1),
+          edge: i === 0 && current.length >= 2,
+        })),
+        ...lights.map((l) => ({ x: l.x, z: l.z, color: lightById.get(l.lightId)?.color ?? '#ffcc66', label: lightById.get(l.lightId)?.name })),
+      ],
       activeIndex: step === 'corners' ? rooms.length : -1,
     }),
     [rooms, current, lights, step, lightById],
@@ -79,20 +110,32 @@ function Scanner() {
     const p = await ar.current?.capture();
     if (!p) return;
     if (p.closesShape) return finishRoom();
-    setCurrent((c) => [...c, { x: p.x, z: p.z }]);
+    commit({ ...scan, current: [...current, { x: p.x, z: p.z }] });
   }
 
   function finishRoom() {
-    if (current.length < 3) return;
-    setRooms((r) => [...r, { id: `room-${Date.now()}`, name: '', hueRoomId: null, points: current }]);
-    setCurrent([]);
-    setStep('name');
+    let points = current;
+    // A last corner right next to the first one is almost always a missed close.
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (points.length >= 4 && Math.hypot(last.x - first.x, last.z - first.z) < MERGE_RADIUS_M) points = points.slice(0, -1);
+    if (points.length < 3) return;
+    setOutdoor(false);
+    commit({
+      ...scan,
+      step: 'name',
+      current: [],
+      rooms: [...rooms, { id: `room-${Date.now()}`, name: '', hueRoomId: null, points }],
+    });
   }
 
-  function nameRoom(name: string, hueRoomId: string | null, outdoor = false) {
-    setRooms((r) => r.map((room, i) => (i === r.length - 1 ? { ...room, name, hueRoomId, outdoor } : room)));
+  function nameRoom(name: string, hueRoomId: string | null) {
     setShowOthers(false);
-    setStep('lights');
+    commit({
+      ...scan,
+      step: 'lights',
+      rooms: rooms.map((room, i) => (i === rooms.length - 1 ? { ...room, name, hueRoomId, outdoor } : room)),
+    });
   }
 
   async function pick(light: Light) {
@@ -105,7 +148,7 @@ function Scanner() {
     const p = await ar.current?.capture();
     if (!p) return;
     // Lights are placed where the user aims, not snapped to walls.
-    setLights((ls) => [...ls.filter((l) => l.lightId !== selected), { lightId: selected, x: p.rawX, z: p.rawZ }]);
+    commit({ ...scan, lights: [...lights.filter((l) => l.lightId !== selected), { lightId: selected, x: p.rawX, z: p.rawZ }] });
     setSelected(null);
   }
 
@@ -113,6 +156,15 @@ function Scanner() {
     await saveMap({ version: 1, rooms, lights, updatedAt: Date.now() });
     refreshAllWidgets();
     router.replace('/map');
+  }
+
+  function exit() {
+    if (!rooms.length && !current.length) return router.back();
+    Alert.alert('Leave the scan?', "What you've scanned so far will be lost.", [
+      { text: 'Keep scanning', style: 'cancel' },
+      ...(rooms.length ? [{ text: 'Save and leave', onPress: finish }] : []),
+      { text: 'Discard', style: 'destructive' as const, onPress: () => router.back() },
+    ]);
   }
 
   const instruction = instructionFor(status, step, current.length, selected ? lightById.get(selected)?.name : undefined);
@@ -134,10 +186,19 @@ function Scanner() {
       </View>
 
       <View style={[styles.top, { paddingTop: insets.top + 8 }]}>
-        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.close}>
+        <Pressable onPress={exit} hitSlop={12} style={styles.round} accessibilityLabel="Leave the scan">
           <Text style={{ color: '#fff', fontSize: 18 }}>✕</Text>
         </Pressable>
         <Text style={styles.instruction}>{error ?? instruction}</Text>
+        <Pressable
+          onPress={undo}
+          disabled={!history.length}
+          hitSlop={12}
+          style={[styles.round, !history.length && { opacity: 0.35 }]}
+          accessibilityLabel="Undo"
+        >
+          <Text style={{ color: '#fff', fontSize: 20 }}>↶</Text>
+        </Pressable>
       </View>
 
       <MiniMap rooms={rooms} current={current} lights={lights} status={status} top={insets.top + 70} />
@@ -146,19 +207,15 @@ function Scanner() {
         {step === 'corners' && (
           <>
             <View style={styles.row}>
-              <Button title="Undo" style={{ flex: 1 }} disabled={!current.length} onPress={() => setCurrent((c) => c.slice(0, -1))} />
-              <Button title={snap ? 'Right angles: on' : 'Right angles: off'} style={{ flex: 1.4 }} onPress={() => setSnap((s) => !s)} />
-            </View>
-            <View style={styles.row}>
-              <Button
-                title={status?.closesShape ? 'Close room' : 'Add corner'}
-                primary
-                style={{ flex: 2 }}
-                disabled={!status?.aimingAtFloor}
-                onPress={addCorner}
-              />
+              <Button title={snap ? 'Right angles: on' : 'Right angles: off'} style={{ flex: 1 }} onPress={() => setSnap((s) => !s)} />
               <Button title="Finish room" style={{ flex: 1 }} disabled={current.length < 3} onPress={finishRoom} />
             </View>
+            <Button
+              title={status?.closesShape ? 'Close room' : current.length ? `Add corner ${current.length + 1}` : 'Add first corner'}
+              primary
+              disabled={!status?.aimingAtFloor}
+              onPress={addCorner}
+            />
             {rooms.length > 0 && !current.length && <Button title="Finish scan" onPress={finish} />}
           </>
         )}
@@ -168,10 +225,11 @@ function Scanner() {
             <Text style={styles.sheetTitle}>Which room is this?</Text>
             <View style={styles.chips}>
               {snapshot.rooms.map((r) => (
-                <Chip key={r.id} label={r.name} onPress={() => nameRoom(r.name, r.id, r.archetype === 'terrace' || r.name.toLowerCase().includes('terrasse'))} />
+                <Chip key={r.id} label={r.name} onPress={() => nameRoom(r.name, r.id)} />
               ))}
               <Chip label="Other space" onPress={() => nameRoom('Other', null)} />
             </View>
+            <Chip label={outdoor ? '✓ Outdoor' : 'Outdoor'} active={outdoor} onPress={() => setOutdoor((o) => !o)} />
           </>
         )}
 
@@ -188,14 +246,14 @@ function Scanner() {
             canPlace={!!status?.aimingAtFloor}
             onDone={() => {
               setSelected(null);
-              setStep('between');
+              commit({ ...scan, step: 'between' });
             }}
           />
         )}
 
         {step === 'between' && (
           <View style={styles.row}>
-            <Button title="Scan next room" primary style={{ flex: 1 }} onPress={() => setStep('corners')} />
+            <Button title="Scan next room" primary style={{ flex: 1 }} onPress={() => commit({ ...scan, step: 'corners' })} />
             <Button title="Finish scan" style={{ flex: 1 }} onPress={finish} />
           </View>
         )}
@@ -294,6 +352,9 @@ function MiniMap({ rooms, current, lights, status, top }: { rooms: MapRoom[]; cu
           <Polygon key={r.id} points={str(r.points)} fill="rgba(255,255,255,0.08)" stroke="#c8c8d0" strokeWidth={1.5} />
         ))}
         {current.length > 0 && <Polyline points={str(current)} fill="none" stroke={theme.accent} strokeWidth={2} />}
+        {current.map((p, i) => (
+          <Circle key={i} cx={X(p.x)} cy={Y(p.z)} r={i === 0 ? 4.5 : 2.5} fill={i === 0 ? START_COLOR : theme.accent} />
+        ))}
         {lights.map((l) => (
           <Circle key={l.lightId} cx={X(l.x)} cy={Y(l.z)} r={3.5} fill="#ffcc66" />
         ))}
@@ -319,7 +380,7 @@ function MiniMap({ rooms, current, lights, status, top }: { rooms: MapRoom[]; cu
 
 const styles = StyleSheet.create({
   top: { position: 'absolute', left: 0, right: 0, top: 0, paddingHorizontal: 16, flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
-  close: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  round: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
   instruction: { flex: 1, color: '#fff', fontSize: 16, lineHeight: 22, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 14, padding: 12, overflow: 'hidden' },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 16, gap: 10, backgroundColor: 'rgba(0,0,0,0.6)' },
   row: { flexDirection: 'row', gap: 10 },

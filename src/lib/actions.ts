@@ -6,20 +6,21 @@ import { cachedSnapshot, roomIsOn, saveCachedSnapshot, setLight, setRoom, type S
  */
 export type Planned = { next: Snapshot; send: () => Promise<unknown> };
 
-export function planToggleLight(s: Snapshot, lightId: string): Planned | null {
+/** `target` forces the resulting state (widgets decide it when they render); default is to flip. */
+export function planToggleLight(s: Snapshot, lightId: string, target?: boolean): Planned | null {
   const light = s.lights.find((l) => l.id === lightId);
   if (!light) return null;
-  const on = !light.on;
+  const on = target ?? !light.on;
   return {
     next: { ...s, lights: s.lights.map((l) => (l.id === lightId ? { ...l, on } : l)) },
     send: () => setLight(lightId, { on }),
   };
 }
 
-export function planToggleRoom(s: Snapshot, roomId: string): Planned | null {
+export function planToggleRoom(s: Snapshot, roomId: string, target?: boolean): Planned | null {
   const room = s.rooms.find((r) => r.id === roomId);
   if (!room?.groupedLightId) return null;
-  const on = !roomIsOn(room, s.lights);
+  const on = target ?? !roomIsOn(room, s.lights);
   const groupId = room.groupedLightId;
   return {
     next: { ...s, lights: s.lights.map((l) => (room.lightIds.includes(l.id) ? { ...l, on } : l)) },

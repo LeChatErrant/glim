@@ -43,15 +43,18 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
     }
     case 'WIDGET_CLICK': {
       const cached = await cachedSnapshot();
+      const data = clickActionData ?? {};
+      const target = data.target === 'on' ? true : data.target === 'off' ? false : undefined;
+      // FAST_* taps were already sent to the bridge by the native provider; only redraw.
+      const fast = clickAction?.startsWith('FAST_') ?? false;
       let plan: Planned | null = null;
-      if (cached && clickAction === 'TOGGLE_LIGHT' && typeof clickActionData?.lightId === 'string') {
-        plan = planToggleLight(cached, clickActionData.lightId);
-      } else if (cached && clickAction === 'TOGGLE_ROOM' && typeof clickActionData?.roomId === 'string') {
-        plan = planToggleRoom(cached, clickActionData.roomId);
+      if (cached && clickAction?.endsWith('TOGGLE_LIGHT') && typeof data.lightId === 'string') {
+        plan = planToggleLight(cached, data.lightId, target);
+      } else if (cached && clickAction?.endsWith('TOGGLE_ROOM') && typeof data.roomId === 'string') {
+        plan = planToggleRoom(cached, data.roomId, target);
       }
       if (plan) {
-        // Send first, then redraw with the expected state while the bridge applies it.
-        const sent = plan.send().catch(() => null);
+        const sent = fast ? Promise.resolve() : plan.send().catch(() => null);
         renderWidget(await render(widgetInfo, plan.next));
         await Promise.all([sent, saveCachedSnapshot(plan.next)]);
       }

@@ -42,7 +42,10 @@ data class FloorPoint(val x: Float, val z: Float)
 
 data class Polyline(val points: List<FloorPoint>, val closed: Boolean, val color: Int)
 
-data class Marker(val p: FloorPoint, val color: Int, val label: String?)
+/** `edge`: when off screen, show an arrow at the screen edge pointing to it. */
+data class Marker(val p: FloorPoint, val color: Int, val label: String?, val edge: Boolean = false)
+
+data class EdgeArrow(val x: Float, val y: Float, val angle: Float, val color: Int, val label: String?)
 
 /**
  * Camera feed + ARCore tracking. Finds the floor (lowest horizontal plane), casts a
@@ -178,6 +181,7 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
             FloorPoint(m.getDouble("x").toFloat(), m.getDouble("z").toFloat()),
             parseColor(m.optString("color"), Color.YELLOW),
             m.optString("label").ifEmpty { null },
+            m.optBoolean("edge", false),
           )
         }
       }
@@ -276,7 +280,7 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
     if (hit == null || line == null || line.points.isEmpty()) { snapped = hit; return }
     val pts = line.points
     val last = pts.last()
-    if (pts.size >= 3 && hypot(hit.x - pts[0].x, hit.z - pts[0].z) < 0.3f) {
+    if (pts.size >= 3 && hypot(hit.x - pts[0].x, hit.z - pts[0].z) < CLOSE_RADIUS_M) {
       closesShape = true
       snapped = pts[0]
       return
@@ -324,6 +328,7 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
     val planes: List<List<FloatArray>>,
     val reticle: List<FloatArray>?,
     val reticleCloses: Boolean,
+    val arrows: List<EdgeArrow>,
   )
 
   private fun buildScene(s: Session): Scene {
@@ -345,7 +350,17 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
         segment(pts.last(), target, fy, w, h)?.let { segs += Triple(it.first, it.second, Color.argb(170, 255, 255, 255)) }
       }
     }
-    markers.forEach { m -> project(m.p.x, fy, m.p.z, w, h)?.let { dots += Triple(it, m.color, m.label ?: "") } }
+    val arrows = mutableListOf<EdgeArrow>()
+    val margin = 36 * resources.displayMetrics.density
+    markers.forEach { m ->
+      val sp = project(m.p.x, fy, m.p.z, w, h)
+      val onScreen = sp != null && sp[0] in margin..(w - margin) && sp[1] in margin..(h - margin)
+      if (onScreen || !m.edge) {
+        sp?.let { dots += Triple(it, m.color, m.label ?: "") }
+      } else {
+        edgeArrow(m, fy, w, h, margin)?.let { arrows += it }
+      }
+    }
 
     // Faint outlines of detected floor planes, as feedback while scanning.
     val planes = mutableListOf<List<FloatArray>>()
@@ -372,7 +387,25 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
         project(c.x + 0.12f * cos(a).toFloat(), fy, c.z + 0.12f * sin(a).toFloat(), w, h)
       }
     }
-    return Scene(segs, dots, planes, ring, closesShape)
+    return Scene(segs, dots, planes, ring, closesShape, arrows)
+  }
+
+  /** Places an arrow on the screen border, in the direction of an off-screen (or behind) point. */
+  private fun edgeArrow(m: Marker, y: Float, w: Float, h: Float, margin: Float): EdgeArrow? {
+    val v = FloatArray(4)
+    Matrix.multiplyMV(v, 0, viewMatrix, 0, floatArrayOf(m.p.x, y, m.p.z, 1f), 0)
+    // View space: x right, y up, -z forward. Screen: x right, y down.
+    var dx = v[0]
+    var dy = -v[1]
+    if (v[2] > 0f && abs(dx) < 1e-3f) dx = 1e-3f // Straight behind: pick a side.
+    val len = hypot(dx, dy)
+    if (len < 1e-4f) return null
+    dx /= len; dy /= len
+    val cx = w / 2f; val cy = h / 2f
+    val tx = if (abs(dx) > 1e-4f) (cx - margin) / abs(dx) else Float.MAX_VALUE
+    val ty = if (abs(dy) > 1e-4f) (cy - margin) / abs(dy) else Float.MAX_VALUE
+    val t = minOf(tx, ty)
+    return EdgeArrow(cx + dx * t, cy + dy * t, atan2(dy, dx), m.color, m.label)
   }
 
   private fun project(x: Float, y: Float, z: Float, w: Float, h: Float): FloatArray? {
@@ -438,6 +471,23 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
         canvas.drawCircle(p[0], p[1], (if (big) 9 else 5) * density, fill)
         if (!label.isNullOrEmpty()) canvas.drawText(label, p[0] + 12 * density, p[1] + 4 * density, text)
       }
+      s.arrows.forEach { a ->
+        fill.color = a.color
+        canvas.drawCircle(a.x, a.y, 16 * density, fill)
+        val tip = 26 * density
+        val side = 9 * density
+        val c = kotlin.math.cos(a.angle); val sn = kotlin.math.sin(a.angle)
+        val path = Path()
+        path.moveTo(a.x + c * tip, a.y + sn * tip)
+        path.lineTo(a.x + c * 12 * density - sn * side, a.y + sn * 12 * density + c * side)
+        path.lineTo(a.x + c * 12 * density + sn * side, a.y + sn * 12 * density - c * side)
+        path.close()
+        canvas.drawPath(path, fill)
+        a.label?.let { label ->
+          val tw = text.measureText(label)
+          canvas.drawText(label, a.x - tw / 2f - c * 30 * density, a.y + 5 * density - sn * 30 * density, text)
+        }
+      }
       s.reticle?.let { pts ->
         ring.color = if (s.reticleCloses) Color.rgb(120, 230, 160) else Color.WHITE
         val path = Path()
@@ -447,6 +497,8 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
     }
   }
 }
+
+private const val CLOSE_RADIUS_M = 0.4f
 
 /** Draws the camera image as a full-screen quad (ARCore's standard approach). */
 private class BackgroundRenderer {

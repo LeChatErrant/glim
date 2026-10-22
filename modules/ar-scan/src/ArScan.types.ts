@@ -20,7 +20,8 @@ export type ArCapture = FloorPoint & { rawX: number; rawZ: number; closesShape: 
 
 export type ArOverlay = {
   polylines: { points: FloorPoint[]; closed?: boolean; color?: string }[];
-  markers: (FloorPoint & { color?: string; label?: string })[];
+  /** `edge`: when off screen, an arrow at the screen edge points to it. */
+  markers: (FloorPoint & { color?: string; label?: string; edge?: boolean })[];
   /** Index of the polyline being drawn (for the rubber band and snapping). */
   activeIndex?: number;
 };

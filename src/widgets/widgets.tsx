@@ -11,6 +11,15 @@ const TILE_OFF: Hex = '#26262c';
 const TEXT: Hex = '#f2f2f5';
 const MUTED: Hex = '#9a9aa3';
 
+/**
+ * Tap data for "fast" actions: the native widget provider sends `fastBody` to
+ * `fastPath` on the bridge right away, then JS redraws. The target state is decided
+ * here, from what the widget currently shows.
+ */
+function fastToggle(path: string, on: boolean, extra: Record<string, string>) {
+  return { ...extra, fastPath: path, fastBody: JSON.stringify({ on: { on } }), target: on ? 'on' : 'off' };
+}
+
 export function Message({ text }: { text: string }) {
   return (
     <FlexWidget
@@ -41,8 +50,8 @@ export function RoomsWidget({ snapshot, pendingRoomId }: { snapshot: Snapshot | 
             return (
               <FlexWidget
                 key={room.id}
-                clickAction="TOGGLE_ROOM"
-                clickActionData={{ roomId: room.id }}
+                clickAction={room.groupedLightId ? 'FAST_TOGGLE_ROOM' : 'OPEN_APP'}
+                clickActionData={room.groupedLightId ? fastToggle(`grouped_light/${room.groupedLightId}`, !on, { roomId: room.id }) : undefined}
                 accessibilityLabel={`${room.name}, ${on ? 'on' : 'off'}`}
                 style={{
                   flex: 1,
@@ -84,6 +93,8 @@ export function MapWidget({ snapshot, plan, width, height }: { snapshot: Snapsho
       {plan.rooms
         .filter((r) => r.hueRoomId && r.pts.length > 2)
         .map((r) => {
+          const room = snapshot.rooms.find((x) => x.id === r.hueRoomId);
+          if (!room?.groupedLightId) return null;
           const xs = r.pts.map((p) => f.x(p.u));
           const ys = r.pts.map((p) => f.y(p.v));
           const left = Math.min(...xs);
@@ -91,8 +102,8 @@ export function MapWidget({ snapshot, plan, width, height }: { snapshot: Snapsho
           return (
             <FlexWidget
               key={r.id}
-              clickAction="TOGGLE_ROOM"
-              clickActionData={{ roomId: r.hueRoomId }}
+              clickAction="FAST_TOGGLE_ROOM"
+              clickActionData={fastToggle(`grouped_light/${room.groupedLightId}`, !roomIsOn(room, lights), { roomId: room.id })}
               accessibilityLabel={`Toggle ${r.name}`}
               style={{ marginLeft: Math.round(left), marginTop: Math.round(top), width: Math.round(Math.max(...xs) - left), height: Math.round(Math.max(...ys) - top) }}
             />
@@ -104,8 +115,8 @@ export function MapWidget({ snapshot, plan, width, height }: { snapshot: Snapsho
         return (
           <FlexWidget
             key={pl.lightId}
-            clickAction="TOGGLE_LIGHT"
-            clickActionData={{ lightId: pl.lightId }}
+            clickAction="FAST_TOGGLE_LIGHT"
+            clickActionData={fastToggle(`light/${l.id}`, !l.on, { lightId: l.id })}
             accessibilityLabel={`${l.name}, ${l.on ? 'on' : 'off'}`}
             style={{
               marginLeft: Math.round(Math.max(0, f.x(pl.u) - target / 2)),

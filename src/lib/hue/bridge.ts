@@ -24,11 +24,19 @@ export async function getBridge(): Promise<BridgeConfig | null> {
 export async function saveBridge(config: BridgeConfig) {
   await SecureStore.setItemAsync(KEY, JSON.stringify(config));
   cached = config;
+  await HueHttp.setFastConfig(config);
 }
 
 export async function forgetBridge() {
   await SecureStore.deleteItemAsync(KEY);
   cached = null;
+  await HueHttp.setFastConfig(null);
+}
+
+/** Keeps the native copy used by widget fast taps in sync (e.g. after an app update). */
+export async function syncFastConfig() {
+  const b = await getBridge();
+  await HueHttp.setFastConfig(b);
 }
 
 export type DiscoveredBridge = { id: string; ip: string; reachable: boolean };

@@ -16,3 +16,8 @@ android {
     abortOnError false
   }
 }
+
+dependencies {
+  // FastWidgetProvider extends the widget library's provider.
+  implementation project(':react-native-android-widget')
+}
