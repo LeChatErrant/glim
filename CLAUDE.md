@@ -9,7 +9,7 @@ the bridge over its local API (CLIP v2). Working name, to be renamed.
   quickly.
 - **Map:** a floor plan of the home with the lights placed on it, controlled
   visually from the map.
-- More features to be decided together; see README for the current list.
+- More features to be decided together.
 
 ## Platforms
 
