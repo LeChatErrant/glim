@@ -135,6 +135,14 @@ adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 npx expo start --dev-client   # JS changes reload live over USB (adb reverse tcp:8081 tcp:8081)
 ```
 
+Release build (what the maintainer should run day to day: JS is much faster):
+`(cd android && ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a)`,
+then `adb install -r android/app/build/outputs/apk/release/app-release.apk`. R8
+shrinking is on: libraries that use reflection need keep rules in
+`expo-build-properties` → `extraProguardRules` in `app.json` (WorkManager broke
+widgets until kept). If widgets go blank after an install, check `adb logcat`
+for `WM-` errors first.
+
 The maintainer's phone is a Pixel 11 Pro XL (ARCore supported), connected over
 USB debugging. Use `adb exec-out screencap -p > shot.png` to check the screen
 and `adb logcat` for native errors.
