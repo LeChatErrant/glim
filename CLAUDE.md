@@ -5,11 +5,36 @@ the bridge over its local API (CLIP v2). Working name, to be renamed.
 
 ## Product goals
 
-- **Main feature:** a fully customizable home-screen widget to control lights
-  quickly.
-- **Map:** a floor plan of the home with the lights placed on it, controlled
-  visually from the map.
-- More features to be decided together.
+- **Main feature:** fully customizable home-screen widgets: room cards, light
+  grid, scene buttons, and a **map widget** (the floor plan itself; tap a light
+  to toggle it).
+- **Map:** a floor plan of the home with the lights placed on it. Tap to toggle,
+  drag for brightness, long-press for color. Setup: import a floor-plan image
+  and trace it, then place lights with "blink and tap" (the app flashes a
+  light, the user taps where it is).
+- **Scenes:** never hardcode modes. Scenes are data: a large library of preset
+  scenes, fully user-editable and user-creatable, plus map-aware presets that
+  use light positions (e.g. night path bedroom → bathroom, gradient across the
+  home, spotlight around a point).
+- **Android Quick Settings tile.**
+- **Automations:** sunrise wake-up, sleep fade, day rhythm (cool → warm white),
+  turn lights on when arriving home (geofence). Prefer bridge-side automations
+  so they run with the phone off.
+- **Works away from home:** local bridge API on home Wi-Fi, Hue Remote API
+  (cloud, OAuth2, same CLIP v2 shape) everywhere else. Same code path, two
+  transports.
+- **Customization is a core principle.** Widgets, scenes, automations: expose
+  options and presets instead of fixed behavior.
+- Out of scope for now: paint mode, tap dial remapping, music sync.
+
+## Stack
+
+- **Expo (React Native)**, Android first. Widgets via
+  `react-native-android-widget` (written in JS). Over-the-air updates via EAS
+  Update so most changes ship without reinstalling the APK.
+- No local Android SDK on the maintainer's Mac: build APKs with EAS Build.
+- iOS later: app code is shared; iOS widgets need a Swift WidgetKit target,
+  kept isolated.
 
 ## Platforms
 
