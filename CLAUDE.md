@@ -21,6 +21,11 @@ but never in a way that would need a rewrite to sell it later (see
   the user aims at the floor below it and taps). Goal: an *approximately*
   correct simple layout in ~3 minutes. Speed over precision; keep it simple.
   Then a 2D review editor. Fallback: draw the plan manually in the same editor.
+  **Scanning is error-prone: every step must be undoable** (one Undo that walks
+  back through corners, rooms, names and lights), placed points must stay
+  visible (numbered corners, a Start marker with an off-screen arrow), and
+  near-misses are forgiven (closing within 0.4 m snaps; Finish room merges a
+  last corner within 0.6 m of the first).
 - **Scenes:** never hardcode modes. Scenes are data: a large library of preset
   scenes, fully user-editable and user-creatable, plus map-aware presets that
   use light positions (e.g. night path bedroom → bathroom, gradient across the
@@ -112,6 +117,14 @@ light control, AR scan, widgets). Goal: luxury, about light, that anyone likes.
   certificate pinning (CN must equal the bridge ID; public key pinned at
   pairing). All bridge calls go through it; plain `fetch` can't reach the
   bridge.
+- **Widget taps are native-first.** Widget providers extend
+  `FastWidgetProvider` (`modules/hue-http`, wired by
+  `plugins/with-fast-widgets.js`). A tap with a `FAST_*` click action carries
+  the bridge request (`fastPath`, `fastBody`) and is sent from Kotlin at once
+  (~0.35 s tap to light); JS only redraws. Going through the widget library's
+  WorkManager + JS path took ~1.2 s. New widget actions that change lights
+  should use `FAST_*`. Bridge credentials for this live in app-private
+  SharedPreferences (`huelab_fast`), synced from JS at pairing and app start.
 - `modules/ar-scan/`: local Expo module (Kotlin + ARCore). Camera view, floor
   detection, reticle cast on the floor, right-angle snapping, AR overlay of
   outlines and light markers. JS owns the scan logic (`src/app/scan.tsx`).
