@@ -67,9 +67,20 @@ but never in a way that would need a rewrite to sell it later (see
 
 ## Design direction
 
-Mockups: <https://claude.ai/artifact/Bnj4VnNDWgakb7nFkTRQ8W> (map, other homes,
-light control, AR scan, widgets). Goal: luxury, about light, that anyone likes.
-**The map is the main selling point.**
+Two canvases:
+- **Implementation target:** <https://claude.ai/artifact/Dx8ryX9uZt4sECfUHSJfUE>
+  ("Nocturne app design"): every screen, state and widget in detail, organized
+  in pages (Foundations, Onboarding, Map, AR scan, Lights & rooms, Scenes,
+  Rituals, Widgets & tiles, Settings). Build from this one.
+- **Exploration:** <https://claude.ai/artifact/Bnj4VnNDWgakb7nFkTRQ8W> ("design
+  directions"): the chosen Nocturne direction plus the **Celestial** test (night
+  blue, star trails around a pole star, star-chart ring around the map, lights
+  as 4-point stars linked by constellation lines, astrolabe light dial). The
+  maintainer likes Celestial and wants to keep the idea within reach (a future
+  theme or variant), but it is not the target now.
+
+Goal: luxury, about light, that anyone likes. **The map is the main selling
+point.**
 
 - **Palette:** near-black ground `#050506`, warm ivory text `#F2E8D8`, muted
   `#8F887D`, one champagne accent `#E9CF9F`. Hairlines (1px, ivory at 10–24%)
