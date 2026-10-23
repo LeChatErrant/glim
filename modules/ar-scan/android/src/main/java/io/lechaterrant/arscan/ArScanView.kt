@@ -42,8 +42,14 @@ data class FloorPoint(val x: Float, val z: Float)
 
 data class Polyline(val points: List<FloorPoint>, val closed: Boolean, val color: Int)
 
-/** `edge`: when off screen, show an arrow at the screen edge pointing to it. */
-data class Marker(val p: FloorPoint, val color: Int, val label: String?, val edge: Boolean = false)
+/**
+ * `edge`: when off screen, show an arrow at the screen edge pointing to it.
+ * `kind`: "corner" (diamond + number) or "light" (jewel + name pill).
+ */
+data class Marker(val p: FloorPoint, val color: Int, val label: String?, val edge: Boolean = false, val kind: String = "light")
+
+/** A marker projected on screen. */
+data class ScreenMarker(val x: Float, val y: Float, val color: Int, val label: String?, val kind: String)
 
 data class EdgeArrow(val x: Float, val y: Float, val angle: Float, val color: Int, val label: String?)
 
@@ -182,6 +188,7 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
             parseColor(m.optString("color"), Color.YELLOW),
             m.optString("label").ifEmpty { null },
             m.optBoolean("edge", false),
+            m.optString("kind").ifEmpty { "light" },
           )
         }
       }
@@ -249,7 +256,7 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
       computeSnap(hit)
       val heading = atan2(dir[0].toDouble(), -dir[2].toDouble())
       publish(TrackingState.TRACKING, "NONE", FloorPoint(origin[0], origin[2]), heading)
-      val scene = buildScene(s)
+      val scene = buildScene(s, pose)
       overlayView.post { overlayView.update(scene) }
     } catch (e: Exception) {
       // Transient errors (camera not available yet, session paused) are common; just skip the frame.
@@ -324,70 +331,95 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
   /** Everything the overlay needs for one frame, already in screen pixels. */
   class Scene(
     val segments: List<Triple<FloatArray, FloatArray, Int>>,
-    val dots: List<Triple<FloatArray, Int, String?>>,
-    val planes: List<List<FloatArray>>,
-    val reticle: List<FloatArray>?,
+    /** Rubber band from the last corner to the reticle (dashed). */
+    val band: Pair<FloatArray, FloatArray>?,
+    val corners: List<Pair<FloatArray, Int>>,
+    val markers: List<ScreenMarker>,
+    /** Dots of the floor grid, with their size factor (bigger when closer). */
+    val floorDots: List<FloatArray>,
+    val reticle: FloatArray?,
     val reticleCloses: Boolean,
+    val snappedChip: Boolean,
     val arrows: List<EdgeArrow>,
   )
 
-  private fun buildScene(s: Session): Scene {
+  private fun buildScene(s: Session, cam: com.google.ar.core.Pose): Scene {
     val w = surfaceView.width.toFloat()
     val h = surfaceView.height.toFloat()
     val fy = floorY ?: 0f
     val segs = mutableListOf<Triple<FloatArray, FloatArray, Int>>()
-    val dots = mutableListOf<Triple<FloatArray, Int, String?>>()
+    val corners = mutableListOf<Pair<FloatArray, Int>>()
+    var band: Pair<FloatArray, FloatArray>? = null
 
     val lines = polylines
     lines.forEachIndexed { i, line ->
       val pts = line.points
       for (k in 0 until pts.size - 1) segment(pts[k], pts[k + 1], fy, w, h)?.let { segs += Triple(it.first, it.second, line.color) }
       if (line.closed && pts.size > 2) segment(pts.last(), pts[0], fy, w, h)?.let { segs += Triple(it.first, it.second, line.color) }
-      pts.forEach { p -> project(p.x, fy, p.z, w, h)?.let { dots += Triple(it, line.color, null) } }
-      // Rubber band from the last corner to the reticle.
+      pts.forEach { p -> project(p.x, fy, p.z, w, h)?.let { corners += it to line.color } }
       val target = snapped
-      if (i == activeIndex && target != null && pts.isNotEmpty()) {
-        segment(pts.last(), target, fy, w, h)?.let { segs += Triple(it.first, it.second, Color.argb(170, 255, 255, 255)) }
-      }
+      if (i == activeIndex && target != null && pts.isNotEmpty()) band = segment(pts.last(), target, fy, w, h)
     }
     val arrows = mutableListOf<EdgeArrow>()
+    val shown = mutableListOf<ScreenMarker>()
     val margin = 36 * resources.displayMetrics.density
     markers.forEach { m ->
       val sp = project(m.p.x, fy, m.p.z, w, h)
       val onScreen = sp != null && sp[0] in margin..(w - margin) && sp[1] in margin..(h - margin)
       if (onScreen || !m.edge) {
-        sp?.let { dots += Triple(it, m.color, m.label ?: "") }
+        sp?.let { shown += ScreenMarker(it[0], it[1], m.color, m.label, m.kind) }
       } else {
         edgeArrow(m, fy, w, h, margin)?.let { arrows += it }
       }
     }
 
-    // Faint outlines of detected floor planes, as feedback while scanning.
-    val planes = mutableListOf<List<FloatArray>>()
+    // A faint dot grid on the detected floor, as feedback that the floor is found.
+    val dots = mutableListOf<FloatArray>()
     for (plane in s.getAllTrackables(Plane::class.java)) {
       if (plane.trackingState != TrackingState.TRACKING || plane.subsumedBy != null) continue
       if (plane.type != Plane.Type.HORIZONTAL_UPWARD_FACING) continue
       if (floorY != null && abs(plane.centerPose.ty() - fy) > 0.1f) continue
       val poly = plane.polygon
-      val pts = mutableListOf<FloatArray>()
+      val world = mutableListOf<FloorPoint>()
       var i = 0
       while (i + 1 < poly.limit()) {
-        val world = plane.centerPose.transformPoint(floatArrayOf(poly.get(i), 0f, poly.get(i + 1)))
-        project(world[0], world[1], world[2], w, h)?.let { pts += it }
+        val p = plane.centerPose.transformPoint(floatArrayOf(poly.get(i), 0f, poly.get(i + 1)))
+        world += FloorPoint(p[0], p[2])
         i += 2
       }
-      if (pts.size > 2) planes += pts
-    }
-
-    // Reticle: a circle lying on the floor, so it shows the floor's perspective.
-    val r = (if (snapEnabled) snapped else null) ?: reticle
-    val ring = r?.let { c ->
-      (0..32).mapNotNull { k ->
-        val a = (k / 32.0) * 2 * Math.PI
-        project(c.x + 0.12f * cos(a).toFloat(), fy, c.z + 0.12f * sin(a).toFloat(), w, h)
+      if (world.size < 3) continue
+      val minX = world.minOf { it.x }; val maxX = world.maxOf { it.x }
+      val minZ = world.minOf { it.z }; val maxZ = world.maxOf { it.z }
+      var gx = Math.floor((minX / GRID_M).toDouble()).toFloat() * GRID_M
+      while (gx <= maxX && dots.size < 600) {
+        var gz = Math.floor((minZ / GRID_M).toDouble()).toFloat() * GRID_M
+        while (gz <= maxZ && dots.size < 600) {
+          val d = hypot(gx - cam.tx(), gz - cam.tz())
+          if (d < 4.5f && inside(gx, gz, world)) {
+            project(gx, fy, gz, w, h)?.let { dots += floatArrayOf(it[0], it[1], (2.2f - d * 0.3f).coerceIn(0.8f, 2f)) }
+          }
+          gz += GRID_M
+        }
+        gx += GRID_M
       }
     }
-    return Scene(segs, dots, planes, ring, closesShape, arrows)
+
+    val r = (if (snapEnabled) snapped else null) ?: reticle
+    val raw = reticle
+    val chip = snapEnabled && r != null && raw != null && !closesShape &&
+      (polylines.getOrNull(activeIndex)?.points?.size ?: 0) >= 2 && hypot(r.x - raw.x, r.z - raw.z) > 0.02f
+    return Scene(segs, band, corners, shown, dots, r?.let { project(it.x, fy, it.z, w, h) }, closesShape, chip, arrows)
+  }
+
+  private fun inside(x: Float, z: Float, poly: List<FloorPoint>): Boolean {
+    var c = false
+    var j = poly.size - 1
+    for (i in poly.indices) {
+      val a = poly[i]; val b = poly[j]
+      if ((a.z > z) != (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) c = !c
+      j = i
+    }
+    return c
   }
 
   /** Places an arrow on the screen border, in the direction of an off-screen (or behind) point. */
@@ -445,60 +477,136 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
 
   // ---- Overlay view ----------------------------------------------------------
 
+  /** Draws the scene in the Nocturne look: ivory hairlines, diamond corners, jewel lights. */
   private class OverlayView(context: Context) : View(context) {
     private var scene: Scene? = null
-    private val density = context.resources.displayMetrics.density
-    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3 * density; strokeCap = Paint.Cap.ROUND }
+    private val dp = context.resources.displayMetrics.density
+    private val ink = Color.rgb(0xF3, 0xE3, 0xC3)
+    private val champagne = Color.rgb(0xE9, 0xCF, 0x9F)
+    private val ground = Color.rgb(0x05, 0x05, 0x06)
+    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2 * dp; strokeCap = Paint.Cap.ROUND }
+    private val band = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE; strokeWidth = 1.2f * dp; color = ink
+      pathEffect = android.graphics.DashPathEffect(floatArrayOf(3 * dp, 6 * dp), 0f)
+    }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val plane = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Color.argb(40, 255, 255, 255) }
-    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2.5f * density }
-    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 13 * density; setShadowLayer(4f, 0f, 0f, Color.BLACK) }
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Color.argb(105, 0xF3, 0xE3, 0xC3) }
+    private val number = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = ink; textSize = 15 * dp; typeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
+      setShadowLayer(4 * dp, 0f, 0f, Color.argb(200, 0, 0, 0))
+    }
+    private val pillText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(0xF2, 0xE8, 0xD8); textSize = 11 * dp
+      typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+    }
+    private val chipText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = champagne; textSize = 9.5f * dp; letterSpacing = 0.2f
+      typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+    }
 
     fun update(s: Scene?) { scene = s; invalidate() }
 
-    override fun onDraw(canvas: Canvas) {
+    private fun pill(cx: Float, top: Float, text: String, paint: Paint, border: Int, leftAligned: Boolean = false) {
+      val tw = paint.measureText(text)
+      val padX = 10 * dp
+      val hgt = 24 * dp
+      val left = if (leftAligned) cx else cx - tw / 2 - padX
+      val rect = android.graphics.RectF(left, top, left + tw + padX * 2, top + hgt)
+      fill.color = Color.argb(205, 5, 5, 6)
+      canvas?.drawRoundRect(rect, hgt / 2, hgt / 2, fill)
+      stroke.color = border; stroke.strokeWidth = 1 * dp
+      canvas?.drawRoundRect(rect, hgt / 2, hgt / 2, stroke)
+      canvas?.drawText(text, rect.left + padX, rect.centerY() - (paint.descent() + paint.ascent()) / 2, paint)
+    }
+
+    private var canvas: Canvas? = null
+
+    override fun onDraw(c: Canvas) {
       val s = scene ?: return
-      s.planes.forEach { pts ->
-        val path = Path()
-        pts.forEachIndexed { i, p -> if (i == 0) path.moveTo(p[0], p[1]) else path.lineTo(p[0], p[1]) }
-        path.close()
-        canvas.drawPath(path, plane)
+      canvas = c
+      s.floorDots.forEach { d -> c.drawCircle(d[0], d[1], d[2] * dp * 0.7f, dot) }
+
+      s.segments.forEach { (a, b, col) ->
+        line.color = col
+        line.setShadowLayer(5 * dp, 0f, 0f, col)
+        c.drawLine(a[0], a[1], b[0], b[1], line)
       }
-      s.segments.forEach { (a, b, c) -> line.color = c; canvas.drawLine(a[0], a[1], b[0], b[1], line) }
-      s.dots.forEach { (p, c, label) ->
-        fill.color = c
-        val big = label != null
-        canvas.drawCircle(p[0], p[1], (if (big) 9 else 5) * density, fill)
-        if (!label.isNullOrEmpty()) canvas.drawText(label, p[0] + 12 * density, p[1] + 4 * density, text)
-      }
-      s.arrows.forEach { a ->
-        fill.color = a.color
-        canvas.drawCircle(a.x, a.y, 16 * density, fill)
-        val tip = 26 * density
-        val side = 9 * density
-        val c = kotlin.math.cos(a.angle); val sn = kotlin.math.sin(a.angle)
-        val path = Path()
-        path.moveTo(a.x + c * tip, a.y + sn * tip)
-        path.lineTo(a.x + c * 12 * density - sn * side, a.y + sn * 12 * density + c * side)
-        path.lineTo(a.x + c * 12 * density + sn * side, a.y + sn * 12 * density - c * side)
-        path.close()
-        canvas.drawPath(path, fill)
-        a.label?.let { label ->
-          val tw = text.measureText(label)
-          canvas.drawText(label, a.x - tw / 2f - c * 30 * density, a.y + 5 * density - sn * 30 * density, text)
+      line.clearShadowLayer()
+      s.band?.let { (a, b) -> c.drawLine(a[0], a[1], b[0], b[1], band) }
+      // Outline corners: small diamonds.
+      s.corners.forEach { (p, col) -> diamond(c, p[0], p[1], 3.5f * dp, col) }
+
+      s.markers.forEach { m ->
+        if (m.kind == "corner") {
+          diamond(c, m.x, m.y, 6 * dp, m.color)
+          m.label?.let { c.drawText(it, m.x + 11 * dp, m.y - 9 * dp, number) }
+        } else {
+          // Jewel: color core, dark gap, ivory ring, glow.
+          fill.color = m.color
+          fill.setShadowLayer(14 * dp, 0f, 0f, m.color)
+          c.drawCircle(m.x, m.y, 5.5f * dp, fill)
+          fill.clearShadowLayer()
+          stroke.color = ground; stroke.strokeWidth = 2 * dp
+          c.drawCircle(m.x, m.y, 6.5f * dp, stroke)
+          stroke.color = Color.argb(220, 255, 246, 230); stroke.strokeWidth = 1 * dp
+          c.drawCircle(m.x, m.y, 8 * dp, stroke)
+          m.label?.let { pill(m.x, m.y + 14 * dp, it, pillText, Color.argb(110, 0xE9, 0xCF, 0x9F)) }
         }
       }
-      s.reticle?.let { pts ->
-        ring.color = if (s.reticleCloses) Color.rgb(120, 230, 160) else Color.WHITE
+
+      s.arrows.forEach { a ->
+        fill.color = Color.argb(215, 5, 5, 6)
+        c.drawCircle(a.x, a.y, 17 * dp, fill)
+        stroke.color = a.color; stroke.strokeWidth = 1.2f * dp
+        c.drawCircle(a.x, a.y, 17 * dp, stroke)
+        val cs = kotlin.math.cos(a.angle); val sn = kotlin.math.sin(a.angle)
         val path = Path()
-        pts.forEachIndexed { i, p -> if (i == 0) path.moveTo(p[0], p[1]) else path.lineTo(p[0], p[1]) }
-        canvas.drawPath(path, ring)
+        path.moveTo(a.x + cs * 9 * dp, a.y + sn * 9 * dp)
+        path.lineTo(a.x - cs * 4 * dp - sn * 6 * dp, a.y - sn * 4 * dp + cs * 6 * dp)
+        path.lineTo(a.x - cs * 4 * dp + sn * 6 * dp, a.y - sn * 4 * dp - cs * 6 * dp)
+        path.close()
+        fill.color = a.color
+        c.drawPath(path, fill)
+        a.label?.let { label ->
+          val tw = pillText.measureText(label)
+          c.drawText(label, a.x - tw / 2f - cs * 34 * dp, a.y + 4 * dp - sn * 30 * dp, pillText)
+        }
       }
+
+      s.reticle?.let { p ->
+        val col = if (s.reticleCloses) champagne else ink
+        stroke.color = col; stroke.strokeWidth = (if (s.reticleCloses) 2f else 1f) * dp
+        c.drawCircle(p[0], p[1], 30 * dp, stroke)
+        stroke.strokeWidth = 1.5f * dp
+        val r0 = 22 * dp; val r1 = 38 * dp
+        c.drawLine(p[0], p[1] - r1, p[0], p[1] - r0, stroke)
+        c.drawLine(p[0], p[1] + r0, p[0], p[1] + r1, stroke)
+        c.drawLine(p[0] - r1, p[1], p[0] - r0, p[1], stroke)
+        c.drawLine(p[0] + r0, p[1], p[0] + r1, p[1], stroke)
+        fill.color = col
+        c.drawCircle(p[0], p[1], 3 * dp, fill)
+        if (s.reticleCloses) pill(p[0], p[1] + 46 * dp, "CLOSE ROOM", chipText, Color.argb(115, 0xE9, 0xCF, 0x9F))
+        else if (s.snappedChip) pill(p[0] - 112 * dp, p[1] - 58 * dp, "SNAPPED · 90°", chipText, Color.argb(115, 0xE9, 0xCF, 0x9F), leftAligned = true)
+      }
+      canvas = null
+    }
+
+    private fun diamond(c: Canvas, x: Float, y: Float, r: Float, col: Int) {
+      val path = Path()
+      path.moveTo(x, y - r); path.lineTo(x + r, y); path.lineTo(x, y + r); path.lineTo(x - r, y); path.close()
+      fill.color = col
+      c.drawPath(path, fill)
+      stroke.color = ground; stroke.strokeWidth = 1.5f * dp
+      c.drawPath(path, stroke)
     }
   }
 }
 
 private const val CLOSE_RADIUS_M = 0.4f
+
+/** Spacing of the floor dot grid. */
+private const val GRID_M = 0.3f
 
 /** Draws the camera image as a full-screen quad (ARCore's standard approach). */
 private class BackgroundRenderer {

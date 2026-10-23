@@ -1,6 +1,6 @@
 import { Redirect, router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { planAll, planLightBrightness, planToggleLight, planToggleRoom } from '../../lib/actions';
@@ -11,6 +11,7 @@ import { ambienceKelvin, averageBrightness, houseMood, isLit, lightsOf } from '.
 import { loadMap, toPlan, type HomeMap } from '../../lib/map/map';
 import { ConnectionBadge, Glow, PillButton, Section, TagButton, type Connection } from '../../ui/controls';
 import { FloorPlan } from '../../ui/FloorPlan';
+import { ChoiceRow } from '../../ui/scan/parts';
 import { Display, Label, Txt } from '../../ui/text';
 import { color, font, hairline, TAB_BAR_SPACE } from '../../ui/theme';
 
@@ -32,6 +33,7 @@ function MapScreen() {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [selected, setSelected] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ id: string; v: number } | null>(null);
+  const [editing, setEditing] = useState(false);
   const lastSent = useRef(0);
 
   useFocusEffect(
@@ -72,7 +74,7 @@ function MapScreen() {
           </Display>
           <View style={{ alignItems: 'flex-end', marginBottom: -6 }}>
             {snapshot && <TagButton title={anyOn ? 'All off' : 'All on'} icon="power" onPress={() => act((s) => planAll(s, !anyOn))} />}
-            {plan && <TagButton title="Edit map" icon="edit" onPress={() => router.push('/editor')} />}
+            {plan && <TagButton title="Edit map" icon="edit" onPress={() => setEditing(true)} />}
           </View>
         </View>
       </View>
@@ -109,6 +111,14 @@ function MapScreen() {
       ) : (
         <NoMap snapshot={snapshot} onToggleRoom={(id) => act((s) => planToggleRoom(s, id))} bottom={insets.bottom + TAB_BAR_SPACE + 16} />
       )}
+      <EditChoice
+        visible={editing}
+        onClose={() => setEditing(false)}
+        onPick={(path) => {
+          setEditing(false);
+          router.push(path);
+        }}
+      />
     </View>
   );
 }
@@ -239,5 +249,33 @@ function NoMap({ snapshot, onToggleRoom, bottom }: { snapshot: Snapshot | null; 
         </Section>
       )}
     </ScrollView>
+  );
+}
+
+/** Edit map: walk through it with the camera, or fix it on screen. */
+function EditChoice({ visible, onClose, onPick }: { visible: boolean; onClose: () => void; onPick: (path: '/scan' | '/editor') => void }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
+      <Pressable accessibilityLabel="Close" onPress={onClose} style={{ flex: 1, backgroundColor: 'rgba(5,5,6,0.6)' }} />
+      <View
+        style={{
+          backgroundColor: color.sheet,
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 28,
+          borderTopWidth: 1,
+          borderColor: hairline(0.1),
+          paddingTop: 22,
+          paddingHorizontal: 24,
+          paddingBottom: insets.bottom + 24,
+        }}
+      >
+        <Display size={24} style={{ marginBottom: 12 }}>
+          Edit your map
+        </Display>
+        <ChoiceRow icon="scan" title="Walk through it in AR" sub="Add rooms, redraw one, move lights where they are" onPress={() => onPick('/scan')} />
+        <ChoiceRow icon="edit" title="Edit on screen" sub="Drag corners and lights, draw rooms by hand" onPress={() => onPick('/editor')} />
+      </View>
+    </Modal>
   );
 }

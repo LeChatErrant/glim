@@ -32,7 +32,9 @@ but never in a way that would need a rewrite to sell it later (see
   The scan can create Hue rooms, offers lights that are in no room, and offers
   to move a light into the room it was placed in. The map is saved after every
   change; a later scan continues it by matching 2 already-scanned corners
-  (rigid 2D transform, `src/lib/map/geometry.ts`). Maps are stored per bridge,
+  (rigid 2D transform, `src/lib/map/geometry.ts`). Once lined up, the scan also
+  edits the saved map in AR: redraw a room (keeps its name, Hue room and
+  lights) or move any light. "Edit map" offers AR or the 2D editor. Maps are stored per bridge,
   in map coordinates (first scanned wall along +x).
 - **2D map editor** (`src/app/editor.tsx`): draw rooms by hand when AR isn't
   available, and fine-tune scanned maps (drag corners/rooms/lights, add or
