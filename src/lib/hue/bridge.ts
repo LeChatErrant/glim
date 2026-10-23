@@ -58,6 +58,21 @@ export async function discoverBridges(): Promise<DiscoveredBridge[]> {
   );
 }
 
+/**
+ * Checks for a bridge at an address the user typed (when discovery finds nothing). Its ID comes
+ * from what it reports, and must match its certificate's CN, as for discovered bridges.
+ */
+export async function probeBridge(ip: string): Promise<DiscoveredBridge | null> {
+  try {
+    const r = await HueHttp.request({ url: `https://${ip}/api/config`, timeoutMs: 3000 });
+    const id = (JSON.parse(r.body) as { bridgeid?: string }).bridgeid?.toLowerCase();
+    if (r.status !== 200 || !id || id !== r.cn.toLowerCase()) return null;
+    return { id, ip, reachable: true };
+  } catch {
+    return null;
+  }
+}
+
 export type PairResult = { ok: true; config: BridgeConfig } | { ok: false; reason: 'link_button' | 'error'; message?: string };
 
 /** One pairing attempt. Succeeds only within 30 s of the bridge's link button being pressed. */
