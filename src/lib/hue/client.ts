@@ -20,6 +20,8 @@ export type Light = {
   color: string;
   /** White temperature when the light is in white mode, else null. */
   mirek: number | null;
+  /** Supported white temperatures in mirek, [coolest, warmest]; null if the light has no white temperature. Missing in old cached snapshots. */
+  mirekRange?: [number, number] | null;
   reachable: boolean;
 };
 
@@ -93,6 +95,9 @@ export async function fetchSnapshot(): Promise<Snapshot> {
       brightness: l.dimming ? Math.round(l.dimming.brightness) : null,
       color,
       mirek: kind === 'onoff' ? null : mirek,
+      mirekRange: l.color_temperature?.mirek_schema
+        ? [l.color_temperature.mirek_schema.mirek_minimum, l.color_temperature.mirek_schema.mirek_maximum]
+        : null,
       reachable: reachableByDevice.get(l.owner.rid) ?? true,
     };
   });
@@ -123,18 +128,25 @@ export async function saveCachedSnapshot(snapshot: Snapshot) {
   await AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
 }
 
-export function setLight(id: string, state: { on?: boolean; brightness?: number }) {
+/** A change to send: color (CIE xy) and white temperature (mirek) are exclusive. */
+export type LightState = { on?: boolean; brightness?: number; xy?: { x: number; y: number }; mirek?: number };
+
+function stateBody(state: LightState) {
   const body: Record<string, unknown> = {};
   if (state.on !== undefined) body.on = { on: state.on };
   if (state.brightness !== undefined) body.dimming = { brightness: state.brightness };
-  return call(`light/${id}`, 'PUT', body);
+  if (state.xy) body.color = { xy: state.xy };
+  else if (state.mirek !== undefined) body.color_temperature = { mirek: state.mirek };
+  return body;
 }
 
-export function setRoom(groupedLightId: string, state: { on?: boolean; brightness?: number }) {
-  const body: Record<string, unknown> = {};
-  if (state.on !== undefined) body.on = { on: state.on };
-  if (state.brightness !== undefined) body.dimming = { brightness: state.brightness };
-  return call(`grouped_light/${groupedLightId}`, 'PUT', body);
+export function setLight(id: string, state: LightState) {
+  return call(`light/${id}`, 'PUT', stateBody(state));
+}
+
+/** Lights in the group that can't do the color or temperature just ignore it. */
+export function setRoom(groupedLightId: string, state: LightState) {
+  return call(`grouped_light/${groupedLightId}`, 'PUT', stateBody(state));
 }
 
 /** Makes the light blink so the user can tell which one it is. */

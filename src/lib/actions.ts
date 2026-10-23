@@ -1,4 +1,5 @@
-import { cachedSnapshot, roomIsOn, saveCachedSnapshot, setLight, setRoom, type Snapshot } from './hue/client';
+import { cachedSnapshot, roomIsOn, saveCachedSnapshot, setLight, setRoom, type Light, type Snapshot } from './hue/client';
+import { hexToXy, kelvinToMirek, mirekToHex } from './hue/color';
 
 /**
  * Light actions shared by the app and the widgets. Each one is planned first: `next` is the
@@ -47,6 +48,83 @@ export function planLightBrightness(s: Snapshot, lightId: string, brightness: nu
   return {
     next: { ...s, lights: s.lights.map((l) => (l.id === lightId ? { ...l, on: true, brightness } : l)) },
     send: () => setLight(lightId, { on: true, brightness }),
+  };
+}
+
+/** Lights that take a white temperature (color lights do too). */
+export const hasTemperature = (l: Light) => l.kind === 'color' || !!l.mirekRange;
+
+/** The light's nearest mirek to a kelvin value (most lights do 2000/2200–6500 K). */
+export function mirekFor(l: Light, kelvin: number) {
+  const [lo, hi] = l.mirekRange ?? [153, 500];
+  return Math.max(lo, Math.min(hi, kelvinToMirek(kelvin)));
+}
+
+/** Sets a color light to a color (and turns it on). */
+export function planLightColor(s: Snapshot, lightId: string, hex: string): Planned | null {
+  const light = s.lights.find((l) => l.id === lightId);
+  if (!light || light.kind !== 'color') return null;
+  const xy = hexToXy(hex);
+  return {
+    next: { ...s, lights: s.lights.map((l) => (l.id === lightId ? { ...l, on: true, color: hex, mirek: null } : l)) },
+    send: () => setLight(lightId, { on: true, xy }),
+  };
+}
+
+/** Sets a light to a white temperature (and turns it on). */
+export function planLightKelvin(s: Snapshot, lightId: string, kelvin: number): Planned | null {
+  const light = s.lights.find((l) => l.id === lightId);
+  if (!light || !hasTemperature(light)) return null;
+  const mirek = mirekFor(light, kelvin);
+  return {
+    next: { ...s, lights: s.lights.map((l) => (l.id === lightId ? { ...l, on: true, color: mirekToHex(mirek), mirek } : l)) },
+    send: () => setLight(lightId, { on: true, mirek }),
+  };
+}
+
+/**
+ * Paints a room's color lights. Lights that can't do color keep theirs. Lights that are off stay
+ * off, unless the whole room was off: then it turns on.
+ */
+export function planRoomColor(s: Snapshot, roomId: string, hex: string): Planned | null {
+  const room = s.rooms.find((r) => r.id === roomId);
+  if (!room?.groupedLightId) return null;
+  const groupId = room.groupedLightId;
+  const wasOn = roomIsOn(room, s.lights);
+  const xy = hexToXy(hex);
+  return {
+    next: {
+      ...s,
+      lights: s.lights.map((l) => {
+        if (!room.lightIds.includes(l.id)) return l;
+        const on = wasOn ? l.on : true;
+        return l.kind === 'color' ? { ...l, on, color: hex, mirek: null } : { ...l, on };
+      }),
+    },
+    // Only a room that was off needs `on`: otherwise lights that are off stay off.
+    send: () => setRoom(groupId, wasOn ? { xy } : { on: true, xy }),
+  };
+}
+
+/** Sets every light in a room that takes a white temperature to it. */
+export function planRoomKelvin(s: Snapshot, roomId: string, kelvin: number): Planned | null {
+  const room = s.rooms.find((r) => r.id === roomId);
+  if (!room?.groupedLightId) return null;
+  const groupId = room.groupedLightId;
+  const wasOn = roomIsOn(room, s.lights);
+  const mirek = kelvinToMirek(kelvin);
+  return {
+    next: {
+      ...s,
+      lights: s.lights.map((l) => {
+        if (!room.lightIds.includes(l.id)) return l;
+        const on = wasOn ? l.on : true;
+        if (!hasTemperature(l)) return { ...l, on };
+        const m = mirekFor(l, kelvin);
+        return { ...l, on, color: mirekToHex(m), mirek: m };
+      }),
+    },
+    send: () => setRoom(groupId, wasOn ? { mirek } : { on: true, mirek }),
   };
 }
 

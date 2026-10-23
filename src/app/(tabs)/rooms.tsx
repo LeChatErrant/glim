@@ -1,5 +1,5 @@
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -12,6 +12,7 @@ import { loadMap, type HomeMap } from '../../lib/map/map';
 import { ConnectionBadge, Glow, PillButton, Slider, Switch } from '../../ui/controls';
 import { Jewel } from '../../ui/FloorPlan';
 import { Icon } from '../../ui/icons';
+import { useThrottle } from '../../ui/LightControls';
 import { Display, Label, Txt } from '../../ui/text';
 import { color, hairline, TAB_BAR_SPACE } from '../../ui/theme';
 
@@ -146,12 +147,17 @@ function RoomCard({
       {c1 && <Glow tint={c1} cx={0} cy={0} rx={240} ry={150} alpha={0.11} />}
       {c2 && <Glow tint={c2} cx={width - 48} cy={0} rx={200} ry={130} alpha={0.08} />}
       <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: 2 }}>
-        <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+        <Pressable
+          onPress={() => router.push(`/room/${room.id}`)}
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${room.name}`}
+          style={({ pressed }) => ({ flex: 1, minWidth: 0, gap: 6, opacity: pressed ? 0.6 : 1 })}
+        >
           <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
             {room.name}
           </Display>
           <JewelsMeta lights={all} meta={meta} />
-        </View>
+        </Pressable>
         {plugOnly && (
           <Txt size={12} tone="muted" style={{ marginRight: 2 }}>
             On/off only
@@ -205,12 +211,17 @@ function SubRoom({ room, snapshot, expanded, act }: { room: Room; snapshot: Snap
     <>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, height: 54, borderTopWidth: 1, borderTopColor: hairline(0.08) }}>
         <TreeGlyph />
-        <View style={{ flex: 1, minWidth: 0, gap: 5 }}>
+        <Pressable
+          onPress={() => router.push(`/room/${room.id}`)}
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${room.name}`}
+          style={({ pressed }) => ({ flex: 1, minWidth: 0, gap: 5, opacity: pressed ? 0.6 : 1 })}
+        >
           <Display size={15} weight={400} numberOfLines={1} style={{ lineHeight: 18 }}>
             {room.name}
           </Display>
           <JewelsMeta lights={lights} meta={meta} />
-        </View>
+        </Pressable>
         <Switch on={on} label={`${room.name}, ${on ? 'on' : 'off'}`} onToggle={() => act((s) => planToggleRoom(s, room.id))} />
       </View>
       {expanded && lights.map((l) => <LightRow key={l.id} light={l} act={act} indent={28} />)}
@@ -230,17 +241,24 @@ function LightRow({ light, act, indent = 0 }: { light: Light; act: Act; indent?:
   const on = isLit(light);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, height: 48, borderTopWidth: 1, borderTopColor: hairline(0.08), paddingLeft: indent }}>
-      <View style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}>
-        <Jewel light={light} shape={lightShape(light.archetype)} ground={color.card} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Txt size={14} numberOfLines={1} style={{ lineHeight: 18 }}>
-          {light.name}
-        </Txt>
-        <Txt size={12} tone="muted" numberOfLines={1} style={{ lineHeight: 16 }}>
-          {lightTypeLabel(light)}
-        </Txt>
-      </View>
+      <Pressable
+        onPress={() => router.push(`/light/${light.id}`)}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${light.name}`}
+        style={({ pressed }) => ({ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'stretch', opacity: pressed ? 0.6 : 1 })}
+      >
+        <View style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}>
+          <Jewel light={light} shape={lightShape(light.archetype)} ground={color.card} />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Txt size={14} numberOfLines={1} style={{ lineHeight: 18 }}>
+            {light.name}
+          </Txt>
+          <Txt size={12} tone="muted" numberOfLines={1} style={{ lineHeight: 16 }}>
+            {lightTypeLabel(light)}
+          </Txt>
+        </View>
+      </Pressable>
       <Txt size={13} tone={on ? 'secondary' : 'muted'} style={{ minWidth: 38, textAlign: 'right', fontVariant: ['tabular-nums'], color: light.reachable ? undefined : color.warning }}>
         {lightLevel(light)}
       </Txt>
@@ -288,16 +306,4 @@ function useRoomLevel(dimmable: Light[]) {
   const pool = lit.length ? lit : dimmable;
   const value = pool.length ? Math.round(pool.reduce((s, l) => s + (l.brightness ?? 0), 0) / pool.length) : 0;
   return { value: lit.length ? value : null, shown: drag ?? value, setDrag };
-}
-
-/** Runs at most one call every `ms`, keeping the latest (live preview on the real lights). */
-function useThrottle(ms = 150) {
-  const last = useRef(0);
-  return (fn: () => void) => {
-    const now = Date.now();
-    if (now - last.current > ms) {
-      last.current = now;
-      fn();
-    }
-  };
 }

@@ -37,3 +37,71 @@ export function mirekToHex(mirek: number): string {
 
 /** Warm white used for on/off plugs and lights without color info. */
 export const PLUG_ON_COLOR = '#ffc46b';
+
+function hexRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1, 7), 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+
+function linear(v: number) {
+  return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+}
+
+/** sRGB hex to CIE xy for the bridge (wide-gamut matrix; the bridge clamps to each light's gamut). */
+export function hexToXy(hex: string): { x: number; y: number } {
+  const [r, g, b] = hexRgb(hex).map(linear);
+  const X = r * 0.649926 + g * 0.103455 + b * 0.197109;
+  const Y = r * 0.234327 + g * 0.743075 + b * 0.022598;
+  const Z = g * 0.053077 + b * 1.035763;
+  const sum = X + Y + Z;
+  if (!sum) return { x: 0.3227, y: 0.329 };
+  return { x: Math.round((X / sum) * 10000) / 10000, y: Math.round((Y / sum) * 10000) / 10000 };
+}
+
+/** Hue in degrees (0–360) and saturation (0–1) of a hex color. */
+export function hexHueSat(hex: string): { hue: number; sat: number } {
+  const [r, g, b] = hexRgb(hex);
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  if (!d) return { hue: 0, sat: 0 };
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { hue: (h * 60 + 360) % 360, sat: d / max };
+}
+
+/** HSV to hex. */
+export function hsvHex(hue: number, sat: number, val = 1): string {
+  const f = (n: number) => {
+    const k = (n + hue / 60) % 6;
+    return val - val * sat * Math.max(0, Math.min(k, 4 - k, 1));
+  };
+  return toHex(f(5), f(3), f(1));
+}
+
+/** Kelvin range of the white dial. */
+export const KELVIN_MIN = 2200;
+export const KELVIN_MAX = 6500;
+
+const KELVIN_TINTS: [number, [number, number, number]][] = [
+  [2200, [255, 154, 60]],
+  [2700, [255, 184, 104]],
+  [3300, [255, 213, 158]],
+  [4000, [255, 240, 218]],
+  [5000, [243, 242, 238]],
+  [6500, [220, 235, 255]],
+];
+
+/** How a white temperature looks on screen (softer than the blackbody fit, as in the design). */
+export function kelvinTint(k: number): string {
+  for (let i = 0; i < KELVIN_TINTS.length - 1; i++) {
+    const [k0, c0] = KELVIN_TINTS[i];
+    const [k1, c1] = KELVIN_TINTS[i + 1];
+    if (k <= k1) {
+      const t = Math.max(0, (k - k0) / (k1 - k0));
+      return toHex(...(c0.map((v, j) => (v + (c1[j] - v) * t) / 255) as [number, number, number]));
+    }
+  }
+  return '#dcebff';
+}
+
+export const kelvinToMirek = (k: number) => Math.round(1_000_000 / k);
+export const mirekToKelvin = (m: number) => Math.round(1_000_000 / m);

@@ -1,11 +1,12 @@
-import { useLayoutEffect, useMemo, useRef } from 'react';
-import { PanResponder, View } from 'react-native';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { PanResponder, Pressable, View } from 'react-native';
 import Svg, { ClipPath, Defs, Ellipse, G, Path, RadialGradient, Stop } from 'react-native-svg';
 
 import type { Light, Room } from '../lib/hue/client';
 import { lightLevel, lightTypeLabel } from '../lib/lights';
 import { placeLights, walledRooms, type PlacedLight } from '../lib/map/glow';
 import { fitPlan, type Plan } from '../lib/map/map';
+import { Icon } from './icons';
 import { Label, Txt } from './text';
 import { color, hairline } from './theme';
 
@@ -22,6 +23,8 @@ type Props = {
   onLightDrag: (id: string, brightness: number, done: boolean) => void;
   /** Tap inside a room, away from lights. */
   onRoomPress: (hueRoomId: string) => void;
+  /** Long-press on a light, or "Open" in its label: the light screen. */
+  onLightOpen: (id: string) => void;
 };
 
 const MARKER = 44;
@@ -30,7 +33,7 @@ const MARKER = 44;
  * The Nocturne floor plan: rooms as free polygons with hairline walls, each light casting a glow
  * shaped by its type and clipped to its room's walls, jewel markers on top.
  */
-export function FloorPlan({ plan, lights, rooms, width, height, selectedId, onLightPress, onLightDrag, onRoomPress }: Props) {
+export function FloorPlan({ plan, lights, rooms, width, height, selectedId, onLightPress, onLightDrag, onRoomPress, onLightOpen }: Props) {
   const f = useMemo(() => fitPlan(plan, width, height, 16), [plan, width, height]);
   const walled = useMemo(() => walledRooms(plan), [plan]);
   const placed = useMemo(() => placeLights(plan, lights), [plan, lights]);
@@ -148,6 +151,7 @@ export function FloorPlan({ plan, lights, rooms, width, height, selectedId, onLi
           selected={p.light.id === selectedId}
           onPress={() => onLightPress(p.light.id)}
           onDrag={(v, done) => onLightDrag(p.light.id, v, done)}
+          onLongPress={() => onLightOpen(p.light.id)}
         />
       ))}
 
@@ -158,11 +162,13 @@ export function FloorPlan({ plan, lights, rooms, width, height, selectedId, onLi
         const right = x > width / 2;
         return (
           <View
-            pointerEvents="none"
+            pointerEvents="box-none"
             style={{
               position: 'absolute',
               top: f.y(p.v) + 22,
               ...(right ? { right: width - x - 14 } : { left: x - 14 }),
+              // Stays inside the map: the name shrinks instead.
+              maxWidth: right ? x + 14 : width - x + 14,
               flexDirection: 'row',
               alignItems: 'center',
               gap: 8,
@@ -174,7 +180,8 @@ export function FloorPlan({ plan, lights, rooms, width, height, selectedId, onLi
               borderColor: 'rgba(233,207,159,0.32)',
             }}
           >
-            <Txt size={11} medium numberOfLines={1} style={{ lineHeight: 14, maxWidth: 150 }}>
+            {/* The name gives way first, so "Open" always fits. */}
+            <Txt size={11} medium numberOfLines={1} style={{ lineHeight: 14, maxWidth: 150, flexShrink: 1 }}>
               {p.light.name}
             </Txt>
             <Txt size={11} tone="muted" style={{ lineHeight: 14 }}>
@@ -183,6 +190,19 @@ export function FloorPlan({ plan, lights, rooms, width, height, selectedId, onLi
             <Txt size={11} tone="champagne" style={{ lineHeight: 14, fontVariant: ['tabular-nums'] }}>
               {lightLevel(p.light)}
             </Txt>
+            <View style={{ width: 1, height: 14, backgroundColor: hairline(0.16) }} />
+            <Pressable
+              onPress={() => onLightOpen(p.light.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${p.light.name}`}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 10 }}
+              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 2, opacity: pressed ? 0.6 : 1 })}
+            >
+              <Txt size={11} medium style={{ lineHeight: 14 }}>
+                Open
+              </Txt>
+              <Icon name="chevronRight" size={11} stroke={2} />
+            </Pressable>
           </View>
         );
       })()}
@@ -209,13 +229,37 @@ export function Jewel({ light, shape, size = 9, ground = color.ground, angle = M
   return <View style={{ width: s, height: s, borderRadius: s / 2, ...look }} />;
 }
 
-function Marker({ placed, x, y, selected, onPress, onDrag }: { placed: PlacedLight; x: number; y: number; selected: boolean; onPress: () => void; onDrag: (v: number, done: boolean) => void }) {
+const LONG_PRESS_MS = 450;
+
+function Marker({
+  placed,
+  x,
+  y,
+  selected,
+  onPress,
+  onDrag,
+  onLongPress,
+}: {
+  placed: PlacedLight;
+  x: number;
+  y: number;
+  selected: boolean;
+  onPress: () => void;
+  onDrag: (v: number, done: boolean) => void;
+  onLongPress: () => void;
+}) {
   const { light } = placed;
-  const latest = useRef({ light, onPress, onDrag });
+  const latest = useRef({ light, onPress, onDrag, onLongPress });
   useLayoutEffect(() => {
-    latest.current = { light, onPress, onDrag };
+    latest.current = { light, onPress, onDrag, onLongPress };
   });
-  const drag = useRef({ start: 0, moved: false, value: 0 });
+  const drag = useRef({ start: 0, moved: false, value: 0, long: false });
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopTimer = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  useEffect(() => stopTimer, []);
 
   const responder = useMemo(
     () =>
@@ -226,10 +270,18 @@ function Marker({ placed, x, y, selected, onPress, onDrag }: { placed: PlacedLig
         onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => {
           const l = latest.current.light;
-          drag.current = { start: l.on ? (l.brightness ?? 100) : 1, moved: false, value: 0 };
+          drag.current = { start: l.on ? (l.brightness ?? 100) : 1, moved: false, value: 0, long: false };
+          // Held still: open the light instead of toggling it.
+          timer.current = setTimeout(() => {
+            timer.current = null;
+            drag.current.long = true;
+            latest.current.onLongPress();
+          }, LONG_PRESS_MS);
         },
         onPanResponderMove: (_, g) => {
           const l = latest.current.light;
+          if (drag.current.long) return;
+          if (Math.abs(g.dx) > 8 || Math.abs(g.dy) > 8) stopTimer();
           if (l.brightness === null || !l.reachable) return;
           if (!drag.current.moved && Math.abs(g.dy) < 8) return;
           drag.current.moved = true;
@@ -241,9 +293,12 @@ function Marker({ placed, x, y, selected, onPress, onDrag }: { placed: PlacedLig
           }
         },
         onPanResponderRelease: () => {
+          stopTimer();
+          if (drag.current.long) return;
           if (drag.current.moved) latest.current.onDrag(drag.current.value, true);
           else latest.current.onPress();
         },
+        onPanResponderTerminate: stopTimer,
       }),
     [],
   );

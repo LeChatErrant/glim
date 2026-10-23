@@ -97,6 +97,10 @@ function MapScreen() {
                   setSelected(null);
                   act((s) => planToggleRoom(s, roomId));
                 }}
+                onLightOpen={(id) => {
+                  setSelected(id);
+                  router.push(`/light/${id}`);
+                }}
               />
             )}
           </View>
