@@ -417,7 +417,7 @@ function Scanner({ base }: { base: HomeMap | null }) {
               <Button title="Scan a room" primary style={{ flex: 1 }} onPress={() => commit({ ...scan, step: 'corners' })} />
               <Button title="Place lights" style={{ flex: 1 }} disabled={!rooms.length} onPress={() => commit({ ...scan, step: 'lights' })} />
             </View>
-            <Button title="Finish" onPress={() => router.replace('/map')} />
+            <Button title="Finish" onPress={() => router.replace('/')} />
           </>
         )}
       </View>

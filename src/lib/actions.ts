@@ -41,6 +41,27 @@ export function planRoomBrightness(s: Snapshot, roomId: string, brightness: numb
   };
 }
 
+export function planLightBrightness(s: Snapshot, lightId: string, brightness: number): Planned | null {
+  const light = s.lights.find((l) => l.id === lightId);
+  if (!light || light.brightness === null) return null;
+  return {
+    next: { ...s, lights: s.lights.map((l) => (l.id === lightId ? { ...l, on: true, brightness } : l)) },
+    send: () => setLight(lightId, { on: true, brightness }),
+  };
+}
+
+/** Every light on the bridge on or off ("All off"). */
+export function planAll(s: Snapshot, on: boolean): Planned | null {
+  const groupId = s.homeGroupId;
+  return {
+    next: { ...s, lights: s.lights.map((l) => ({ ...l, on })) },
+    // Old cached snapshots have no home group: fall back to each room.
+    send: groupId
+      ? () => setRoom(groupId, { on })
+      : () => Promise.all(s.rooms.filter((r) => r.groupedLightId).map((r) => setRoom(r.groupedLightId!, { on }))),
+  };
+}
+
 /** Runs a planned action against the cached snapshot: saves the expected state, then sends it. */
 async function run(plan: (s: Snapshot) => Planned | null): Promise<Snapshot | null> {
   const s = await cachedSnapshot();

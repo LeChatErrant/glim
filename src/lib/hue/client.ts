@@ -18,6 +18,8 @@ export type Light = {
   brightness: number | null;
   /** Display color of the light's current state (ignores brightness). */
   color: string;
+  /** White temperature when the light is in white mode, else null. */
+  mirek: number | null;
   reachable: boolean;
 };
 
@@ -29,7 +31,13 @@ export type Room = {
   lightIds: string[];
 };
 
-export type Snapshot = { rooms: Room[]; lights: Light[]; fetchedAt: number };
+export type Snapshot = {
+  rooms: Room[];
+  lights: Light[];
+  /** Grouped light for every light on the bridge ("all off"). Missing in old cached snapshots. */
+  homeGroupId?: string | null;
+  fetchedAt: number;
+};
 
 type Resource = Record<string, any> & { id: string; type: string };
 
@@ -55,11 +63,12 @@ async function call(path: string, method: 'GET' | 'PUT' | 'POST' | 'DELETE' = 'G
 const SNAPSHOT_KEY = 'snapshot';
 
 export async function fetchSnapshot(): Promise<Snapshot> {
-  const [lightsRaw, devices, rooms, connectivity] = await Promise.all([
+  const [lightsRaw, devices, rooms, connectivity, homes] = await Promise.all([
     call('light'),
     call('device'),
     call('room'),
     call('zigbee_connectivity'),
+    call('bridge_home').catch(() => []),
   ]);
   const deviceById = new Map(devices.map((d) => [d.id, d]));
   const roomByDevice = new Map<string, string>();
@@ -69,17 +78,9 @@ export async function fetchSnapshot(): Promise<Snapshot> {
   const lights: Light[] = lightsRaw.map((l) => {
     const device = deviceById.get(l.owner.rid);
     const kind: LightKind = l.color ? 'color' : l.dimming ? 'white' : 'onoff';
-    const mirek = l.color_temperature?.mirek_valid ? l.color_temperature.mirek : null;
-    const color =
-      kind === 'onoff'
-        ? PLUG_ON_COLOR
-        : l.color_mode === 'color_temperature' && mirek
-          ? mirekToHex(mirek)
-          : l.color
-            ? xyToHex(l.color.xy.x, l.color.xy.y)
-            : mirek
-              ? mirekToHex(mirek)
-              : PLUG_ON_COLOR;
+    // mirek_valid is true only while the light is in white mode.
+    const mirek: number | null = l.color_temperature?.mirek_valid ? l.color_temperature.mirek : null;
+    const color = kind === 'onoff' ? PLUG_ON_COLOR : mirek ? mirekToHex(mirek) : l.color ? xyToHex(l.color.xy.x, l.color.xy.y) : PLUG_ON_COLOR;
     return {
       id: l.id,
       deviceId: l.owner.rid,
@@ -91,6 +92,7 @@ export async function fetchSnapshot(): Promise<Snapshot> {
       on: l.on.on,
       brightness: l.dimming ? Math.round(l.dimming.brightness) : null,
       color,
+      mirek: kind === 'onoff' ? null : mirek,
       reachable: reachableByDevice.get(l.owner.rid) ?? true,
     };
   });
@@ -105,6 +107,7 @@ export async function fetchSnapshot(): Promise<Snapshot> {
       lightIds: r.children.map((c: { rid: string }) => lightIdsByDevice.get(c.rid)).filter(Boolean) as string[],
     })),
     lights,
+    homeGroupId: homes[0]?.services?.find((x: { rtype: string }) => x.rtype === 'grouped_light')?.rid ?? null,
     fetchedAt: Date.now(),
   };
   await AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));

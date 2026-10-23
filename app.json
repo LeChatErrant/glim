@@ -76,7 +76,8 @@
             "extraProguardRules": "# WorkManager (used by the widget library) instantiates workers, input mergers\n# and its Room database by reflection.\n-keep class androidx.work.** { *; }\n-keep class * extends androidx.work.ListenableWorker { <init>(...); }\n-keep class * extends androidx.work.InputMerger { <init>(); }\n-keep class * extends androidx.room.RoomDatabase { <init>(); }\n-keep class com.reactnativeandroidwidget.** { *; }\n# Local Expo modules: records are read by reflection.\n-keep class io.lechaterrant.** { *; }"
           }
         }
-      ]
+      ],
+      "expo-font"
     ]
   }
 }

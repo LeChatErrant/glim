@@ -1,23 +1,38 @@
-import { Stack } from 'expo-router';
+import { Geist_400Regular, Geist_500Medium } from '@expo-google-fonts/geist';
+import { Jost_200ExtraLight, Jost_300Light, Jost_400Regular } from '@expo-google-fonts/jost';
+import { useFonts } from 'expo-font';
+import { SplashScreen, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 
-import { theme } from '../ui/theme';
+import { color, font } from '../ui/theme';
+
+SplashScreen.preventAutoHideAsync().catch(() => null);
 
 export default function RootLayout() {
+  const [loaded, failed] = useFonts({ Jost_200ExtraLight, Jost_300Light, Jost_400Regular, Geist_400Regular, Geist_500Medium });
+  const ready = loaded || !!failed;
+
+  useEffect(() => {
+    if (ready) SplashScreen.hideAsync().catch(() => null);
+  }, [ready]);
+
+  if (!ready) return null;
   return (
     <>
       <StatusBar style="light" />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: theme.bg },
-          headerTintColor: theme.text,
-          contentStyle: { backgroundColor: theme.bg },
+          headerStyle: { backgroundColor: color.ground },
+          headerTintColor: color.ivory,
+          headerTitleStyle: { fontFamily: font.display, fontSize: 20 },
+          headerShadowVisible: false,
+          contentStyle: { backgroundColor: color.ground },
         }}
       >
-        <Stack.Screen name="index" options={{ title: 'hue-lab' }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="pair" options={{ title: 'Pair your bridge' }} />
         <Stack.Screen name="scan" options={{ headerShown: false }} />
-        <Stack.Screen name="map" options={{ title: 'Map' }} />
         <Stack.Screen name="editor" options={{ title: 'Edit map' }} />
       </Stack>
     </>

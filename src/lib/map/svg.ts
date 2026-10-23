@@ -1,14 +1,15 @@
 import type { Light } from '../hue/client';
 import { fitPlan, type Plan } from './map';
 
+// Nocturne plan colors (hairline walls, near-black floors).
 export const PLAN_COLORS = {
-  wall: '#8a8a93',
-  roomFill: '#1c1c22',
-  outdoorFill: '#15151a',
-  label: '#9a9aa3',
-  off: '#3a3a42',
-  offStroke: '#7a7a83',
-  unreachable: '#5a2a2a',
+  wall: 'rgba(242,232,216,0.32)',
+  roomFill: '#0B0B0D',
+  outdoorFill: '#070708',
+  label: 'rgba(242,232,216,0.72)',
+  off: '#050506',
+  offStroke: 'rgba(242,232,216,0.55)',
+  unreachable: '#1E1B18',
 };
 
 /** Renders the floor plan as an SVG string (used by the map widget, which can only show images). */
