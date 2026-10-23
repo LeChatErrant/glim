@@ -26,9 +26,27 @@ layout and details are yours to propose.
 2. **The map.** The user scans the apartment with the camera (AR) in a few
    minutes, and the lights appear on a floor plan. The map is the app's home
    screen, its signature feature, and it also exists as a widget.
-3. **Everything is customizable.** No hardcoded modes. Scenes, widgets and
-   automations come with good presets, and everything can be edited or
+3. **Everything is customizable.** No hardcoded modes. Moods, widgets and
+   rituals come with good presets, and everything can be edited or
    created.
+
+### Words we use
+
+The app uses its own words, not Hue's (Hue's "scene" confuses people). Use
+these everywhere in the UI.
+
+| Glim | Meaning | Hue's word |
+|---|---|---|
+| **Light** | Any lamp, bulb or strip | Light |
+| **Plug** | A smart plug: on/off only | Light (plug) |
+| **Room** | Lights in one physical room | Room |
+| **Group** | Any set of lights, across rooms | Zone |
+| **Mood** | A look for some lights (colors, brightness), for one light up to the whole home | Scene |
+| **Living mood** | A mood whose colors slowly drift | Dynamic scene |
+| **Path** | A map-aware mood that follows a route (night path) | none |
+| **Ritual** | Something that happens on its own (wake-up, arriving home) | Automation |
+| **Switch / Sensor** | A physical remote or sensor | Accessory |
+| **Bridge** | The Hue hub. Kept: it's printed on the box. Setup and settings only | Bridge |
 
 ---
 
@@ -48,8 +66,8 @@ no brightness or color.
 | Salle de bain | Salle de bain | Bulb, color |
 | Terrasse | Terrasse | Wall lantern on a smart plug, on/off. Outdoors |
 
-Also: 1 Hue tap dial switch (physical remote), and 2 existing scenes on the
-bridge ("Base", "Lumineux").
+Also: 1 Hue tap dial switch (physical remote), and 2 existing Hue scenes on the
+bridge ("Base", "Lumineux"), shown in Glim as moods.
 
 The apartment is small. Assume Salon is the largest room and includes the
 kitchen corner, Chambre and Salle de bain are next to it, and Terrasse is an
@@ -62,7 +80,7 @@ another room's outline.
 ## 3. Design principles
 
 1. **One tap to light.** The most common action (toggle a room, apply a
-   favorite scene) is one tap from the home screen.
+   favorite mood) is one tap from the home screen.
 2. **The lights are the color.** The UI chrome stays neutral so the colors of
    the lights stand out. The light's real color and brightness should be
    visible wherever a light appears.
@@ -86,8 +104,8 @@ Bottom navigation with 4 destinations, plus Settings from the top bar:
 
 1. **Map** (home): the floor plan with all lights.
 2. **Rooms:** list of rooms and lights, for precise control.
-3. **Scenes:** library, favorites, editor.
-4. **Automations:** wake-up, sleep, day rhythm, arriving home.
+3. **Moods:** library, favorites, editor.
+4. **Rituals:** wake-up, sleep, day rhythm, arriving home.
 
 A persistent **connection indicator** shows how the app reaches the lights:
 - **Home:** direct to the bridge on Wi-Fi (fast).
@@ -192,11 +210,11 @@ distinct shape for plugs. Your call.
 - **Tap inside a room (not on a light):** toggles the whole room.
 - **Long-press a room:** opens the room sheet (5.6).
 - **Lasso or two-finger select:** select several lights, then act on them
-  together (on/off, brightness, color, apply scene).
+  together (on/off, brightness, color, apply a mood).
 - Pinch to zoom and pan (the plan should fit the screen by default).
 
 **Also on this screen:**
-- A row of **favorite scenes** (chips or small cards) for one-tap use.
+- A row of **favorite moods** (chips or small cards) for one-tap use.
 - **All off** action, always reachable.
 - An **Edit map** entry point.
 
@@ -232,12 +250,12 @@ Bottom sheet for one light. Content depends on its capabilities:
 ### 5.6 Room sheet
 
 Like the light sheet, for a whole room: on/off, brightness, apply a color or
-white temperature to all its lights, the room's scenes, and the list of its
+white temperature to all its lights, the room's moods, and the list of its
 lights.
 
-### 5.7 Scenes
+### 5.7 Moods
 
-**Principle:** scenes are data. There are no fixed modes; a large preset
+**Principle:** moods are data. There are no fixed modes; a large preset
 library ships with the app, and everything can be duplicated and edited.
 
 **Library screen:**
@@ -248,18 +266,19 @@ library ships with the app, and everything can be duplicated and edited.
   - Evening: Sunset, Candlelight, Cozy, Movie
   - Color: Aurora, Tropical, Neon, Ocean, Forest
   - **Map-aware** (see below)
-- **My scenes:** user-created ones.
-- **Scenes from the Hue app** ("Base", "Lumineux"), shown as their own group.
+- **My moods:** user-created ones.
+- **From the Hue app** ("Base", "Lumineux"): scenes found on the bridge,
+  shown as moods in their own group.
 
-**Scene card:** name, a preview of its colors (palette or swatches), and for
-map-aware scenes a tiny map preview. Tap = apply to its target. Long-press or
+**Mood card:** name, a preview of its colors (palette or swatches), and for
+map-aware moods (paths) a tiny map preview. Tap = apply to its target. Long-press or
 "..." = edit, duplicate, favorite, delete.
 
-**Applying a scene** asks nothing by default: each scene has a default target
-(a room, several rooms, or the whole home). A quick "Apply to..." option
+**Applying a mood** asks nothing by default: each mood has a default target
+(a light, a room, a group, several rooms, or the whole home). A quick "Apply to..." option
 exists.
 
-**Map-aware scenes** use the light positions from the map. Each is a
+**Map-aware moods** use the light positions from the map. Each is a
 generator with parameters:
 - **Night path:** a dim warm trail between two rooms (e.g. Chambre → Salle de
   bain). Parameters: from, to, brightness, auto-off after N minutes.
@@ -267,25 +286,25 @@ generator with parameters:
   Parameters: 2–3 colors, direction (drag an arrow on the map).
 - **Spotlight:** pick a point on the map; lights get brighter the closer they
   are. Parameters: point, radius, color.
-- **Zone glow:** one color per room, picked on the map.
+- **Room glow:** one color per room, picked on the map.
 
-**Scene editor:**
+**Mood editor:**
 - Name, icon, default target.
 - Mode A, **per light:** each light in the target with its own state
   (on/off, color or white, brightness). Shown on the map *and* as a list.
 - Mode B, **palette:** pick 1–5 colors and a brightness; the app spreads them
   across the lights.
-- Mode C, **map generator:** parameters of a map-aware scene, with the map as
+- Mode C, **map generator:** parameters of a map-aware mood, with the map as
   the main editing surface.
-- Options: transition time (instant ↔ slow fade), animated (colors slowly
+- Options: transition time (instant ↔ slow fade), **living** (colors slowly
   drift, with a speed).
 - **Live preview:** the real lights update while editing, with a clear way to
   restore what was on before.
 - Save, or save as new.
 
-### 5.8 Automations
+### 5.8 Rituals
 
-A list of automations with an on/off toggle each and a one-line summary of
+A list of rituals with an on/off toggle each and a one-line summary of
 the next run ("Tomorrow 7:00, Chambre"). Tap to edit. Each type has presets
 and an editor:
 
@@ -302,7 +321,7 @@ and an editor:
    curve with drag points), apply only when a light is turned on or
    continuously.
 4. **Arriving home:** when the phone enters the area around home, turn on a
-   scene. Parameters: home location and radius (map picker), scene, only
+   mood. Parameters: home location and radius (map picker), mood, only
    after sunset (toggle), active hours. Can also do **Leaving home:** all off
    when leaving.
 
@@ -315,7 +334,7 @@ When the user adds a widget, a configuration screen opens (Android standard).
 It must also be reachable later from inside the app ("Widgets" in Settings),
 listing placed widgets.
 
-Per widget type, options include: what it controls (rooms, lights, scenes,
+Per widget type, options include: what it controls (rooms, groups, lights, moods,
 the map), order, label visibility, size behavior, style (e.g. solid,
 translucent, tinted by the light color), and corner style. Show a **live
 preview** of the widget at the top of the configuration screen.
@@ -342,16 +361,16 @@ columns × rows). Design each size, in dark and light, plus states.
    on/off. Tap toggles.
 2. **Room card, 2×1 and 2×2:** room name, on/off, current colors, and a
    brightness control made of **steps** (e.g. 25 / 50 / 75 / 100 % or − / +),
-   since widgets can't have sliders. 2×2 adds favorite scenes for that room.
+   since widgets can't have sliders. 2×2 adds favorite moods for that room.
 3. **Light or room grid, 4×1 and 4×2:** up to 4 or 8 tiles, each a room or a
    light (user's choice), showing color and on/off. Tap toggles.
-4. **Scene buttons, 4×1 and 2×2:** 2–8 scenes (user's choice), each showing
+4. **Mood buttons, 4×1 and 2×2:** 2–8 moods (user's choice), each showing
    its palette. Tap applies. Optionally includes "All off" and "Sleep fade".
 5. **Map widget, 4×2, 4×3, 4×4:** the floor plan drawn small, lights shown in
    their current color and state. **Tap a light to toggle it**, tap inside a
    room to toggle the room. Light tap targets at least ~40 dp; when the plan
    is too dense at small sizes, the widget falls back to room-level taps.
-   Optional strip of 2–3 scene buttons along the bottom.
+   Optional strip of 2–3 mood buttons along the bottom.
 
 **Widget states for every type:** normal, all off, partially on, updating
 (just tapped, waiting for confirmation), a light unreachable, offline (last
@@ -378,12 +397,12 @@ known state, muted, with a small indicator), not configured yet.
 
 ### Quick Settings tile
 
-- One tile, user picks what it controls (a room, the whole home, a scene, or
+- One tile, user picks what it controls (a room, the whole home, a mood, or
   sleep fade).
 - Monochrome 24 dp icon, a label, an optional subtitle (e.g. "3 lights on").
 - Two states only: active and inactive. Tap toggles, long-press opens the
   app.
-- Provide the icon set for the tile (room, all lights, scene, sleep).
+- Provide the icon set for the tile (room, all lights, mood, sleep).
 
 ### AR camera view
 
@@ -405,12 +424,12 @@ known state, muted, with a small indicator), not configured yet.
 
 Open to your proposal. Starting points:
 
-- **Mood:** calm, premium, a little playful during the AR scan. Not a clone
+- **Feel:** calm, premium, a little playful during the AR scan. Not a clone
   of the Philips Hue app.
 - **Palette:** neutral chrome, near-black dark theme. The only saturated
   colors on screen should usually be the lights themselves.
 - **Light representation:** a consistent visual for "a light" used across
-  the map, lists, widgets and scene previews. It must work tiny (widget grid)
+  the map, lists, widgets and mood previews. It must work tiny (widget grid)
   and large (light sheet).
 - **Icons for light types:** pendant lamp, bulb, portable lamp (Hue Go),
   light bar (Hue Play), string lights, wall lantern, smart plug.
@@ -429,8 +448,8 @@ Open to your proposal. Starting points:
 4. Map screen (5.3) with its states and the light and room sheets (5.5,
    5.6).
 5. Rooms (5.4).
-6. Scenes: library, card, editor in its 3 modes, map-aware generators (5.7).
-7. Automations: list and the 4 editors, location permission moment (5.8).
+6. Moods: library, card, editor in its 3 modes, map-aware generators (5.7).
+7. Rituals: list and the 4 editors, location permission moment (5.8).
 8. Widgets: every type and size, dark and light, all states (6), plus the
    configuration screen (5.9). **Highest priority.**
 9. Quick Settings tile and its icon set (7).

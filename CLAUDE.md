@@ -11,7 +11,7 @@ but never in a way that would need a rewrite to sell it later (see
 ## Product goals
 
 - **Main feature:** fully customizable home-screen widgets: room cards, light
-  grid, scene buttons, and a **map widget** (the floor plan itself; tap a light
+  grid, mood buttons, and a **map widget** (the floor plan itself; tap a light
   to toggle it).
 - **Map:** a floor plan of the home with the lights placed on it. Tap to toggle,
   drag for brightness, long-press for color.
@@ -38,18 +38,18 @@ but never in a way that would need a rewrite to sell it later (see
   available, and fine-tune scanned maps (drag corners/rooms/lights, add or
   delete corners, assign rooms, wall lengths shown, snapping to other corners,
   undo). Every change is saved immediately.
-- **Scenes:** never hardcode modes. Scenes are data: a large library of preset
-  scenes, fully user-editable and user-creatable, plus map-aware presets that
+- **Moods** (Hue calls them scenes): never hardcode modes. Moods are data: a
+  large library of preset moods, fully user-editable and user-creatable, plus map-aware presets that
   use light positions (e.g. night path bedroom → bathroom, gradient across the
   home, spotlight around a point).
 - **Android Quick Settings tile.**
-- **Automations:** sunrise wake-up, sleep fade, day rhythm (cool → warm white),
-  turn lights on when arriving home (geofence). Prefer bridge-side automations
-  so they run with the phone off.
+- **Rituals** (automations): sunrise wake-up, sleep fade, day rhythm (cool →
+  warm white), turn lights on when arriving home (geofence). Prefer
+  bridge-side rituals so they run with the phone off.
 - **Works away from home:** local bridge API on home Wi-Fi, Hue Remote API
   (cloud, OAuth2, same CLIP v2 shape) everywhere else. Same code path, two
   transports.
-- **Customization is a core principle.** Widgets, scenes, automations: expose
+- **Customization is a core principle.** Widgets, moods, rituals: expose
   options and presets instead of fixed behavior.
 - **Every feature listed above will be implemented.** Out of scope for now:
   paint mode, tap dial remapping, music sync.
@@ -69,7 +69,7 @@ but never in a way that would need a rewrite to sell it later (see
   competitor feature: Hue SpatialAware (official app, 2026) does an AR room scan
   and position-aware scenes, but needs a Bridge Pro, works per room, and only
   supports some presets. Our edge: whole-home map, map widget, user-editable
-  map-aware scenes, any bridge.
+  map-aware moods, any bridge.
 - 2026-10-22: Setup must work from a fresh, unconfigured bridge; scans can span
   several sessions; a manual 2D editor is required (AR isn't always available,
   and scans need fine-tuning).
@@ -87,6 +87,24 @@ but never in a way that would need a rewrite to sell it later (see
   Oriel (glowing arched window), Candela (open ring), Lucerna (wall lantern
   half pool). Store and trademark availability not yet checked: do it before
   renaming the package ID.
+- 2026-10-23: Our own vocabulary, not Hue's (Hue's "scene" confuses people).
+  See [Vocabulary](#vocabulary).
+
+## Vocabulary
+
+Use these words in UI, docs and code. Hue terms appear only in the bridge
+client (`src/lib/hue/`) and when mapping to it.
+
+- **Mood** = Hue scene: a look for some lights, from one light to the whole
+  home. Our own data, not tied to one room; bridge scenes are only created
+  behind the scenes when a ritual must run on the bridge. **Living mood** =
+  dynamic scene.
+- **Group** = Hue zone. **Room** stays Room.
+- **Path:** a map-aware mood that follows a route (night path).
+- **Ritual** = automation.
+- **Light** for lamps, bulbs and strips; **Plug** for smart plugs;
+  **Switch / Sensor** for Hue accessories.
+- **Bridge** stays (printed on the box), shown in setup and settings only.
 
 ## Design direction
 
@@ -122,15 +140,13 @@ point.**
 - **Ambient:** a faint warm glow at the top of the screen that fades as lights
   turn off. Headline reacts to the house ("The house is warmly lit").
 - **Night path icon:** dashed trajectory with 3 glowing dots ("constellation").
-  The maintainer loves it: keep it as the recurring map-aware scene symbol.
-- **Naming:** bottom nav says "Rituals" for automations (suggested, not yet
-  confirmed by the maintainer).
+  The maintainer loves it: keep it as the recurring map-aware mood (Path) symbol.
 
 ## Build order
 
 1. App skeleton, bridge pairing, rooms and lights control, 1 room widget.
 2. Map: AR scan + 2D editor + map screen + map widget prototype.
-3. Scenes: preset library, editor, map-aware generators, scene widget.
+3. Moods: preset library, editor, map-aware generators, mood widget.
 4. Cloud access (Remote API) and arriving/leaving home geofence.
 5. Quick Settings tile, sunrise wake-up, sleep fade, day rhythm.
 
@@ -214,7 +230,7 @@ should slow down the prototype; if one does, ask.
 - **No home-specific data in code.** Bridge IP/ID, room and light names live in
   storage, discovered at runtime. The values under "Hue bridge" below are for
   dev and testing only.
-- **Multi-bridge-ready data model.** Key stored data (maps, scenes, widgets) by
+- **Multi-bridge-ready data model.** Key stored data (maps, moods, widgets) by
   bridge ID, even though the maintainer uses one.
 - **Handle what the maintainer doesn't own.** Unknown light types, gradient
   strips, no rooms, 50+ lights: degrade gracefully, never crash.
