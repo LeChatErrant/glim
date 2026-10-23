@@ -56,6 +56,12 @@
               "resizeMode": "horizontal|vertical",
               "updatePeriodMillis": 1800000
             }
+          ],
+          "fonts": [
+            "./node_modules/@expo-google-fonts/jost/300Light/Jost_300Light.ttf",
+            "./node_modules/@expo-google-fonts/jost/400Regular/Jost_400Regular.ttf",
+            "./node_modules/@expo-google-fonts/geist/400Regular/Geist_400Regular.ttf",
+            "./node_modules/@expo-google-fonts/geist/500Medium/Geist_500Medium.ttf"
           ]
         }
       ],
