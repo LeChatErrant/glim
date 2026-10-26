@@ -39,7 +39,9 @@ but never in a way that would need a rewrite to sell it later (see
 - **2D map editor** (`src/app/editor.tsx`): draw rooms by hand when AR isn't
   available, and fine-tune scanned maps (drag corners/rooms/lights, add or
   delete corners, assign rooms, wall lengths shown, snapping to other corners,
-  undo). Every change is saved immediately.
+  undo, turn with two fingers or ⟳ Turn). Every change is saved immediately.
+  The editor shows the map in its saved orientation, and turning it there
+  turns the Map tab too.
 - **Moods** (Hue calls them scenes): never hardcode modes. Moods are data: a
   large library of preset moods, fully user-editable and user-creatable, plus map-aware presets that
   use light positions (e.g. night path bedroom → bathroom, gradient across the

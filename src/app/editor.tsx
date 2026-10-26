@@ -19,11 +19,12 @@ import {
   type SnapTargets,
   type SnapTolerance,
 } from '../lib/map/geometry';
-import { loadMap, saveMap, type FloorPoint, type HomeMap, type MapLight, type MapRoom } from '../lib/map/map';
+import { loadMap, saveMap, saveMapRotation, type FloorPoint, type HomeMap, type MapLight, type MapRoom } from '../lib/map/map';
 import { PLAN_COLORS } from '../lib/map/svg';
 import { Body, Button, Chip } from '../ui/components';
 import { offerMoveToRoom } from '../ui/offerMoveToRoom';
 import { RoomAssign } from '../ui/RoomAssign';
+import { turnTo } from '../ui/MapGestures';
 import { theme } from '../ui/theme';
 import { refreshAllWidgets } from '../widgets/task-handler';
 
@@ -41,8 +42,29 @@ type Selection =
   | { kind: 'add-light' }
   | null;
 
-/** Screen = meters × scale + offset. */
-type ViewBox = { scale: number; ox: number; oy: number };
+/**
+ * Screen = (meters turned by `rot`) × scale + offset. `rot` is the map's orientation, degrees
+ * clockwise on screen, the same one the Map tab shows.
+ */
+type ViewBox = { scale: number; ox: number; oy: number; rot: number };
+
+const turned = (x: number, z: number, deg: number) => {
+  const a = (deg * Math.PI) / 180;
+  return { x: Math.cos(a) * x - Math.sin(a) * z, z: Math.sin(a) * x + Math.cos(a) * z };
+};
+const screenOf = (p: FloorPoint, v: ViewBox) => {
+  const t = turned(p.x, p.z, v.rot);
+  return { sx: t.x * v.scale + v.ox, sy: t.z * v.scale + v.oy };
+};
+const metersOf = (sx: number, sy: number, v: ViewBox): FloorPoint => turned((sx - v.ox) / v.scale, (sy - v.oy) / v.scale, -v.rot);
+/** A finger move on screen, in meters on the map. */
+const deltaOf = (dx: number, dy: number, v: ViewBox): FloorPoint => turned(dx / v.scale, dy / v.scale, -v.rot);
+/** The view turned to `rot`, keeping the map point under (sx, sy) where it is. */
+function turnView(v: ViewBox, rot: number, sx: number, sy: number, scale = v.scale): ViewBox {
+  const m = metersOf(sx, sy, v);
+  const t = turned(m.x, m.z, rot);
+  return { scale, rot, ox: sx - t.x * scale, oy: sy - t.z * scale };
+}
 
 type Drag =
   | { kind: 'corner'; roomId: string; index: number }
@@ -50,7 +72,7 @@ type Drag =
   | { kind: 'light'; lightId: string }
   | { kind: 'handle'; lightId: string; end: 1 | -1 }
   | { kind: 'pan'; start: ViewBox }
-  | { kind: 'pinch'; start: ViewBox; dist: number; cx: number; cy: number };
+  | { kind: 'pinch'; start: ViewBox; dist: number; cx: number; cy: number; angle: number };
 
 const HIT_PX = 26;
 // Snap distances on screen, so snapping feels the same at any zoom.
@@ -61,14 +83,18 @@ const ACCENT = theme.accent;
 
 export default function Editor() {
   const [doc, setDoc] = useState<Doc | null>(null);
+  const [rotation, setRotation] = useState(0);
   useEffect(() => {
-    loadMap().then((m) => setDoc(m ? { rooms: m.rooms, lights: m.lights } : { rooms: [], lights: [] }));
+    loadMap().then((m) => {
+      setRotation(m?.rotation ?? 0);
+      setDoc(m ? { rooms: m.rooms, lights: m.lights } : { rooms: [], lights: [] });
+    });
   }, []);
   if (!doc) return null;
-  return <EditorCanvas initial={doc} />;
+  return <EditorCanvas initial={doc} rotation={rotation} />;
 }
 
-function EditorCanvas({ initial }: { initial: Doc }) {
+function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number }) {
   const insets = useSafeAreaInsets();
   const { snapshot, refresh } = useSnapshot(5000);
   // `?place=1`: opened to place lights missing from the map, so start on the light picker.
@@ -111,8 +137,20 @@ function EditorCanvas({ initial }: { initial: Doc }) {
     refreshAllWidgets();
   }
 
-  const toScreen = (p: FloorPoint, v: ViewBox) => ({ sx: p.x * v.scale + v.ox, sy: p.z * v.scale + v.oy });
-  const toMeters = (sx: number, sy: number, v: ViewBox): FloorPoint => ({ x: (sx - v.ox) / v.scale, z: (sy - v.oy) / v.scale });
+  const toScreen = screenOf;
+  const toMeters = metersOf;
+
+  /** Saves a new orientation: the Map tab and widgets show the map turned the same way. */
+  function saveTurn(rot: number) {
+    saveMapRotation(rot).then(() => refreshAllWidgets());
+  }
+
+  function turnRight() {
+    if (!view) return;
+    const rot = (((view.rot + 90) % 360) + 360) % 360;
+    setView(turnView(view, rot, size.w / 2, size.h / 2));
+    saveTurn(rot);
+  }
 
   /** What's under a touch, in priority order: handles of the selected room, lights, rooms. */
   function hitTest(sx: number, sy: number) {
@@ -204,18 +242,22 @@ function EditorCanvas({ initial }: { initial: Doc }) {
             const dist = Math.hypot(t1.locationX - t2.locationX, t1.locationY - t2.locationY);
             const cx = (t1.locationX + t2.locationX) / 2;
             const cy = (t1.locationY + t2.locationY) / 2;
+            const angle = (Math.atan2(t2.pageY - t1.pageY, t2.pageX - t1.pageX) * 180) / Math.PI;
             if (drag.current?.kind !== 'pinch') {
-              drag.current = { kind: 'pinch', start: v, dist, cx, cy };
+              drag.current = { kind: 'pinch', start: v, dist, cx, cy, angle };
               setDraft(null);
               setGuides([]);
               return;
             }
             const p = drag.current;
             const scale = Math.max(10, Math.min(600, p.start.scale * (dist / p.dist)));
-            // Keep the point between the fingers fixed while zooming.
-            const mx = (p.cx - p.start.ox) / p.start.scale;
-            const my = (p.cy - p.start.oy) / p.start.scale;
-            setView({ scale, ox: cx - mx * scale, oy: cy - my * scale });
+            // A small wobble while zooming isn't a twist.
+            let twist = (((angle - p.angle + 540) % 360) + 360) % 360 - 180;
+            if (Math.abs(twist) < 10) twist = 0;
+            // The point that was between the fingers follows them, zoomed and turned.
+            const m = metersOf(p.cx, p.cy, p.start);
+            const t = turned(m.x, m.z, p.start.rot + twist);
+            setView({ scale, rot: p.start.rot + twist, ox: cx - t.x * scale, oy: cy - t.z * scale });
             return;
           }
           const d = drag.current;
@@ -224,8 +266,7 @@ function EditorCanvas({ initial }: { initial: Doc }) {
             setView({ ...d.start, ox: d.start.ox + g.dx, oy: d.start.oy + g.dy });
             return;
           }
-          const dx = g.dx / v.scale;
-          const dz = g.dy / v.scale;
+          const { x: dx, z: dz } = deltaOf(g.dx, g.dy, v);
           const from = dragBase.current ?? base;
           // Corners and rooms snap live, so what's shown is what gets saved on release.
           if (d.kind === 'corner') {
@@ -276,6 +317,13 @@ function EditorCanvas({ initial }: { initial: Doc }) {
             else if (hit?.kind === 'room') setSel({ kind: 'room', roomId: hit.roomId });
             else setSel(null);
             return;
+          }
+          // A twist settles on a quarter turn when close to one, and becomes the map's orientation.
+          const v = live.current.view;
+          if (d?.kind === 'pinch' && v && v.rot !== d.start.rot) {
+            const rot = ((turnTo(d.start.rot, v.rot - d.start.rot) % 360) + 360) % 360;
+            setView(turnView(v, rot, d.cx, d.cy));
+            saveTurn(rot);
           }
           const draftDoc = live.current.shown;
           if (!d || d.kind === 'pan' || d.kind === 'pinch' || draftDoc === live.current.doc) return;
@@ -359,9 +407,14 @@ function EditorCanvas({ initial }: { initial: Doc }) {
         options={{
           title: 'Edit map',
           headerRight: () => (
-            <Pressable onPress={undo} disabled={!history.length} hitSlop={12} style={{ opacity: history.length ? 1 : 0.35, padding: 8 }}>
-              <Text style={{ color: theme.text, fontSize: 16 }}>↶ Undo</Text>
-            </Pressable>
+            <View style={{ flexDirection: 'row' }}>
+              <Pressable onPress={turnRight} accessibilityLabel="Turn the map a quarter turn right" hitSlop={8} style={{ padding: 8 }}>
+                <Text style={{ color: theme.text, fontSize: 16 }}>⟳ Turn</Text>
+              </Pressable>
+              <Pressable onPress={undo} disabled={!history.length} hitSlop={12} style={{ opacity: history.length ? 1 : 0.35, padding: 8 }}>
+                <Text style={{ color: theme.text, fontSize: 16 }}>↶ Undo</Text>
+              </Pressable>
+            </View>
           ),
         }}
       />
@@ -371,7 +424,7 @@ function EditorCanvas({ initial }: { initial: Doc }) {
           const { width: w, height: h } = e.nativeEvent.layout;
           setSize({ w, h });
           // Fit the whole plan on screen the first time we know the canvas size.
-          if (w && !view) setView(fitView(doc, w, h));
+          if (w && !view) setView(fitView(doc, w, h, rotation));
         }}
         {...responder.panHandlers}
       >
@@ -531,8 +584,8 @@ function snapAngle(deg: number, rooms: MapRoom[]): { deg: number; wall?: [FloorP
 }
 
 function Handle({ l, rooms, kind, view }: { l: MapLight; rooms: MapRoom[]; kind: 'string' | 'bar' | 'lantern'; view: ViewBox }) {
-  const X = (p: FloorPoint) => p.x * view.scale + view.ox;
-  const Y = (p: FloorPoint) => p.z * view.scale + view.oy;
+  const X = (p: FloorPoint) => screenOf(p, view).sx;
+  const Y = (p: FloorPoint) => screenOf(p, view).sy;
   const a = handleAt(l, rooms, kind, view.scale, 1);
   const b = kind === 'string' ? handleAt(l, rooms, kind, view.scale, -1) : l;
   return (
@@ -565,15 +618,15 @@ const newRoomId = () => `room-${Date.now()}`;
 
 const toHomeMap = (d: Doc): HomeMap => ({ version: 2, rooms: d.rooms, lights: d.lights, updatedAt: Date.now() });
 
-/** A view that fits the whole plan in a canvas of w × h. */
-function fitView(doc: Doc, w: number, h: number): ViewBox {
-  const pts = [...doc.rooms.flatMap((r) => r.points), ...doc.lights];
+/** A view that fits the whole plan, turned by `rot`, in a canvas of w × h. */
+function fitView(doc: Doc, w: number, h: number, rot: number): ViewBox {
+  const pts = [...doc.rooms.flatMap((r) => r.points), ...doc.lights].map((p) => turned(p.x, p.z, rot));
   const minX = pts.length ? Math.min(...pts.map((p) => p.x)) : -3;
   const maxX = pts.length ? Math.max(...pts.map((p) => p.x)) : 3;
   const minZ = pts.length ? Math.min(...pts.map((p) => p.z)) : -3;
   const maxZ = pts.length ? Math.max(...pts.map((p) => p.z)) : 3;
   const scale = Math.min((w - 60) / Math.max(maxX - minX, 2), (h - 60) / Math.max(maxZ - minZ, 2));
-  return { scale, ox: (w - (maxX + minX) * scale) / 2, oy: (h - (maxZ + minZ) * scale) / 2 };
+  return { scale, rot, ox: (w - (maxX + minX) * scale) / 2, oy: (h - (maxZ + minZ) * scale) / 2 };
 }
 
 /** Snap distances in meters for the current zoom. */
@@ -614,19 +667,20 @@ function Canvas({
   width: number;
   height: number;
 }) {
-  const X = (p: FloorPoint) => p.x * view.scale + view.ox;
-  const Y = (p: FloorPoint) => p.z * view.scale + view.oy;
+  const X = (p: FloorPoint) => screenOf(p, view).sx;
+  const Y = (p: FloorPoint) => screenOf(p, view).sy;
   const selRoomId = sel?.kind === 'room' || sel?.kind === 'corner' ? sel.roomId : null;
 
-  // 1 m grid, so sizes are readable at a glance.
+  // 1 m grid in map coordinates (it turns with the map), so sizes are readable at a glance.
   const grid: JSX.Element[] = [];
-  const x0 = Math.floor(-view.ox / view.scale);
-  const x1 = Math.ceil((width - view.ox) / view.scale);
-  const z0 = Math.floor(-view.oy / view.scale);
-  const z1 = Math.ceil((height - view.oy) / view.scale);
-  if (x1 - x0 < 80) {
-    for (let x = x0; x <= x1; x++) grid.push(<Line key={`x${x}`} x1={X({ x, z: 0 })} x2={X({ x, z: 0 })} y1={0} y2={height} stroke="#ffffff" strokeOpacity={0.05} />);
-    for (let z = z0; z <= z1; z++) grid.push(<Line key={`z${z}`} y1={Y({ x: 0, z })} y2={Y({ x: 0, z })} x1={0} x2={width} stroke="#ffffff" strokeOpacity={0.05} />);
+  const ends = [metersOf(0, 0, view), metersOf(width, 0, view), metersOf(0, height, view), metersOf(width, height, view)];
+  const x0 = Math.floor(Math.min(...ends.map((p) => p.x)));
+  const x1 = Math.ceil(Math.max(...ends.map((p) => p.x)));
+  const z0 = Math.floor(Math.min(...ends.map((p) => p.z)));
+  const z1 = Math.ceil(Math.max(...ends.map((p) => p.z)));
+  if (x1 - x0 < 80 && z1 - z0 < 80) {
+    for (let x = x0; x <= x1; x++) grid.push(<Line key={`x${x}`} x1={X({ x, z: z0 })} y1={Y({ x, z: z0 })} x2={X({ x, z: z1 })} y2={Y({ x, z: z1 })} stroke="#ffffff" strokeOpacity={0.05} />);
+    for (let z = z0; z <= z1; z++) grid.push(<Line key={`z${z}`} x1={X({ x: x0, z })} y1={Y({ x: x0, z })} x2={X({ x: x1, z })} y2={Y({ x: x1, z })} stroke="#ffffff" strokeOpacity={0.05} />);
   }
 
   const ordered = [...doc.rooms].sort((a, b) => Number(a.id === selRoomId) - Number(b.id === selRoomId));
@@ -638,7 +692,8 @@ function Canvas({
         if (r.points.length < 2) return null;
         const selected = r.id === selRoomId;
         const d = r.points.map((p, i) => `${i ? 'L' : 'M'}${X(p)},${Y(p)}`).join(' ') + ' Z';
-        const c = { x: centroid(r.points).x, z: Math.min(...r.points.map((p) => p.z)) + 22 / view.scale };
+        // Name near the top of the room as shown on screen, whatever the orientation.
+        const label = { sx: X(centroid(r.points)), sy: Math.min(...r.points.map(Y)) + 22 };
         return (
           <G key={r.id}>
             <Path
@@ -648,7 +703,7 @@ function Canvas({
               strokeWidth={selected ? 3 : 2}
               strokeDasharray={r.outdoor ? '6 4' : undefined}
             />
-            <SvgText x={X(c)} y={Y(c)} fill={r.hueRoomId ? PLAN_COLORS.label : theme.danger} fontSize={13} textAnchor="middle">
+            <SvgText x={label.sx} y={label.sy} fill={r.hueRoomId ? PLAN_COLORS.label : theme.danger} fontSize={13} textAnchor="middle">
               {r.hueRoomId ? r.name : `${r.name} (no Hue room)`}
             </SvgText>
             {selected &&
