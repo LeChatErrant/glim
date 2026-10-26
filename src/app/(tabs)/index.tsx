@@ -72,8 +72,11 @@ function MapScreen() {
 
   const anyOn = lights.some(isLit);
   const selectedLight = lights.find((l) => l.id === selected);
-  // Lights on the bridge but not on the map (added to a room, new bulbs...), unless set aside.
-  const missing = map ? lights.filter((l) => !map.lights.some((m) => m.lightId === l.id) && !hidden.includes(l.id)) : [];
+  // Lights in a room drawn on the map but not placed in it (just added to that room...), unless set aside.
+  // Lights in unmapped rooms, or in no room, aren't missing: their room isn't on the map either.
+  const missing = map
+    ? lights.filter((l) => l.roomId && map.rooms.some((r) => r.hueRoomId === l.roomId) && !map.lights.some((m) => m.lightId === l.id) && !hidden.includes(l.id))
+    : [];
   const hideMissing = () => {
     const next = [...hidden, ...missing.map((l) => l.id)];
     setHidden(next);

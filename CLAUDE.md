@@ -130,7 +130,8 @@ but never in a way that would need a rewrite to sell it later (see
   the Rooms tab ("On their own"), not inside a fake room. "Part of" on a light
   opens a picker: one room (or none, or a new one) and any groups. Room and
   group light pickers list lights under their room.
-- 2026-10-26: Lights missing from the map are never placed automatically. The
+- 2026-10-26: Lights in a mapped room but not placed in it are never placed
+  automatically (lights in unmapped rooms or no room are not "missing"). The
   Map tab shows a dashed note ("Hue Play 1 and Hue Play 2 aren't on your map")
   with Place (on screen: the editor opens on the light picker and each light
   lands in its room; or with the camera) and Not now (hides those lights, per
