@@ -123,8 +123,8 @@ but never in a way that would need a rewrite to sell it later (see
   one request per light. The Moods tab lists them by room/group; each light's
   color can be kept as a favorite. Presets and map-aware moods come next.
 - 2026-10-26: Continuing a map starts with its own screen ("Where do you start
-  from?"): tap a corner of a saved room on a full plan, the longer wall to the
-  next corner is picked (Other wall flips it), then mark corner 1 and corner 2
+  from?"): tap two corners on a full plan (any two, far apart is best; 2026-10-27,
+  replaced "pick a corner, flip the wall"), then mark corner 1 and corner 2
   on the floor with a live "2.4 m of 3.1 m" readout. The AR view always shows
   a visor (ring + ticks, dashed when aiming at nothing); every placed point
   ripples on the floor and buzzes; the rubber band shows its length.

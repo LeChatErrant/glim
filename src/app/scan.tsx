@@ -57,8 +57,8 @@ export default function Scan() {
   const firstRoom = snapshot?.rooms[0]?.name;
   const steps = hasMap
     ? [
-        ['Pick a wall on your map', 'In a room you already scanned, one you can see'],
-        ['Mark its two corners on the floor', 'So the camera knows where your map is'],
+        ['Pick two corners on your map', 'Corners you can see from where you stand'],
+        ['Mark them on the floor', 'So the camera knows where your map is'],
         ['Add rooms, redraw one, or move lights', 'Each change is saved right away'],
       ]
     : [
@@ -159,7 +159,7 @@ type ScanState = {
   step: Step;
   /** AR → map coordinates. Known after aligning (continue) or after the first room (new map). */
   toMap: Transform | null;
-  /** The wall of a saved room the user lines up with (continuing a map). */
+  /** The two saved corners the user lines up with (continuing a map). */
   anchor: Anchor | null;
   /** First matched corner while aligning with a saved map. */
   alignFirst: { ar: FloorPoint; map: FloorPoint } | null;
@@ -345,7 +345,7 @@ function Scanner({ base }: { base: HomeMap | null }) {
         "Those corners don't match",
         `They're ${dAr.toFixed(1)} m apart here, but ${dMap.toFixed(1)} m on your map. One of them is probably off.`,
         [
-          { text: 'Pick another wall', onPress: () => commit({ ...scan, alignFirst: null, step: 'alignPick' }) },
+          { text: 'Pick other corners', onPress: () => commit({ ...scan, alignFirst: null, step: 'alignPick' }) },
           { text: 'Redo both', onPress: () => commit({ ...scan, alignFirst: null }) },
           { text: 'Redo corner 2', style: 'cancel' },
         ],

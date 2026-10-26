@@ -17,6 +17,7 @@ import android.os.SystemClock
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
 import com.google.ar.core.Coordinates2d
@@ -109,8 +110,12 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
     surfaceView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
     surfaceView.setRenderer(this)
     surfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-    addView(surfaceView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-    addView(overlayView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+    // ExpoView is a horizontal LinearLayout: two full-size children side by side would leave the
+    // overlay 0 px wide. A FrameLayout stacks the overlay on top of the camera.
+    val stack = FrameLayout(context)
+    stack.addView(surfaceView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+    stack.addView(overlayView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+    addView(stack, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
   }
 
   // ---- Lifecycle -------------------------------------------------------------
