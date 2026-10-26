@@ -41,6 +41,12 @@ export function ManageSheet({ editing, snapshot, onClose, onSaved }: { editing: 
   const [error, setError] = useState<string | null>(null);
 
   const roomOf = (l: Light) => snapshot.rooms.find((r) => r.lightIds.includes(l.id));
+  // Lights listed under their room (the room being edited first), then those in no room.
+  const ordered = existing && isRoom ? [existing as Room, ...snapshot.rooms.filter((r) => r.id !== existing.id)] : snapshot.rooms;
+  const sections = [
+    ...ordered.map((r) => ({ key: r.id, title: r.name, lights: snapshot.lights.filter((l) => roomOf(l)?.id === r.id) })),
+    { key: 'none', title: 'In no room', lights: snapshot.lights.filter((l) => !roomOf(l)) },
+  ].filter((sec) => sec.lights.length);
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const what = isRoom ? 'room' : 'group';
 
@@ -106,47 +112,66 @@ export function ManageSheet({ editing, snapshot, onClose, onSaved }: { editing: 
             A group can mix lights from several rooms.
           </Txt>
         )}
-        <View style={{ marginTop: 6 }}>
-          {snapshot.lights.map((l) => {
-            const on = picked.includes(l.id);
-            const elsewhere = isRoom && !on ? roomOf(l) : undefined;
-            const sub = elsewhere && elsewhere.id !== existing?.id ? `${lightTypeLabel(l)} · in ${elsewhere.name}` : lightTypeLabel(l);
-            return (
-              <Pressable
-                key={l.id}
-                onPress={() => toggle(l.id)}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: on }}
-                accessibilityLabel={l.name}
-                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, height: 52, borderTopWidth: 1, borderTopColor: hairline(0.08), opacity: pressed ? 0.6 : 1 })}
-              >
-                <LightMarker light={l} size={24} ground={color.sheet} glow={false} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Txt size={14} numberOfLines={1} style={{ lineHeight: 18 }}>
-                    {l.name}
-                  </Txt>
-                  <Txt size={12} tone="muted" numberOfLines={1} style={{ lineHeight: 16 }}>
-                    {sub}
-                  </Txt>
-                </View>
-                <View
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 11,
-                    borderWidth: 1,
-                    borderColor: on ? color.champagne : hairline(0.3),
-                    backgroundColor: on ? color.champagne : 'transparent',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {on && <Icon name="check" size={12} tint={color.onChampagne} stroke={2.2} />}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
+        {sections.map((sec) => {
+          const ids = sec.lights.map((l) => l.id);
+          const all = ids.every((id) => picked.includes(id));
+          return (
+            <View key={sec.key} style={{ marginTop: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 28 }}>
+                <Label tone="label">{sec.title}</Label>
+                {!isRoom && ids.length > 1 && (
+                  <Pressable
+                    onPress={() => setPicked((p) => (all ? p.filter((id) => !ids.includes(id)) : [...p.filter((id) => !ids.includes(id)), ...ids]))}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${all ? 'Remove' : 'Add'} all lights of ${sec.title}`}
+                    hitSlop={8}
+                  >
+                    <Txt size={12} tone="champagne">
+                      {all ? 'None' : 'All'}
+                    </Txt>
+                  </Pressable>
+                )}
+              </View>
+              {sec.lights.map((l) => {
+                const on = picked.includes(l.id);
+                return (
+                  <Pressable
+                    key={l.id}
+                    onPress={() => toggle(l.id)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: on }}
+                    accessibilityLabel={l.name}
+                    style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, height: 52, borderTopWidth: 1, borderTopColor: hairline(0.08), opacity: pressed ? 0.6 : 1 })}
+                  >
+                    <LightMarker light={l} size={24} ground={color.sheet} glow={false} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Txt size={14} numberOfLines={1} style={{ lineHeight: 18 }}>
+                        {l.name}
+                      </Txt>
+                      <Txt size={12} tone="muted" numberOfLines={1} style={{ lineHeight: 16 }}>
+                        {lightTypeLabel(l)}
+                      </Txt>
+                    </View>
+                    <View
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: 11,
+                        borderWidth: 1,
+                        borderColor: on ? color.champagne : hairline(0.3),
+                        backgroundColor: on ? color.champagne : 'transparent',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {on && <Icon name="check" size={12} tint={color.onChampagne} stroke={2.2} />}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          );
+        })}
         {isRoom && (
           <Txt size={12} tone="muted" style={{ marginTop: 6 }}>
             A light is in one room only: adding it here takes it out of its other room.

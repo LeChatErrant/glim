@@ -17,6 +17,7 @@ import { Icon } from '../../ui/icons';
 import { Brightness, Dial, ModeTabs, Orb, orbInk, PowerButton, ringColor, useThrottle } from '../../ui/LightControls';
 import { ColorRow } from '../../ui/Favorites';
 import { LightSetup } from '../../ui/LightSetup';
+import { PartOfSheet } from '../../ui/PartOfSheet';
 import { Display, Label, Txt } from '../../ui/text';
 import { color, hairline } from '../../ui/theme';
 
@@ -40,9 +41,9 @@ export default function LightScreen() {
           <Txt tone="secondary">It may have been removed from the bridge.</Txt>
         </View>
       ) : light.kind === 'onoff' ? (
-        <PlugView light={light} room={room} connection={connection} act={act} />
+        <PlugView light={light} room={room} snapshot={snapshot} connection={connection} act={act} />
       ) : (
-        <LightView light={light} room={room} act={act} />
+        <LightView light={light} room={room} snapshot={snapshot} act={act} />
       )}
     </View>
   );
@@ -107,30 +108,38 @@ function Unreachable({ light }: { light: Light }) {
   );
 }
 
-/** "Part of · Salon ›": opens the room sheet. */
-function PartOf({ room }: { room: Room | undefined }) {
-  if (!room) {
-    return (
-      <View style={{ gap: 3 }}>
-        <Label>Part of</Label>
-        <Txt size={14} tone="muted">
-          No room
-        </Txt>
-      </View>
-    );
-  }
+/** "Salon · +1 group": the light's room, and how many groups it is also in. */
+function partOfText(light: Light, room: Room | undefined, snapshot: Snapshot) {
+  const groups = (snapshot.zones ?? []).filter((z) => z.lightIds.includes(light.id)).length;
+  const g = groups ? `${groups} ${groups === 1 ? 'group' : 'groups'}` : '';
+  return room ? (g ? `${room.name} · +${g}` : room.name) : g ? `No room · ${g}` : 'No room';
+}
+
+/** "Part of · Salon ›": tap to change its room and groups. */
+function PartOf({ light, room, snapshot, act }: { light: Light; room: Room | undefined; snapshot: Snapshot; act: Act }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Pressable onPress={() => router.push(`/room/${room.id}`)} accessibilityRole="button" accessibilityLabel={`Open ${room.name}`} style={({ pressed }) => ({ gap: 3, minHeight: 44, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
-      <Label>Part of</Label>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-        <Txt size={14}>{room.name}</Txt>
-        <Icon name="chevronRight" size={12} tint={color.muted} stroke={1.6} />
-      </View>
-    </Pressable>
+    <>
+      <Pressable
+        onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`Part of ${partOfText(light, room, snapshot)}. Change room or groups`}
+        style={({ pressed }) => ({ gap: 3, minHeight: 44, flexShrink: 1, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+      >
+        <Label>Part of</Label>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Txt size={14} tone={room ? 'ivory' : 'muted'} numberOfLines={1} style={{ flexShrink: 1 }}>
+            {partOfText(light, room, snapshot)}
+          </Txt>
+          <Icon name="chevronDown" size={12} tint={color.champagne} stroke={1.6} />
+        </View>
+      </Pressable>
+      {open && <PartOfSheet light={light} snapshot={snapshot} act={act} onClose={() => setOpen(false)} />}
+    </>
   );
 }
 
-function LightView({ light, room, act }: { light: Light; room: Room | undefined; act: Act }) {
+function LightView({ light, room, snapshot, act }: { light: Light; room: Room | undefined; snapshot: Snapshot; act: Act }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const throttle = useThrottle();
@@ -348,7 +357,7 @@ function LightView({ light, room, act }: { light: Light; room: Room | undefined;
       )}
 
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', marginHorizontal: 24, marginBottom: 28, paddingTop: 16 }}>
-        <PartOf room={room} />
+        <PartOf light={light} room={room} snapshot={snapshot} act={act} />
         <PowerButton on={on} label={on ? `Turn ${light.name} off` : `Turn ${light.name} on`} onPress={() => act((s) => planToggleLight(s, light.id))} />
       </View>
     </View>
@@ -356,8 +365,9 @@ function LightView({ light, room, act }: { light: Light; room: Room | undefined;
 }
 
 /** Smart plugs: on/off only, with a hero of what's plugged in. */
-function PlugView({ light, room, connection, act }: { light: Light; room: Room | undefined; connection: Connection; act: Act }) {
+function PlugView({ light, room, snapshot, connection, act }: { light: Light; room: Room | undefined; snapshot: Snapshot; connection: Connection; act: Act }) {
   const { width } = useWindowDimensions();
+  const [partOf, setPartOf] = useState(false);
   const { blinking, blink } = useBlink(light);
   const on = isLit(light);
   const shape = lightShape(light.archetype);
@@ -386,20 +396,21 @@ function PlugView({ light, room, connection, act }: { light: Light; room: Room |
 
       <View style={{ marginHorizontal: 24, marginTop: 26, borderTopWidth: 1, borderTopColor: hairline(0.1) }}>
         <Pressable
-          disabled={!room}
-          onPress={() => room && router.push(`/room/${room.id}`)}
+          onPress={() => setPartOf(true)}
           accessibilityRole="button"
+          accessibilityLabel={`Part of ${partOfText(light, room, snapshot)}. Change room or groups`}
           style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, height: 54, borderBottomWidth: 1, borderBottomColor: hairline(0.1), opacity: pressed ? 0.6 : 1 })}
         >
           <Txt size={14} tone="secondary" style={{ flex: 1 }}>
             Part of
           </Txt>
-          <Txt size={14} tone={room ? 'ivory' : 'muted'}>
-            {room?.name ?? 'No room'}
+          <Txt size={14} tone={room ? 'ivory' : 'muted'} numberOfLines={1} style={{ flexShrink: 1 }}>
+            {partOfText(light, room, snapshot)}
           </Txt>
-          {room && <Icon name="chevronRight" size={14} tint={color.muted} stroke={1.6} />}
+          <Icon name="chevronDown" size={14} tint={color.champagne} stroke={1.6} />
         </Pressable>
       </View>
+      {partOf && <PartOfSheet light={light} snapshot={snapshot} act={act} onClose={() => setPartOf(false)} />}
 
       <View style={{ marginTop: 'auto', marginHorizontal: 24, marginBottom: 28 }}>
         <PillButton title={blinking ? 'Blinking' : 'Blink'} icon="blink" onPress={blink} />

@@ -120,6 +120,16 @@ but never in a way that would need a rewrite to sell it later (see
   to update/rename/delete. Stored per bridge (`src/lib/moods.ts`), applied with
   one request per light. The Moods tab lists them by room/group; each light's
   color can be kept as a favorite. Presets and map-aware moods come next.
+- 2026-10-26: Continuing a map starts with its own screen ("Where do you start
+  from?"): tap a corner of a saved room on a full plan, the longer wall to the
+  next corner is picked (Other wall flips it), then mark corner 1 and corner 2
+  on the floor with a live "2.4 m of 3.1 m" readout. The AR view always shows
+  a visor (ring + ticks, dashed when aiming at nothing); every placed point
+  ripples on the floor and buzzes; the rubber band shows its length.
+- 2026-10-26: Rooms are optional. Lights in no room show as their own cards in
+  the Rooms tab ("On their own"), not inside a fake room. "Part of" on a light
+  opens a picker: one room (or none, or a new one) and any groups. Room and
+  group light pickers list lights under their room.
 
 ## Vocabulary
 

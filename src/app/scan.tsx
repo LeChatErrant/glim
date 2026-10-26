@@ -13,6 +13,7 @@ import { loadMap, saveMap, type FloorPoint, type HomeMap, type MapLight, type Ma
 import { PillButton } from '../ui/controls';
 import { offerMoveToRoom } from '../ui/offerMoveToRoom';
 import { AR_INK, CamButton, ChoiceRow, Choice, Fades, FindingFloor, MiniMap, ScanTitle, ScanTop, Sheet, Shutter, SideButton, TrackingLost, type MiniDot, type MiniOutline } from '../ui/scan/parts';
+import { alignTolerance, anchorCorners, AimSheet, PickStart, type Anchor } from '../ui/scan/align';
 import { LightsSheet, NameSheet, type LightRowState } from '../ui/scan/sheets';
 import { Display, Label, Txt } from '../ui/text';
 import { color, hairline } from '../ui/theme';
@@ -56,9 +57,9 @@ export default function Scan() {
   const firstRoom = snapshot?.rooms[0]?.name;
   const steps = hasMap
     ? [
-        ['Stand in a room you already scanned', 'You match 2 of its corners so everything lines up'],
+        ['Pick a wall on your map', 'In a room you already scanned, one you can see'],
+        ['Mark its two corners on the floor', 'So the camera knows where your map is'],
         ['Add rooms, redraw one, or move lights', 'Each change is saved right away'],
-        ['Walk slowly, phone toward the floor', 'Corners are where the walls meet the floor'],
       ]
     : [
         ['Turn your lights on', "Each one blinks when it's time to place it"],
@@ -148,7 +149,7 @@ export default function Scan() {
   );
 }
 
-type Step = 'align' | 'hub' | 'pickRoom' | 'corners' | 'name' | 'lights';
+type Step = 'alignPick' | 'align' | 'hub' | 'pickRoom' | 'corners' | 'name' | 'lights';
 
 /**
  * Everything the user builds during a scan. Each change is recorded so it can be undone.
@@ -158,6 +159,8 @@ type ScanState = {
   step: Step;
   /** AR → map coordinates. Known after aligning (continue) or after the first room (new map). */
   toMap: Transform | null;
+  /** The wall of a saved room the user lines up with (continuing a map). */
+  anchor: Anchor | null;
   /** First matched corner while aligning with a saved map. */
   alignFirst: { ar: FloorPoint; map: FloorPoint } | null;
   /** Rooms traced this session. A redrawn saved room keeps its ID and replaces it. */
@@ -188,8 +191,9 @@ function Scanner({ base }: { base: HomeMap | null }) {
   const [status, setStatus] = useState<ArStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scan, setScan] = useState<ScanState>({
-    step: base ? 'align' : 'corners',
+    step: base ? 'alignPick' : 'corners',
     toMap: null,
+    anchor: null,
     alignFirst: null,
     rooms: [],
     current: [],
@@ -202,8 +206,6 @@ function Scanner({ base }: { base: HomeMap | null }) {
   const [active, setActive] = useState<string | null>(null);
   const [snap, setSnap] = useState(true);
   const [showOthers, setShowOthers] = useState(false);
-  const [anchorRoomId, setAnchorRoomId] = useState<string | null>(base?.rooms[0]?.id ?? null);
-  const [anchorCorner, setAnchorCorner] = useState(0);
   const { step, rooms, current, lights, toMap } = scan;
   const floor = useFloorFlash(!!status?.floorFound);
   const lost = useLost(status);
@@ -327,8 +329,8 @@ function Scanner({ base }: { base: HomeMap | null }) {
 
   // ---- Aligning with a saved map ---------------------------------------------
 
-  const anchorRoom = base?.rooms.find((r) => r.id === anchorRoomId);
-  const anchorTarget = anchorRoom ? anchorRoom.points[(anchorCorner + (scan.alignFirst ? 1 : 0)) % anchorRoom.points.length] : undefined;
+  const anchorEnds = base && scan.anchor ? anchorCorners(base, scan.anchor) : null;
+  const anchorTarget = anchorEnds ? anchorEnds[scan.alignFirst ? 1 : 0] : undefined;
 
   async function matchCorner() {
     const p = await ar.current?.capture();
@@ -338,12 +340,17 @@ function Scanner({ base }: { base: HomeMap | null }) {
     const first = scan.alignFirst;
     const dAr = distance(first.ar, here);
     const dMap = distance(first.map, anchorTarget);
-    if (Math.abs(dAr - dMap) > Math.max(0.4, dMap * 0.25)) {
+    if (Math.abs(dAr - dMap) > alignTolerance(dMap)) {
       Alert.alert(
         "Those corners don't match",
-        `They're ${dAr.toFixed(1)} m apart here, but ${dMap.toFixed(1)} m on your map. Check you aimed at the highlighted corners, then try again.`,
+        `They're ${dAr.toFixed(1)} m apart here, but ${dMap.toFixed(1)} m on your map. One of them is probably off.`,
+        [
+          { text: 'Pick another wall', onPress: () => commit({ ...scan, alignFirst: null, step: 'alignPick' }) },
+          { text: 'Redo both', onPress: () => commit({ ...scan, alignFirst: null }) },
+          { text: 'Redo corner 2', style: 'cancel' },
+        ],
       );
-      return commit({ ...scan, alignFirst: null });
+      return;
     }
     commit({ ...scan, alignFirst: null, toMap: fromTwoPoints(first.ar, here, first.map, anchorTarget), step: 'hub' });
   }
@@ -411,9 +418,11 @@ function Scanner({ base }: { base: HomeMap | null }) {
       polylines: [
         ...baseRoomsAr.map((r) => ({ points: r.points, closed: true, color: r.id === scan.retracing ? REDRAW_INK : BASE_INK_AR })),
         ...rooms.map((r) => ({ points: r.points, closed: true, color: r.id === scan.retracing ? REDRAW_INK : AR_INK })),
-        { points: current, closed: false, color: AR_INK },
+        { points: step === 'align' && scan.alignFirst ? [scan.alignFirst.ar] : current, closed: false, color: step === 'align' ? REDRAW_INK : AR_INK },
       ],
       markers: [
+        // Lining up: corner 1 stays marked on the floor while the user walks to corner 2.
+        ...(step === 'align' && scan.alignFirst ? [{ ...scan.alignFirst.ar, kind: 'corner' as const, color: REDRAW_INK, label: '1', edge: true }] : []),
         // Numbered corners of the room being traced; the first one is the target to close it.
         ...current.map((p, i) => ({ ...p, kind: 'corner' as const, color: AR_INK, label: i === 0 ? 'Start' : String(i + 1), edge: i === 0 && current.length >= 2 })),
         ...allLights.map((l) => {
@@ -421,21 +430,15 @@ function Scanner({ base }: { base: HomeMap | null }) {
           return { x: l.x, z: l.z, kind: 'light' as const, color: light?.on ? light.color : '#8F887D', label: light?.name, edge: l.lightId === active };
         }),
       ],
-      activeIndex: step === 'corners' ? baseRoomsAr.length + rooms.length : -1,
+      activeIndex: step === 'corners' || step === 'align' ? baseRoomsAr.length + rooms.length : -1,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rooms, current, lights, step, lightById, toMap, active, scan.retracing],
+    [rooms, current, lights, step, lightById, toMap, active, scan.retracing, scan.alignFirst],
   );
 
   const mini: { outlines: MiniOutline[]; dots: MiniDot[]; camera?: { p: FloorPoint; heading?: number } } =
-    step === 'align' && base
-      ? {
-          outlines: base.rooms.map((r) => ({ points: r.points, ink: r.id === anchorRoomId ? AR_INK : BASE_INK })),
-          dots: [
-            ...(scan.alignFirst ? [{ p: scan.alignFirst.map, ink: color.connected, kind: 'corner' as const }] : []),
-            ...(anchorTarget ? [{ p: anchorTarget, ink: color.champagne, kind: 'target' as const }] : []),
-          ],
-        }
+    step === 'align' || step === 'alignPick'
+      ? { outlines: [], dots: [] }
       : {
           outlines: [
             ...allRooms.map((r) => ({ points: r.points, ink: r.id === scan.retracing ? REDRAW_INK : rooms.includes(r) ? AR_INK : BASE_INK, dashed: r.outdoor })),
@@ -473,9 +476,12 @@ function Scanner({ base }: { base: HomeMap | null }) {
       />
       <Fades bottom={step === 'corners' ? 300 : 0} />
 
-      {step === 'align' && (
-        <ScanTitle first="Line up with" accent="your map" sub={scan.alignFirst ? 'NOW THE NEXT CORNER' : 'AIM AT THE CORNER ON THE MAP'} />
-      )}
+      {step === 'align' &&
+        (scan.alignFirst ? (
+          <ScanTitle first="Now aim at" accent="corner 2" sub="FOLLOW THE WALL" />
+        ) : (
+          <ScanTitle first="Aim the visor at" accent="corner 1" sub="WHERE THE WALLS MEET THE FLOOR" />
+        ))}
       {step === 'corners' && tracking && status?.floorFound && <CornerTitle status={status} corners={current.length} />}
       {step === 'lights' && active && <LightHint light={lightById.get(active)} />}
       {step === 'hub' && <ScanTitle first={rooms.length || lights.length ? 'Saved.' : 'Lined up.'} accent="What next?" />}
@@ -487,7 +493,7 @@ function Scanner({ base }: { base: HomeMap | null }) {
         label={
           error ??
           (step === 'align'
-            ? `Line up · corner ${scan.alignFirst ? 2 : 1} of 2`
+            ? `Line up · step ${scan.alignFirst ? 3 : 2} of 3`
             : step === 'corners'
               ? `${redrawn ? redrawn.name || 'Room' : `Room ${roomNumber + 1}`} · corner ${current.length + 1}`
               : step === 'name'
@@ -504,38 +510,16 @@ function Scanner({ base }: { base: HomeMap | null }) {
         right={step === 'corners' ? undefined : <CamButton icon="undo" label="Undo" onPress={undo} disabled={!history.length} />}
       />
 
-      {step === 'align' && base && (
-        <Sheet>
-          <Label tone="label" style={{ marginTop: 6 }}>
-            Which room are you in?
-          </Label>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ marginTop: 12, flexGrow: 0 }}>
-            {base.rooms.map((r) => (
-              <Choice
-                key={r.id}
-                label={r.name || 'Room'}
-                chosen={r.id === anchorRoomId}
-                onPress={() => {
-                  setAnchorRoomId(r.id);
-                  setAnchorCorner(0);
-                  if (scan.alignFirst) commit({ ...scan, alignFirst: null });
-                }}
-              />
-            ))}
-          </ScrollView>
-          <Txt size={13} tone="secondary" style={{ marginTop: 14 }}>
-            Aim at the corner circled on the map, where the walls meet the floor, then tap the button.
-          </Txt>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
-            <SideButton
-              title="Other corner"
-              disabled={!!scan.alignFirst}
-              onPress={() => setAnchorCorner((c) => (c + 1) % (anchorRoom?.points.length || 1))}
-            />
-            <Shutter icon="target" label={scan.alignFirst ? 'Match the second corner' : 'Match the first corner'} disabled={!status?.aimingAtFloor || !anchorTarget} onPress={matchCorner} />
-            <View style={{ width: 104 }} />
-          </View>
-        </Sheet>
+      {step === 'align' && base && scan.anchor && (
+        <AimSheet
+          map={base}
+          anchor={scan.anchor}
+          first={scan.alignFirst?.ar ?? null}
+          reticle={status?.reticle}
+          canMark={!!status?.aimingAtFloor}
+          onMark={matchCorner}
+          onBack={() => commit({ ...scan, alignFirst: null, step: scan.alignFirst ? 'align' : 'alignPick' })}
+        />
       )}
 
       {step === 'corners' && (
@@ -611,6 +595,16 @@ function Scanner({ base }: { base: HomeMap | null }) {
       )}
 
       {needsFloor && floor !== 'done' && !lost.show && <FindingFloor found={floor === 'found'} overSheet={step !== 'corners'} />}
+      {step === 'alignPick' && base && (
+        <PickStart
+          map={base}
+          anchor={scan.anchor}
+          onAnchor={(anchor) => setScan({ ...scan, anchor })}
+          onGo={() => commit({ ...scan, step: 'align', alignFirst: null })}
+          onExit={exit}
+          onEditor={() => router.replace('/editor')}
+        />
+      )}
       {lost.show && <TrackingLost reason={status?.reason ?? ''} kept={keptSummary} onKeep={lost.dismiss} onSave={finish} />}
     </View>
   );

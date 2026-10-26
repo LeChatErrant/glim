@@ -11,8 +11,10 @@ import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.WindowManager
 import com.google.ar.core.ArCoreApk
@@ -87,6 +89,8 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
   @Volatile private var polylines: List<Polyline> = emptyList()
   @Volatile private var markers: List<Marker> = emptyList()
   @Volatile private var activeIndex = -1
+  /** Last captured point and when, for the "placed" ripple on the floor. */
+  @Volatile private var pulse: Pair<FloorPoint, Long>? = null
   @Volatile var snapEnabled = true
   /** "floor": aim at the floor. "object": aim at anything (a light), it lands on the floor below. */
   @Volatile var aimMode = AIM_FLOOR
@@ -215,11 +219,21 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
   fun capture(): Map<String, Any>? {
     // Object mode: the light goes on the floor plan right below the point aimed at.
     if (aimMode == AIM_OBJECT) objectHit?.let { o ->
+      placed(FloorPoint(o[0], o[2]))
       return mapOf("x" to o[0], "z" to o[2], "rawX" to o[0], "rawZ" to o[2], "closesShape" to false)
     }
     val p = (if (snapEnabled) snapped else null) ?: reticle ?: return null
     val raw = reticle ?: p
+    placed(p)
     return mapOf("x" to p.x, "z" to p.z, "rawX" to raw.x, "rawZ" to raw.z, "closesShape" to closesShape)
+  }
+
+  /** Feedback for every captured point: a ripple on the floor and a short buzz. */
+  private fun placed(p: FloorPoint) {
+    pulse = p to SystemClock.uptimeMillis()
+    post {
+      performHapticFeedback(if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.VIRTUAL_KEY)
+    }
   }
 
   private fun parseColor(s: String, fallback: Int) = try { if (s.isEmpty()) fallback else Color.parseColor(s) } catch (_: Exception) { fallback }
@@ -422,8 +436,9 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
   /** Everything the overlay needs for one frame, already in screen pixels. */
   class Scene(
     val segments: List<Triple<FloatArray, FloatArray, Int>>,
-    /** Rubber band from the last corner to the reticle (dashed). */
+    /** Rubber band from the last corner to the reticle (dashed), and its length ("2.4 m"). */
     val band: Pair<FloatArray, FloatArray>?,
+    val bandLabel: String?,
     val corners: List<Pair<FloatArray, Int>>,
     val markers: List<ScreenMarker>,
     /** Dots of the floor grid, with their size factor (bigger when closer). */
@@ -441,6 +456,9 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
     val landing: List<FloatArray>?,
     val landingCenter: FloatArray?,
     val arrows: List<EdgeArrow>,
+    /** Ripple where the last point was placed: its ring on the floor, and how far it has faded (0..1). */
+    val pulseRing: List<FloatArray>?,
+    val pulseT: Float,
   )
 
   private fun buildScene(s: Session, cam: com.google.ar.core.Pose): Scene {
@@ -450,6 +468,7 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
     val segs = mutableListOf<Triple<FloatArray, FloatArray, Int>>()
     val corners = mutableListOf<Pair<FloatArray, Int>>()
     var band: Pair<FloatArray, FloatArray>? = null
+    var bandLabel: String? = null
 
     val lines = polylines
     lines.forEachIndexed { i, line ->
@@ -458,7 +477,11 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
       if (line.closed && pts.size > 2) segment(pts.last(), pts[0], fy, w, h)?.let { segs += Triple(it.first, it.second, line.color) }
       pts.forEach { p -> project(p.x, fy, p.z, w, h)?.let { corners += it to line.color } }
       val target = snapped
-      if (i == activeIndex && target != null && pts.isNotEmpty()) band = segment(pts.last(), target, fy, w, h)
+      if (i == activeIndex && target != null && pts.isNotEmpty()) {
+        band = segment(pts.last(), target, fy, w, h)
+        val len = dist(pts.last(), target)
+        if (len >= 0.15f) bandLabel = String.format(java.util.Locale.US, "%.1f m", len)
+      }
     }
     val arrows = mutableListOf<EdgeArrow>()
     val shown = mutableListOf<ScreenMarker>()
@@ -530,13 +553,29 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
       "angle" -> if (hypot(r.x - raw.x, r.z - raw.z) > 0.02f) "SNAPPED · 90°" else null
       else -> null
     }
+    // A ring that grows and fades on the floor where the last point was placed.
+    var pulseRing: List<FloatArray>? = null
+    var pulseT = 1f
+    pulse?.let { (p, at) ->
+      pulseT = (SystemClock.uptimeMillis() - at) / PULSE_MS
+      if (pulseT < 1f) {
+        val rad = 0.08f + pulseT * 0.45f
+        val ring = (0..32).map { k ->
+          val a = k / 32f * 2f * Math.PI.toFloat()
+          project(p.x + cos(a) * rad, fy, p.z + sin(a) * rad, w, h)
+        }
+        if (ring.all { it != null }) pulseRing = ring.filterNotNull()
+      }
+    }
+
     return Scene(
-      segs, band, corners, shown, dots,
+      segs, band, bandLabel, corners, shown, dots,
       r?.let { project(it.x, fy, it.z, w, h) }, closesShape && r != null, chip,
       aimed = r != null || obj != null,
       objectMark = obj?.let { project(it[0], it[1], it[2], w, h) },
       plumb = plumb, landing = landing, landingCenter = landingCenter,
       arrows = arrows,
+      pulseRing = pulseRing, pulseT = pulseT,
     )
   }
 
@@ -678,7 +717,19 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
         c.drawLine(a[0], a[1], b[0], b[1], line)
       }
       line.clearShadowLayer()
-      s.band?.let { (a, b) -> c.drawLine(a[0], a[1], b[0], b[1], band) }
+      s.band?.let { (a, b) ->
+        c.drawLine(a[0], a[1], b[0], b[1], band)
+        s.bandLabel?.let { label -> pill((a[0] + b[0]) / 2f, (a[1] + b[1]) / 2f - 12 * dp, label, chipText, Color.argb(115, 0xE9, 0xCF, 0x9F)) }
+      }
+      s.pulseRing?.let { ring ->
+        val path = Path()
+        ring.forEachIndexed { i, p -> if (i == 0) path.moveTo(p[0], p[1]) else path.lineTo(p[0], p[1]) }
+        val alpha = ((1f - s.pulseT) * 255).toInt().coerceIn(0, 255)
+        stroke.color = Color.argb(alpha, 0xE9, 0xCF, 0x9F); stroke.strokeWidth = 2.5f * dp
+        stroke.setShadowLayer(8 * dp, 0f, 0f, Color.argb(alpha, 0xE9, 0xCF, 0x9F))
+        c.drawPath(path, stroke)
+        stroke.clearShadowLayer()
+      }
       // Outline corners: diamonds with a soft glow, so corners to snap to are easy to spot.
       s.corners.forEach { (p, col) -> diamond(c, p[0], p[1], 5.5f * dp, col, glow = true) }
 
@@ -756,15 +807,18 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
           c.drawLine(cx + dx / d * 18 * dp, cy + dy / d * 18 * dp, p[0] - dx / d * 32 * dp, p[1] - dy / d * 32 * dp, dashed)
         }
         stroke.color = col; stroke.strokeWidth = (if (s.targetCloses) 2f else 1f) * dp
-        c.drawCircle(p[0], p[1], 30 * dp, stroke)
-        stroke.strokeWidth = 1.5f * dp
-        val r0 = 22 * dp; val r1 = 38 * dp
-        c.drawLine(p[0], p[1] - r1, p[0], p[1] - r0, stroke)
-        c.drawLine(p[0], p[1] + r0, p[0], p[1] + r1, stroke)
-        c.drawLine(p[0] - r1, p[1], p[0] - r0, p[1], stroke)
-        c.drawLine(p[0] + r0, p[1], p[0] + r1, p[1], stroke)
-        fill.color = col
-        c.drawCircle(p[0], p[1], 3 * dp, fill)
+        c.drawCircle(p[0], p[1], 34 * dp, stroke)
+        // Under the visor, the ring alone reads as "locked on the floor"; snapped away, it gets its own ticks.
+        if (d > 8 * dp) {
+          stroke.strokeWidth = 1.5f * dp
+          val r0 = 24 * dp; val r1 = 42 * dp
+          c.drawLine(p[0], p[1] - r1, p[0], p[1] - r0, stroke)
+          c.drawLine(p[0], p[1] + r0, p[0], p[1] + r1, stroke)
+          c.drawLine(p[0] - r1, p[1], p[0] - r0, p[1], stroke)
+          c.drawLine(p[0] + r0, p[1], p[0] + r1, p[1], stroke)
+          fill.color = col
+          c.drawCircle(p[0], p[1], 3 * dp, fill)
+        }
         if (s.targetCloses) pill(p[0], p[1] + 46 * dp, "CLOSE ROOM", chipText, Color.argb(115, 0xE9, 0xCF, 0x9F))
         else s.chip?.let { pill(p[0] - 112 * dp, p[1] - 58 * dp, it, chipText, Color.argb(115, 0xE9, 0xCF, 0x9F), leftAligned = true) }
       }
@@ -773,15 +827,29 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
       canvas = null
     }
 
-    /** Always drawn, so the user knows where they aim; dimmed when the ray finds nothing (too high, no floor yet). */
+    /**
+     * The visor: always drawn at the screen center, where the ray is cast from. A ring with
+     * four ticks and a center dot; solid when the ray hits something to aim at, dashed and dim
+     * when it doesn't (too high, no floor yet).
+     */
     private fun crosshair(c: Canvas, x: Float, y: Float, aimed: Boolean) {
-      cross.color = if (aimed) ink else Color.argb(110, 0xF3, 0xE3, 0xC3)
-      val r0 = 8 * dp; val r1 = 16 * dp
+      val col = if (aimed) ink else Color.argb(130, 0xF3, 0xE3, 0xC3)
+      cross.color = col
+      cross.pathEffect = if (aimed) null else visorDash
+      c.drawCircle(x, y, 20 * dp, cross)
+      cross.pathEffect = null
+      val r0 = 12 * dp; val r1 = 28 * dp
       c.drawLine(x, y - r1, x, y - r0, cross)
       c.drawLine(x, y + r0, x, y + r1, cross)
       c.drawLine(x - r1, y, x - r0, y, cross)
       c.drawLine(x + r0, y, x + r1, y, cross)
+      fill.color = col
+      fill.setShadowLayer(3 * dp, 0f, 0f, Color.argb(150, 0, 0, 0))
+      c.drawCircle(x, y, 2 * dp, fill)
+      fill.clearShadowLayer()
     }
+
+    private val visorDash = android.graphics.DashPathEffect(floatArrayOf(3 * dp, 5 * dp), 0f)
 
     private fun diamond(c: Canvas, x: Float, y: Float, r: Float, col: Int, glow: Boolean = false) {
       val path = Path()
@@ -806,6 +874,8 @@ private const val WALL_SNAP_M = 0.15f
 private const val WALL_CROSS_M = 0.25f
 /** Radius of the ring drawn on the floor below an object aimed at. */
 private const val LANDING_RING_M = 0.15f
+/** How long the "placed" ripple lasts, in ms. */
+private const val PULSE_MS = 700f
 
 private const val AIM_FLOOR = "floor"
 private const val AIM_OBJECT = "object"

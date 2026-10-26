@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { planAll, planRoomBrightness, planToggleLight, planToggleRoom, planToggleZone, type Planned } from '../../lib/actions';
+import { planAll, planLightBrightness, planRoomBrightness, planToggleLight, planToggleRoom, planToggleZone, type Planned } from '../../lib/actions';
 import { roomIsOn, type Light, type Room, type Snapshot, type Zone } from '../../lib/hue/client';
 import { useHome } from '../../lib/hue/useHome';
 import { isLit, lightLevel, lightShape, lightsOf, lightTypeLabel } from '../../lib/lights';
@@ -15,6 +15,7 @@ import { Icon } from '../../ui/icons';
 import { useThrottle } from '../../ui/LightControls';
 import { ManageSheet, type Editing } from '../../ui/ManageSheets';
 import { ModalSheet } from '../../ui/ModalSheet';
+import { PartOfSheet } from '../../ui/PartOfSheet';
 import { ChoiceRow } from '../../ui/scan/parts';
 import { Display, Label, Txt } from '../../ui/text';
 import { color, hairline, TAB_BAR_SPACE } from '../../ui/theme';
@@ -30,6 +31,7 @@ export default function RoomsScreen() {
   const [open, setOpen] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Editing | null>(null);
+  const [placing, setPlacing] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -95,7 +97,14 @@ export default function RoomsScreen() {
               act={act}
             />
           ))}
-          {homeless.length > 0 && <LooseLights lights={homeless} act={act} />}
+          {homeless.length > 0 && topLevel.length > 0 && (
+            <Label tone="label" style={{ marginTop: 14 }}>
+              On their own
+            </Label>
+          )}
+          {homeless.map((l) => (
+            <LightCard key={l.id} light={l} act={act} onPartOf={() => setPlacing(l.id)} />
+          ))}
           {(snapshot.zones ?? []).length > 0 && (
             <Label tone="label" style={{ marginTop: 14 }}>
               Groups
@@ -130,6 +139,9 @@ export default function RoomsScreen() {
         </View>
       </ModalSheet>
       {editing && <ManageSheet editing={editing} snapshot={snapshot} onClose={() => setEditing(null)} onSaved={refresh} />}
+      {placing && snapshot.lights.some((l) => l.id === placing) && (
+        <PartOfSheet light={snapshot.lights.find((l) => l.id === placing)!} snapshot={snapshot} act={act} onClose={() => setPlacing(null)} />
+      )}
       <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: insets.bottom + 110, experimental_backgroundImage: `linear-gradient(rgba(5,5,6,0), ${color.ground} 66%)` }} />
     </View>
   );
@@ -341,19 +353,57 @@ function GroupCard({ zone, snapshot, act, onEdit }: { zone: Zone; snapshot: Snap
   );
 }
 
-/** Lights that belong to no room: still controllable. */
-function LooseLights({ lights, act }: { lights: Light[]; act: Act }) {
+/**
+ * A light in no room, shown as an item of its own (rooms are optional): same card as a room,
+ * with its switch and brightness. Tap the name for the light, long-press to put it in a room.
+ */
+function LightCard({ light, act, onPartOf }: { light: Light; act: Act; onPartOf: () => void }) {
+  const on = isLit(light);
+  const dimmable = light.brightness !== null;
+  const [drag, setDrag] = useState<number | null>(null);
+  const throttle = useThrottle();
+  const meta = `${lightTypeLabel(light)} · ${light.reachable ? (on ? (dimmable ? `${light.brightness}%` : 'On') : 'Off') : 'Unreachable'}`;
   return (
-    <View style={{ borderRadius: 22, borderWidth: 1, borderColor: hairline(0.1), backgroundColor: color.card, paddingTop: 12, paddingBottom: 8, paddingLeft: 18, paddingRight: 10 }}>
-      <Display size={17} weight={400} style={{ lineHeight: 20, marginBottom: 6 }}>
-        Not in a room
-      </Display>
-      <Label size={9} style={{ marginBottom: 8 }}>
-        Edit a room to add them, or place them on the map
-      </Label>
-      {lights.map((l) => (
-        <LightRow key={l.id} light={l} act={act} />
-      ))}
+    <View style={{ borderRadius: 22, borderWidth: 1, borderColor: hairline(0.1), backgroundColor: color.card, overflow: 'hidden', paddingTop: 12, paddingBottom: dimmable ? 8 : 12, paddingLeft: 14, paddingRight: 10 }}>
+      {on && <Glow tint={light.color} cx={0} cy={0} rx={220} ry={140} alpha={0.11} />}
+      <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: 10 }}>
+        <Pressable
+          onPress={() => router.push(`/light/${light.id}`)}
+          onLongPress={onPartOf}
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${light.name}`}
+          accessibilityHint="Long-press to put it in a room or group"
+          style={({ pressed }) => ({ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12, alignSelf: 'stretch', opacity: pressed ? 0.6 : 1 })}
+        >
+          <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
+            <LightMarker light={light} size={28} ground={color.card} glow={on} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0, gap: 5 }}>
+            <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
+              {light.name}
+            </Display>
+            <Label size={9} numberOfLines={1} style={{ fontVariant: ['tabular-nums'], color: light.reachable ? undefined : color.warning }}>
+              {meta}
+            </Label>
+          </View>
+        </Pressable>
+        <Switch big on={light.on && light.reachable} label={`${light.name}, ${on ? 'on' : 'off'}`} onToggle={() => act((s) => planToggleLight(s, light.id))} />
+      </View>
+      {dimmable && (
+        <Slider
+          value={drag ?? light.brightness ?? 0}
+          tint={on ? light.color : '#5A5650'}
+          label={`${light.name} brightness`}
+          onChange={(v) => {
+            setDrag(v);
+            throttle(() => act((s) => planLightBrightness(s, light.id, v)));
+          }}
+          onCommit={(v) => {
+            setDrag(null);
+            act((s) => planLightBrightness(s, light.id, v));
+          }}
+        />
+      )}
     </View>
   );
 }

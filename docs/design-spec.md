@@ -194,6 +194,15 @@ light in the tray to blink it).
 The map can be rescanned or edited anytime from Settings or from the Map
 screen.
 
+**Continuing a saved map:** the scan first has to line up with it. Step 1, a
+full-screen plan: "Where do you start from?", tap a corner of the room you
+stand in; the wall to the next corner turns champagne with its length, corners
+numbered 1 and 2 ("Other wall" flips the direction). Step 2, over the camera:
+aim the visor at corner 1 and mark it (it stays on the floor, numbered).
+Step 3: walk to corner 2, a live readout shows "2.4 m of 3.1 m" and turns
+champagne when it's about right. Corners that don't match offer: redo corner
+2, redo both, or pick another wall.
+
 ### 5.3 Map (home screen)
 
 The floor plan, filling most of the screen, with every placed light.
