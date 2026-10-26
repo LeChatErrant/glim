@@ -80,6 +80,21 @@ export async function saveMapRotation(rotation: number) {
   return next;
 }
 
+/**
+ * Lights the user chose to leave off the map ("Not now" on the map's reminder), per bridge.
+ * A light that goes missing later is shown again; this only remembers the ones already seen.
+ */
+export async function loadHiddenLights(): Promise<string[]> {
+  const bridge = await getBridge();
+  const raw = await AsyncStorage.getItem(`map-hidden-lights:${bridge?.id ?? ''}`);
+  return raw ? (JSON.parse(raw) as string[]) : [];
+}
+
+export async function saveHiddenLights(ids: string[]) {
+  const bridge = await getBridge();
+  await AsyncStorage.setItem(`map-hidden-lights:${bridge?.id ?? ''}`, JSON.stringify(ids));
+}
+
 /** A map laid out for drawing: shifted so the top-left of its bounding box is at (0, 0). */
 export type Plan = {
   width: number;

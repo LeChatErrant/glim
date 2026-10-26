@@ -1,4 +1,4 @@
-import { router, Stack } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { PanResponder, Pressable, ScrollView, Text, View, type GestureResponderEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -71,10 +71,12 @@ export default function Editor() {
 function EditorCanvas({ initial }: { initial: Doc }) {
   const insets = useSafeAreaInsets();
   const { snapshot, refresh } = useSnapshot(5000);
+  // `?place=1`: opened to place lights missing from the map, so start on the light picker.
+  const { place } = useLocalSearchParams<{ place?: string }>();
   const [doc, setDoc] = useState<Doc>(initial);
   const [draft, setDraft] = useState<Doc | null>(null);
   const [history, setHistory] = useState<Doc[]>([]);
-  const [sel, setSel] = useState<Selection>(null);
+  const [sel, setSel] = useState<Selection>(place ? { kind: 'add-light' } : null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<ViewBox | null>(null);
   // What the dragged corner or room snapped to, drawn until release.
@@ -332,7 +334,10 @@ function EditorCanvas({ initial }: { initial: Doc }) {
 
   function addLight(lightId: string) {
     if (!view) return;
-    const c = toMeters(size.w / 2, size.h / 2, view);
+    // A light in a Hue room on the map lands in that room, else in the middle of the screen.
+    const hueRoomId = snapshot?.lights.find((l) => l.id === lightId)?.roomId;
+    const room = hueRoomId ? doc.rooms.find((r) => r.hueRoomId === hueRoomId && r.points.length >= 3) : undefined;
+    const c = room ? spot(room, doc.lights.filter((l) => l.lightId !== lightId)) : toMeters(size.w / 2, size.h / 2, view);
     const next = { ...doc, lights: [...doc.lights.filter((l) => l.lightId !== lightId), { lightId, ...c }] };
     commit(next);
     setSel({ kind: 'light', lightId });
@@ -537,6 +542,18 @@ function Handle({ l, rooms, kind, view }: { l: MapLight; rooms: MapRoom[]; kind:
       {kind === 'string' && <Circle cx={X(b)} cy={Y(b)} r={9} fill={theme.bg} stroke={ACCENT} strokeWidth={2.5} />}
     </G>
   );
+}
+
+/** A free spot in a room: its center, nudged so it doesn't land on a light already there. */
+function spot(room: MapRoom, lights: MapLight[]): FloorPoint {
+  const c = centroid(room.points);
+  for (let i = 0; i < 12; i++) {
+    const a = i * 2.4;
+    const r = i === 0 ? 0 : 0.35 + i * 0.08;
+    const p = { x: c.x + Math.cos(a) * r, z: c.z + Math.sin(a) * r };
+    if (pointInPolygon(p, room.points) && lights.every((l) => distance(l, p) > 0.4)) return p;
+  }
+  return c;
 }
 
 /** Lights not on the map first, then the rest. */

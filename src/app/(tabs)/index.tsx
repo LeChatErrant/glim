@@ -7,10 +7,10 @@ import { planAll, planLightBrightness, planToggleLight, planToggleRoom } from '.
 import { getBridge, syncFastConfig } from '../../lib/hue/bridge';
 import { roomIsOn, type Light, type Snapshot } from '../../lib/hue/client';
 import { useHome } from '../../lib/hue/useHome';
-import { ambienceKelvin, averageBrightness, houseMood, isLit, lightLevel, lightsOf, lightTypeLabel } from '../../lib/lights';
-import { loadMap, saveMapRotation, toPlan, type HomeMap } from '../../lib/map/map';
+import { ambienceKelvin, averageBrightness, houseMood, isLit, lightLevel, lightShape, lightsOf, lightTypeLabel } from '../../lib/lights';
+import { loadHiddenLights, loadMap, saveHiddenLights, saveMapRotation, toPlan, type HomeMap } from '../../lib/map/map';
 import { ConnectionBadge, Glow, IconButton, PillButton, Section, TagButton, type Connection } from '../../ui/controls';
-import { FloorPlan, LightMarker } from '../../ui/FloorPlan';
+import { FloorPlan, Jewel, LightMarker } from '../../ui/FloorPlan';
 import { turnTo, useMapGestures } from '../../ui/MapGestures';
 import { refreshAllWidgets } from '../../widgets/task-handler';
 import { ChoiceRow } from '../../ui/scan/parts';
@@ -36,11 +36,14 @@ function MapScreen() {
   const [selected, setSelected] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ id: string; v: number } | null>(null);
   const [editing, setEditing] = useState(false);
+  const [placing, setPlacing] = useState(false);
+  const [hidden, setHidden] = useState<string[]>([]);
   const lastSent = useRef(0);
 
   useFocusEffect(
     useCallback(() => {
       loadMap().then(setMap);
+      loadHiddenLights().then(setHidden);
     }, []),
   );
 
@@ -69,6 +72,13 @@ function MapScreen() {
 
   const anyOn = lights.some(isLit);
   const selectedLight = lights.find((l) => l.id === selected);
+  // Lights on the bridge but not on the map (added to a room, new bulbs...), unless set aside.
+  const missing = map ? lights.filter((l) => !map.lights.some((m) => m.lightId === l.id) && !hidden.includes(l.id)) : [];
+  const hideMissing = () => {
+    const next = [...hidden, ...missing.map((l) => l.id)];
+    setHidden(next);
+    saveHiddenLights(next);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: color.ground }}>
@@ -131,6 +141,7 @@ function MapScreen() {
               </View>
             )}
           </View>
+          {!selectedLight && missing.length > 0 && <MissingNote lights={missing} onPlace={() => setPlacing(true)} onHide={hideMissing} />}
           {selectedLight ? (
             <LightBar
               light={selectedLight}
@@ -145,6 +156,15 @@ function MapScreen() {
       ) : (
         <NoMap snapshot={snapshot} onToggleRoom={(id) => act((s) => planToggleRoom(s, id))} bottom={insets.bottom + TAB_BAR_SPACE + 16} />
       )}
+      <PlaceChoice
+        visible={placing}
+        lights={missing}
+        onClose={() => setPlacing(false)}
+        onPick={(path) => {
+          setPlacing(false);
+          router.push(path);
+        }}
+      />
       <EditChoice
         visible={editing}
         onTurn={(d) => turn(d)}
@@ -304,6 +324,49 @@ function NoMap({ snapshot, onToggleRoom, bottom }: { snapshot: Snapshot | null; 
         </Section>
       )}
     </ScrollView>
+  );
+}
+
+/** "Hue Play 1 and Hue Play 2 aren't on your map": lights the map doesn't show yet. */
+function MissingNote({ lights, onPlace, onHide }: { lights: Light[]; onPlace: () => void; onHide: () => void }) {
+  const names = lights.length === 1 ? lights[0].name : lights.length === 2 ? `${lights[0].name} and ${lights[1].name}` : `${lights.length} lights`;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 24, marginTop: 12, paddingVertical: 10, paddingLeft: 14, paddingRight: 8, borderRadius: 20, borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(233,207,159,0.4)' }}>
+      <View style={{ flexDirection: 'row', gap: 6 }}>
+        {lights.slice(0, 3).map((l) => (
+          <Jewel key={l.id} light={l} shape={lightShape(l.archetype)} size={8} ground={color.ground} />
+        ))}
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Txt size={13} numberOfLines={2} style={{ lineHeight: 17 }}>
+          {`${names} ${lights.length === 1 ? "isn't" : "aren't"} on your map`}
+        </Txt>
+        <Pressable onPress={onHide} accessibilityRole="button" hitSlop={8} style={{ alignSelf: 'flex-start' }}>
+          <Txt size={12} tone="muted" style={{ lineHeight: 17 }}>
+            Not now
+          </Txt>
+        </Pressable>
+      </View>
+      <PillButton title="Place" kind="primary" height={40} onPress={onPlace} />
+    </View>
+  );
+}
+
+/** Place missing lights: point at them in AR (they blink), or drop them on screen in their room. */
+function PlaceChoice({ visible, lights, onClose, onPick }: { visible: boolean; lights: Light[]; onClose: () => void; onPick: (path: '/scan' | '/editor?place=1') => void }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
+      <Pressable accessibilityLabel="Close" onPress={onClose} style={{ flex: 1, backgroundColor: 'rgba(5,5,6,0.6)' }} />
+      <View style={{ backgroundColor: color.sheet, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: hairline(0.1), paddingTop: 22, paddingHorizontal: 24, paddingBottom: insets.bottom + 24 }}>
+        <Display size={24}>{lights.length === 1 ? `Place ${lights[0].name}` : `Place ${lights.length} lights`}</Display>
+        <Txt size={13} tone="secondary" style={{ marginTop: 6, marginBottom: 12 }}>
+          {lights.map((l) => l.name).join(', ')}
+        </Txt>
+        <ChoiceRow icon="edit" title="On screen" sub="Each one lands in its room. Drag it where it really is" onPress={() => onPick('/editor?place=1')} />
+        <ChoiceRow icon="scan" title="With the camera" sub="Line up with your map, then point at each light as it blinks" onPress={() => onPick('/scan')} />
+      </View>
+    </Modal>
   );
 }
 
