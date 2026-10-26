@@ -87,7 +87,11 @@
       "expo-font"
     ],
     "extra": {
-      "cloudServer": ""
-    }
+      "cloudServer": "",
+      "eas": {
+        "projectId": "5a6debbe-68f6-4d6d-a86d-c4bff94a6165"
+      }
+    },
+    "owner": "lechaterrant"
   }
 }
