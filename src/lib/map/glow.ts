@@ -108,6 +108,8 @@ export function placeLights(plan: Plan, lights: Light[]): PlacedLight[] {
     const shape = lightShape(light.archetype);
     const room = roomForPoint(plan, pl, light.roomId, walled);
     const wall = room ? nearestWall(pl, room.pts) : null;
+    // Set by the user in the editor: it wins over the nearest wall.
+    const set = pl.angle === undefined ? null : (pl.angle * Math.PI) / 180;
     const b = (light.brightness ?? 100) / 100;
     const pools: Pool[] = [];
     let beads: UV[] = [];
@@ -129,37 +131,43 @@ export function placeLights(plan: Plan, lights: Light[]): PlacedLight[] {
         break;
       }
       case 'bar': {
-        // A wash along the wall behind it.
-        const w = wall && wall.dist < 1.2 ? wall : null;
-        pools.push({ u: w?.u ?? pl.u, v: w?.v ?? pl.v, angle: w?.angle ?? 0, rx: 2.05 + 1.2 * b, ry: 1.25 + 0.65 * b, alpha: 0.88 });
+        // A wash along the wall behind it, or along the direction the user set.
+        const w = set === null && wall && wall.dist < 1.2 ? wall : null;
+        pools.push({ u: w?.u ?? pl.u, v: w?.v ?? pl.v, angle: set ?? w?.angle ?? 0, rx: 2.05 + 1.2 * b, ry: 1.25 + 0.65 * b, alpha: 0.88 });
         break;
       }
       case 'lantern': {
         // A half pool away from the wall: centered on the wall, the room clip cuts the other half.
-        const w = wall && wall.dist < 1.2 ? wall : null;
-        pools.push({ u: w?.u ?? pl.u, v: w?.v ?? pl.v, angle: w?.angle ?? 0, rx: 2.9 + 1.2 * b, ry: 1.9 + 0.7 * b, alpha: 0.78 });
+        const w = set === null && wall && wall.dist < 1.2 ? wall : null;
+        pools.push({ u: w?.u ?? pl.u, v: w?.v ?? pl.v, angle: set ?? w?.angle ?? 0, rx: 2.9 + 1.2 * b, ry: 1.9 + 0.7 * b, alpha: 0.78 });
         break;
       }
       case 'string': {
-        // A row of beads hanging along the nearest wall, sagging into the room.
-        const angle = wall?.angle ?? 0;
+        // A row of beads sagging a little: along the direction the user set (centered on the
+        // light), else hanging along the nearest wall.
+        const angle = set ?? wall?.angle ?? 0;
         const du = Math.cos(angle);
         const dv = Math.sin(angle);
-        const nu = wall?.nu ?? 0;
-        const nv = wall?.nv ?? 1;
-        const half = 1.2;
-        beads = Array.from({ length: 7 }, (_, i) => {
-          const t = i / 6;
+        let nu = -dv;
+        let nv = du;
+        if (set === null && wall) {
+          nu = wall.nu;
+          nv = wall.nv;
+        }
+        const half = (pl.length ?? 2.4) / 2;
+        const count = Math.max(4, Math.min(15, Math.round(half * 6)));
+        const base = set === null && wall && wall.dist < 1.2 ? { u: wall.u, v: wall.v } : set === null ? { u: pl.u - nu * 0.3, v: pl.v - nv * 0.3 } : { u: pl.u, v: pl.v };
+        beads = Array.from({ length: count }, (_, i) => {
+          const t = i / (count - 1);
           const along = -half + 2 * half * t;
-          const sag = 0.18 + 0.26 * Math.sin(Math.PI * t);
-          const base = wall && wall.dist < 1.2 ? { u: wall.u, v: wall.v } : { u: pl.u - nu * 0.3, v: pl.v - nv * 0.3 };
+          const sag = (set === null ? 0.18 : 0) + 0.26 * Math.sin(Math.PI * t);
           return { u: base.u + du * along + nu * sag, v: base.v + dv * along + nv * sag };
         });
         for (const p of beads) pools.push({ ...p, angle: 0, rx: 0.75, ry: 0.75, alpha: 0.59 });
         break;
       }
     }
-    out.push({ light, shape, u: pl.u, v: pl.v, room, wallAngle: wall?.angle ?? Math.PI / 2, pools, beads });
+    out.push({ light, shape, u: pl.u, v: pl.v, room, wallAngle: set ?? wall?.angle ?? Math.PI / 2, pools, beads });
   }
   return out;
 }

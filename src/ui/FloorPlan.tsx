@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { PanResponder, Pressable, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, PanResponder, Pressable, View } from 'react-native';
 import Svg, { ClipPath, Defs, Ellipse, G, Path, RadialGradient, Stop } from 'react-native-svg';
 
 import type { Light, Room } from '../lib/hue/client';
@@ -43,12 +44,16 @@ export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId
   const f = useMemo(() => fitPlan(plan, width, height, 16, view), [plan, width, height, view]);
   const walled = useMemo(() => walledRooms(plan), [plan]);
   const tween = useLightTween(lights);
+  const breath = useBreath();
   const placed = useMemo(() => placeLights(plan, tween.lights), [plan, tween.lights]);
   const fade = (id: string) => tween.fade.get(id) ?? 1;
   const roomName = (r: Plan['rooms'][number]) => rooms.find((x) => x.id === r.hueRoomId)?.name ?? r.name;
   const pathOf = (pts: { u: number; v: number }[]) => pts.map((p, i) => `${i ? 'L' : 'M'}${f.x(p.u).toFixed(1)},${f.y(p.v).toFixed(1)}`).join(' ') + ' Z';
   const px = (m: number) => m * f.scale;
 
+  // react-native-svg keeps a clip path or gradient by id and ignores later changes to it: ids that
+  // change with the layout (zoom, pan, turn) make it redraw them instead of clipping to old walls.
+  const layout = useMemo(() => hash(walled.map((r) => pathOf(r.pts)).join('')), [walled, f]); // eslint-disable-line react-hooks/exhaustive-deps
   const zones = plan.rooms.filter((r) => r.pts.length >= 3 && !walled.includes(r));
   const lit = placed.filter((p) => p.light.on && p.light.reachable && fade(p.light.id) > 0.01);
 
@@ -57,12 +62,12 @@ export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId
       <Svg width={width} height={height} style={{ position: 'absolute' }}>
         <Defs>
           {walled.map((r) => (
-            <ClipPath key={r.id} id={`clip-${r.id}`}>
+            <ClipPath key={`${r.id}-${layout}`} id={`clip-${r.id}-${layout}`}>
               <Path d={pathOf(r.pts)} />
             </ClipPath>
           ))}
           {lit.map((p) => (
-            <RadialGradient key={p.light.id} id={`glow-${p.light.id}`} cx="50%" cy="50%" rx="50%" ry="50%">
+            <RadialGradient key={p.light.id} id={`glow-${p.light.id}-${p.light.color.slice(1)}`} cx="50%" cy="50%" rx="50%" ry="50%">
               <Stop offset="0" stopColor={p.light.color} stopOpacity={1} />
               <Stop offset="0.22" stopColor={p.light.color} stopOpacity={0.42} />
               <Stop offset="0.55" stopColor={p.light.color} stopOpacity={0.14} />
@@ -75,8 +80,12 @@ export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId
           <Path key={r.id} d={pathOf(r.pts)} fill={r.outdoor ? color.floorOutdoor : color.floor} />
         ))}
 
-        {lit.map((p) => (
-          <G key={p.light.id} clipPath={p.room ? `url(#clip-${p.room.id})` : undefined} opacity={(p.pools[0]?.alpha ?? 1) * fade(p.light.id)}>
+        {lit.map((p, i) => (
+          <AnimatedG
+            key={p.light.id}
+            clipPath={p.room ? `url(#clip-${p.room.id}-${layout})` : undefined}
+            opacity={Animated.multiply(breath[i % breath.length], (p.pools[0]?.alpha ?? 1) * fade(p.light.id))}
+          >
             {p.pools.map((pool, i) => (
               <Ellipse
                 key={i}
@@ -85,10 +94,10 @@ export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId
                 rx={Math.max(px(pool.rx), 10)}
                 ry={Math.max(px(pool.ry), 10)}
                 transform={pool.angle ? `rotate(${(pool.angle * 180) / Math.PI} ${f.x(pool.u)} ${f.y(pool.v)})` : undefined}
-                fill={`url(#glow-${p.light.id})`}
+                fill={`url(#glow-${p.light.id}-${p.light.color.slice(1)})`}
               />
             ))}
-          </G>
+          </AnimatedG>
         ))}
 
         {walled.map((r) => (
@@ -261,6 +270,39 @@ export function LightMarker({ light, size = 24, ground = color.ground }: { light
       )}
     </View>
   );
+}
+
+const AnimatedG = Animated.createAnimatedComponent(G);
+
+/**
+ * Lit glows breathe slowly (a few percent of their strength), in three phases so neighbors don't
+ * pulse together. Runs only while the map is on screen; widgets stay still.
+ */
+function useBreath() {
+  const [values] = useState(() => [0, 1, 2].map(() => new Animated.Value(1)));
+  useFocusEffect(
+    useCallback(() => {
+      const loops = values.map((v, i) =>
+        Animated.loop(
+          Animated.sequence([
+            Animated.delay(i * 1400),
+            Animated.timing(v, { toValue: 0.82, duration: 3200, easing: Easing.inOut(Easing.sin), useNativeDriver: false }),
+            Animated.timing(v, { toValue: 1, duration: 3200, easing: Easing.inOut(Easing.sin), useNativeDriver: false }),
+          ]),
+        ),
+      );
+      loops.forEach((l) => l.start());
+      return () => loops.forEach((l) => l.stop());
+    }, [values]),
+  );
+  return values;
+}
+
+/** Short string hash (djb2), for SVG ids that follow content. */
+function hash(text: string) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
 }
 
 const LONG_PRESS_MS = 450;

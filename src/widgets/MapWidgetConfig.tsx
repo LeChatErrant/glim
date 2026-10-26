@@ -47,10 +47,11 @@ export function MapWidgetConfig({ widgetInfo, renderWidget, setResult }: WidgetC
   const k = Math.min(1, (width - 48) / widgetInfo.width);
   const pw = Math.round(widgetInfo.width * k);
   const ph = Math.round(widgetInfo.height * k);
-  const plan = widgetPlan(map, settings);
+  // The preview shows the whole chosen area, not a room the arrows zoomed into.
+  const plan = widgetPlan(map, { ...settings, focus: undefined });
 
   const save = async () => {
-    await saveWidgetSettings(widgetInfo.widgetId, settings);
+    await saveWidgetSettings(widgetInfo.widgetId, { ...settings, focus: undefined });
     renderWidget(await render(widgetInfo, { snapshot, stale: false }));
     setResult('ok');
   };
@@ -64,7 +65,7 @@ export function MapWidgetConfig({ widgetInfo, renderWidget, setResult }: WidgetC
           key={JSON.stringify(settings)}
           width={pw}
           height={ph}
-          renderWidget={() => <MapWidget snapshot={snapshot} plan={plan} width={pw} height={ph} stale={false} />}
+          renderWidget={() => <MapWidget snapshot={snapshot} plan={plan} width={pw} height={ph} stale={false} nav={false} />}
         />
       </View>
 

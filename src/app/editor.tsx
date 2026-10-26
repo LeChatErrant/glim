@@ -5,9 +5,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 
 import { identifyLight, type Snapshot } from '../lib/hue/client';
+import { lightShape } from '../lib/lights';
 import { useSnapshot } from '../lib/hue/useSnapshot';
 import {
   centroid,
+  closestOnSegment,
   distance,
   pointInPolygon,
   roomWalls,
@@ -46,6 +48,7 @@ type Drag =
   | { kind: 'corner'; roomId: string; index: number }
   | { kind: 'room'; roomId: string }
   | { kind: 'light'; lightId: string }
+  | { kind: 'handle'; lightId: string; end: 1 | -1 }
   | { kind: 'pan'; start: ViewBox }
   | { kind: 'pinch'; start: ViewBox; dist: number; cx: number; cy: number };
 
@@ -127,6 +130,15 @@ function EditorCanvas({ initial }: { initial: Doc }) {
         if (Math.hypot(x - sx, y - sy) < HIT_PX * 0.8) return { kind: 'midpoint' as const, roomId: selRoom.id, index: i };
       }
     }
+    const selLight = s?.kind === 'light' ? d.lights.find((l) => l.lightId === s.lightId) : undefined;
+    const kind = selLight ? directional(selLight.lightId, live.current.snapshot) : null;
+    if (selLight && kind) {
+      for (const end of [1, -1] as const) {
+        if (end === -1 && kind !== 'string') continue;
+        const { sx: x, sy: y } = toScreen(handleAt(selLight, d.rooms, kind, v.scale, end), v);
+        if (Math.hypot(x - sx, y - sy) < HIT_PX) return { kind: 'handle' as const, lightId: selLight.lightId, end };
+      }
+    }
     for (const l of d.lights) {
       const { sx: x, sy: y } = toScreen(l, v);
       if (Math.hypot(x - sx, y - sy) < HIT_PX) return { kind: 'light' as const, lightId: l.lightId };
@@ -176,6 +188,7 @@ function EditorCanvas({ initial }: { initial: Doc }) {
             drag.current = { kind: 'corner', roomId: hit.roomId, index: hit.index + 1 };
             moved.current = true;
           } else if (hit?.kind === 'light') drag.current = { kind: 'light', lightId: hit.lightId };
+          else if (hit?.kind === 'handle') drag.current = { kind: 'handle', lightId: hit.lightId, end: hit.end };
           else if (hit?.kind === 'room' && hit.roomId === selRoomId) drag.current = { kind: 'room', roomId: hit.roomId };
           else drag.current = { kind: 'pan', start: v };
         },
@@ -233,6 +246,18 @@ function EditorCanvas({ initial }: { initial: Doc }) {
             setDraft({ ...from, rooms: from.rooms.map((r) => (r.id === d.roomId ? { ...r, points } : r)) });
           } else if (d.kind === 'light') {
             setDraft({ ...from, lights: from.lights.map((l) => (l.lightId === d.lightId ? { ...l, x: l.x + dx, z: l.z + dz } : l)) });
+          } else if (d.kind === 'handle') {
+            const light = from.lights.find((l) => l.lightId === d.lightId);
+            const kind = light && directional(light.lightId, live.current.snapshot);
+            if (!light || !kind) return;
+            // The handle follows the finger: its direction turns the light, its reach sets a string's length.
+            const knob = handleAt(light, from.rooms, kind, v.scale, d.end);
+            const p = { x: knob.x + dx - light.x, z: knob.z + dz - light.z };
+            const raw = (Math.atan2(p.z, p.x) * 180) / Math.PI + (d.end === -1 ? 180 : 0);
+            const angle = snapAngle(raw, from.rooms);
+            setGuides(angle.wall ? [{ kind: 'line', a: angle.wall[0], b: angle.wall[1] }] : []);
+            const length = kind === 'string' ? Math.max(0.4, Math.min(12, Math.round(Math.hypot(p.x, p.z) * 2 * 10) / 10)) : light.length;
+            setDraft({ ...from, lights: from.lights.map((l) => (l.lightId === d.lightId ? { ...l, angle: angle.deg, length } : l)) });
           }
         },
         onPanResponderRelease: (e) => {
@@ -256,6 +281,8 @@ function EditorCanvas({ initial }: { initial: Doc }) {
             commit(draftDoc);
             setSel({ kind: 'corner', roomId: d.roomId, index: d.index });
           } else if (d.kind === 'room') {
+            commit(draftDoc);
+          } else if (d.kind === 'handle') {
             commit(draftDoc);
           } else if (d.kind === 'light') {
             commit(draftDoc);
@@ -319,6 +346,7 @@ function EditorCanvas({ initial }: { initial: Doc }) {
   const selRoom = sel && (sel.kind === 'room' || sel.kind === 'corner') ? doc.rooms.find((r) => r.id === sel.roomId) : undefined;
   const selLight = sel?.kind === 'light' ? snapshot?.lights.find((l) => l.id === sel.lightId) : undefined;
   const placedIds = new Set(doc.lights.map((l) => l.lightId));
+  const selPlaced = sel?.kind === 'light' ? doc.lights.find((l) => l.lightId === sel.lightId) : undefined;
 
   return (
     <View style={{ flex: 1 }}>
@@ -429,10 +457,85 @@ function EditorCanvas({ initial }: { initial: Doc }) {
               />
               <Button title="Done" style={{ flex: 0.8 }} onPress={() => setSel(null)} />
             </View>
+            {selPlaced && directional(sel.lightId, snapshot) && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Body muted>
+                    {directional(sel.lightId, snapshot) === 'string'
+                      ? 'Drag an end of the line to turn the string lights and set their length.'
+                      : 'Drag the handle to turn it.'}
+                  </Body>
+                </View>
+                {selPlaced.angle !== undefined && (
+                  <Button
+                    title="Along the wall"
+                    onPress={() =>
+                      commit({ ...doc, lights: doc.lights.map((l) => (l.lightId === sel.lightId ? { ...l, angle: undefined, length: undefined } : l)) })
+                    }
+                  />
+                )}
+              </View>
+            )}
           </>
         )}
       </View>
     </View>
+  );
+}
+
+/** Lights drawn along a direction, with a handle to turn them: string lights, bars, lanterns. */
+function directional(lightId: string, s: Snapshot | null) {
+  const light = s?.lights.find((l) => l.id === lightId);
+  const shape = light ? lightShape(light.archetype) : null;
+  return shape === 'string' || shape === 'bar' || shape === 'lantern' ? shape : null;
+}
+
+/** The direction a light runs along, in degrees: set by the user, else along the nearest wall (as the map draws it). */
+function lightAngle(l: MapLight, rooms: MapRoom[]) {
+  if (l.angle !== undefined) return l.angle;
+  let best = Infinity;
+  let angle = 0;
+  for (const r of rooms) {
+    for (const [a, b] of roomWalls(r.points)) {
+      const d = distance(l, closestOnSegment(l, a, b));
+      if (d < best) {
+        best = d;
+        angle = (Math.atan2(b.z - a.z, b.x - a.x) * 180) / Math.PI;
+      }
+    }
+  }
+  return angle;
+}
+
+/** Where a light's handle sits: the ends of a string (its length), or a fixed reach for the others. */
+function handleAt(l: MapLight, rooms: MapRoom[], kind: 'string' | 'bar' | 'lantern', scale: number, end: 1 | -1): FloorPoint {
+  const a = (lightAngle(l, rooms) * Math.PI) / 180;
+  const reach = kind === 'string' ? Math.max((l.length ?? 2.4) / 2, 30 / scale) : 46 / scale;
+  return { x: l.x + Math.cos(a) * reach * end, z: l.z + Math.sin(a) * reach * end };
+}
+
+/** Snaps a direction to the nearest wall's within 6° (either way along it), else to 5° steps. */
+function snapAngle(deg: number, rooms: MapRoom[]): { deg: number; wall?: [FloorPoint, FloorPoint] } {
+  for (const r of rooms) {
+    for (const [a, b] of roomWalls(r.points)) {
+      const w = (Math.atan2(b.z - a.z, b.x - a.x) * 180) / Math.PI;
+      for (const cand of [w, w + 180, w - 180]) if (Math.abs(cand - deg) < 6) return { deg: cand, wall: [a, b] };
+    }
+  }
+  return { deg: Math.round(deg / 5) * 5 };
+}
+
+function Handle({ l, rooms, kind, view }: { l: MapLight; rooms: MapRoom[]; kind: 'string' | 'bar' | 'lantern'; view: ViewBox }) {
+  const X = (p: FloorPoint) => p.x * view.scale + view.ox;
+  const Y = (p: FloorPoint) => p.z * view.scale + view.oy;
+  const a = handleAt(l, rooms, kind, view.scale, 1);
+  const b = kind === 'string' ? handleAt(l, rooms, kind, view.scale, -1) : l;
+  return (
+    <G>
+      <Line x1={X(b)} y1={Y(b)} x2={X(a)} y2={Y(a)} stroke={ACCENT} strokeWidth={2} strokeDasharray="5 4" />
+      <Circle cx={X(a)} cy={Y(a)} r={9} fill={theme.bg} stroke={ACCENT} strokeWidth={2.5} />
+      {kind === 'string' && <Circle cx={X(b)} cy={Y(b)} r={9} fill={theme.bg} stroke={ACCENT} strokeWidth={2.5} />}
+    </G>
   );
 }
 
@@ -572,6 +675,7 @@ function Canvas({
         return (
           <G key={l.lightId}>
             {selected && <Circle cx={X(l)} cy={Y(l)} r={20} fill="none" stroke={ACCENT} strokeWidth={2.5} />}
+            {selected && light && directional(l.lightId, snapshot) && <Handle l={l} rooms={doc.rooms} kind={directional(l.lightId, snapshot)!} view={view} />}
             <Circle
               cx={X(l)}
               cy={Y(l)}

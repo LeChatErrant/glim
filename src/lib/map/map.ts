@@ -15,7 +15,13 @@ export type MapRoom = {
   outdoor?: boolean;
 };
 
-export type MapLight = { lightId: string } & FloorPoint;
+export type MapLight = {
+  lightId: string;
+  /** Direction it runs along (string lights, bars, lanterns), degrees in map coordinates. Absent = along the nearest wall. */
+  angle?: number;
+  /** Length of string lights, in meters. */
+  length?: number;
+} & FloorPoint;
 
 export type HomeMap = {
   version: 2;
@@ -89,7 +95,11 @@ export function toPlan(map: HomeMap, rotation = map.rotation ?? 0): Plan {
   const sin = Math.sin(a);
   // Screen y points down, so this turns clockwise on screen.
   const turn = <T extends FloorPoint>(p: T): T => ({ ...p, x: cos * p.x - sin * p.z, z: sin * p.x + cos * p.z });
-  map = { ...map, rooms: map.rooms.map((r) => ({ ...r, points: r.points.map(turn) })), lights: map.lights.map(turn) };
+  map = {
+    ...map,
+    rooms: map.rooms.map((r) => ({ ...r, points: r.points.map(turn) })),
+    lights: map.lights.map((l) => ({ ...turn(l), angle: l.angle === undefined ? undefined : l.angle + rotation })),
+  };
   const all = [...map.rooms.flatMap((r) => r.points), ...map.lights];
   const minU = Math.min(...all.map((p) => p.x), 0);
   const minV = Math.min(...all.map((p) => p.z), 0);

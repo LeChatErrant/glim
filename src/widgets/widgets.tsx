@@ -168,14 +168,14 @@ export function RoomsWidget({ snapshot, width, height, stale }: { snapshot: Snap
   );
 }
 
-/** "Home" and "8 OF 9 ON" / "ALL OFF" / "LAST KNOWN · 21:42". */
-function HomeTitle({ snapshot, stale, size }: { snapshot: Snapshot; stale: boolean; size: number }) {
-  const reachable = snapshot.lights.filter((l) => l.reachable);
+/** "Home" (or the room zoomed into) and "8 OF 9 ON" / "ALL OFF" / "LAST KNOWN · 21:42". */
+function HomeTitle({ snapshot, stale, size, title = 'Home', lightIds }: { snapshot: Snapshot; stale: boolean; size: number; title?: string; lightIds?: string[] }) {
+  const reachable = snapshot.lights.filter((l) => l.reachable && (!lightIds || lightIds.includes(l.id)));
   const lit = reachable.filter((l) => l.on).length;
   const sub = stale ? `LAST KNOWN · ${clock(snapshot.fetchedAt)}` : lit ? `${lit} OF ${reachable.length} ON` : 'ALL OFF';
   return (
     <FlexWidget style={{ flexDirection: 'column' }}>
-      <TextWidget text="Home" style={{ fontFamily: font.display, fontSize: size, color: stale ? SECONDARY : IVORY }} />
+      <TextWidget text={title} maxLines={1} truncate="END" style={{ fontFamily: font.display, fontSize: size, color: stale ? SECONDARY : IVORY }} />
       <FlexWidget style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
         {stale && <SvgWidget svg={iconSvg('cloudOff', color.secondary, 11)} style={{ width: 11, height: 11, marginRight: 5 }} />}
         <TextWidget text={sub} style={caps(9, stale ? MUTED : SECONDARY)} />
@@ -184,18 +184,41 @@ function HomeTitle({ snapshot, stale, size }: { snapshot: Snapshot; stale: boole
   );
 }
 
+/** Small round buttons over the map: step room by room (‹ ›) and turn the map (⟳). Widgets can't pinch. */
+function MapNav({ pager, left, top }: { pager: boolean; left: number; top: number }) {
+  const button = (icon: 'prev' | 'next' | 'rotate', action: string, label: string, data?: Record<string, string>) => (
+    <FlexWidget
+      clickAction={action}
+      clickActionData={data}
+      accessibilityLabel={label}
+      style={{ width: 34, height: 34, marginLeft: 4, borderRadius: 17, backgroundColor: 'rgba(7, 7, 8, 0.86)', borderWidth: 1, borderColor: line(0.14), justifyContent: 'center', alignItems: 'center' }}
+    >
+      <SvgWidget svg={iconSvg(icon, color.secondary, 14)} style={{ width: 14, height: 14 }} />
+    </FlexWidget>
+  );
+  return (
+    <FlexWidget style={{ flexDirection: 'row', marginLeft: left, marginTop: top }}>
+      {pager && button('prev', 'MAP_PAGE', 'Previous room', { dir: '-1' })}
+      {pager && button('next', 'MAP_PAGE', 'Next room', { dir: '1' })}
+      {button('rotate', 'MAP_TURN', 'Turn the map')}
+    </FlexWidget>
+  );
+}
+
 /** "All off" when something is lit, "All on" otherwise. Sent natively when the home group is known. */
-function AllButton({ snapshot, pill }: { snapshot: Snapshot; pill: boolean }) {
-  const anyOn = snapshot.lights.some(isLit);
+function AllButton({ snapshot, pill, room }: { snapshot: Snapshot; pill: boolean; room?: Room }) {
+  // Zoomed into a room: the button switches that room.
+  const anyOn = room ? lightsOf(room, snapshot).some(isLit) : snapshot.lights.some(isLit);
   const target = !anyOn;
-  const fast = !!snapshot.homeGroupId;
+  const fast = room ? !!room.groupedLightId : !!snapshot.homeGroupId;
+  const path = `grouped_light/${room ? room.groupedLightId : snapshot.homeGroupId}`;
   return (
     <FlexWidget
-      clickAction={fast ? 'FAST_TOGGLE_ALL' : 'TOGGLE_ALL'}
+      clickAction={room ? (fast ? 'FAST_TOGGLE_ROOM' : 'OPEN_APP') : fast ? 'FAST_TOGGLE_ALL' : 'TOGGLE_ALL'}
       clickActionData={
-        fast ? fastToggle(`grouped_light/${snapshot.homeGroupId}`, target, { all: 'home' }) : { target: target ? 'on' : 'off' }
+        room ? (fast ? fastToggle(path, target, { roomId: room.id }) : undefined) : fast ? fastToggle(path, target, { all: 'home' }) : { target: target ? 'on' : 'off' }
       }
-      accessibilityLabel={anyOn ? 'Turn all lights off' : 'Turn all lights on'}
+      accessibilityLabel={room ? `Turn ${room.name} ${anyOn ? 'off' : 'on'}` : anyOn ? 'Turn all lights off' : 'Turn all lights on'}
       style={{
         flexDirection: 'row',
         alignItems: 'center',
@@ -214,7 +237,7 @@ function AllButton({ snapshot, pill }: { snapshot: Snapshot; pill: boolean }) {
           ...(anyOn ? {} : { backgroundColor: color.champagne as Hex }),
         }}
       />
-      <TextWidget text={anyOn ? 'ALL OFF' : 'ALL ON'} style={{ ...caps(9, SECONDARY), marginLeft: 9 }} />
+      <TextWidget text={room ? (anyOn ? 'OFF' : 'ON') : anyOn ? 'ALL OFF' : 'ALL ON'} style={{ ...caps(9, SECONDARY), marginLeft: 9 }} />
     </FlexWidget>
   );
 }
@@ -223,7 +246,30 @@ function AllButton({ snapshot, pill }: { snapshot: Snapshot; pill: boolean }) {
  * The floor plan with live light pools. Tap a light to toggle it, tap elsewhere in a room to
  * toggle the room. Wide sizes (4×2) get a side panel, taller ones a bar below the plan.
  */
-export function MapWidget({ snapshot, plan, width, height, stale }: { snapshot: Snapshot | null; plan: Plan | null; width: number; height: number } & Freshness) {
+export function MapWidget({
+  snapshot,
+  plan,
+  width,
+  height,
+  stale,
+  title,
+  focusRoom,
+  pager = false,
+  nav = true,
+}: {
+  snapshot: Snapshot | null;
+  plan: Plan | null;
+  width: number;
+  height: number;
+  /** Name of the room zoomed into; absent = "Home". */
+  title?: string;
+  /** Hue room zoomed into: the on/off button switches it. */
+  focusRoom?: Room;
+  /** Show the room-by-room arrows (more than one room in the area). */
+  pager?: boolean;
+  /** Show the buttons over the map (off in previews). */
+  nav?: boolean;
+} & Freshness) {
   if (!snapshot) return <NotPaired />;
   if (!plan) return <SetupCard title="Tap to set up" hint="Map · scan or draw your home" />;
   const lights = snapshot.lights;
@@ -306,6 +352,7 @@ export function MapWidget({ snapshot, plan, width, height, stale }: { snapshot: 
           />
         );
       })}
+      {nav && <MapNav pager={pager} left={box.left + box.width - (pager ? 3 : 1) * 38} top={box.top} />}
       {wide ? (
         <FlexWidget
           style={{
@@ -317,8 +364,8 @@ export function MapWidget({ snapshot, plan, width, height, stale }: { snapshot: 
             justifyContent: 'space-between',
           }}
         >
-          <HomeTitle snapshot={snapshot} stale={stale} size={22} />
-          <AllButton snapshot={snapshot} pill={false} />
+          <HomeTitle snapshot={snapshot} stale={stale} size={22} title={title} lightIds={title ? plan.lights.map((l) => l.lightId) : undefined} />
+          <AllButton snapshot={snapshot} pill={false} room={focusRoom} />
         </FlexWidget>
       ) : (
         <FlexWidget
@@ -332,8 +379,8 @@ export function MapWidget({ snapshot, plan, width, height, stale }: { snapshot: 
             alignItems: 'center',
           }}
         >
-          <HomeTitle snapshot={snapshot} stale={stale} size={18} />
-          <AllButton snapshot={snapshot} pill />
+          <HomeTitle snapshot={snapshot} stale={stale} size={18} title={title} lightIds={title ? plan.lights.map((l) => l.lightId) : undefined} />
+          <AllButton snapshot={snapshot} pill room={focusRoom} />
         </FlexWidget>
       )}
     </OverlapWidget>

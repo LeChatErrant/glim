@@ -101,7 +101,11 @@ but never in a way that would need a rewrite to sell it later (see
   shown in its marker; unreachable = dashed amber ring + strike-through.
 - 2026-10-26: Map orientation is saved with the map (twist or Turn left/right);
   pinch zooms, drag pans. Each Map widget can show a subset of rooms and its
-  own orientation (long-press the widget → configure).
+  own orientation (long-press the widget → configure); its ‹ › buttons zoom
+  room by room (the on/off button then switches that room) and ⟳ turns it.
+- 2026-10-26: String lights, bars and lanterns can be oriented in the 2D editor
+  (handle; strings also get a length); default is along the nearest wall.
+  Glows breathe slowly in the app, never on widgets.
 - 2026-10-26: Favorites are saved looks (color or white + brightness), per
   bridge, applied to a light or a whole room.
 
