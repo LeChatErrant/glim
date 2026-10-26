@@ -35,6 +35,7 @@ export default function RootLayout() {
         <Stack.Screen name="scan" options={{ headerShown: false }} />
         <Stack.Screen name="editor" options={{ title: 'Edit map' }} />
         <Stack.Screen name="light/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="away" options={{ headerShown: false }} />
         <Stack.Screen name="room/[id]" options={{ headerShown: false, presentation: 'transparentModal', animation: 'fade', contentStyle: { backgroundColor: 'transparent' } }} />
       </Stack>
     </>

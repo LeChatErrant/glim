@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { HueHttp } from '../../../modules/hue-http';
 import { getBridge } from './bridge';
 import { mirekToHex, PLUG_ON_COLOR, xyToHex } from './color';
+import { send } from './transport';
 
 export type LightKind = 'color' | 'white' | 'onoff';
 
@@ -68,15 +68,8 @@ type Resource = Record<string, any> & { id: string; type: string };
 async function call(path: string, method: 'GET' | 'PUT' | 'POST' | 'DELETE' = 'GET', body?: unknown): Promise<Resource[]> {
   const bridge = await getBridge();
   if (!bridge) throw new Error('No bridge paired');
-  const res = await HueHttp.request({
-    url: `https://${bridge.ip}/clip/v2/resource/${path}`,
-    method,
-    headers: { 'hue-application-key': bridge.appKey },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    bridgeId: bridge.id,
-    pin: bridge.pin,
-    timeoutMs: 4000,
-  });
+  // Straight to the bridge at home, through Hue's cloud when away.
+  const res = await send(bridge, path, method, body === undefined ? undefined : JSON.stringify(body));
   const json = JSON.parse(res.body || '{}') as { data?: Resource[]; errors?: { description: string }[] };
   if (res.status >= 400 || json.errors?.length) {
     throw new Error(json.errors?.map((e) => e.description).join(', ') || `HTTP ${res.status}`);

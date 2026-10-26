@@ -24,6 +24,13 @@ class FastConfigRecord : Record {
   @Field val pin: String = ""
 }
 
+class CloudConfigRecord : Record {
+  @Field val accessToken: String = ""
+  // Epoch milliseconds.
+  @Field val expiresAt: Double = 0.0
+  @Field val preferCloud: Boolean = false
+}
+
 class HueHttpModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("HueHttp")
@@ -43,6 +50,12 @@ class HueHttpModule : Module() {
     AsyncFunction("setFastConfig") { c: FastConfigRecord? ->
       val context = appContext.reactContext ?: return@AsyncFunction
       if (c == null) FastConfig.clear(context) else FastConfig.save(context, c.ip, c.id, c.appKey, c.pin)
+    }
+
+    // Lets widget taps go through Hue's cloud away from home.
+    AsyncFunction("setCloudConfig") { c: CloudConfigRecord? ->
+      val context = appContext.reactContext ?: return@AsyncFunction
+      FastConfig.saveCloud(context, c?.let { FastConfig.Cloud(it.accessToken, it.expiresAt.toLong(), it.preferCloud) })
     }
 
     // Live sync of widgets with the bridge (foreground service). Started at app start, while it's allowed.

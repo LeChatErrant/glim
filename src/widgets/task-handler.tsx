@@ -30,7 +30,7 @@ async function fresh(): Promise<State> {
   try {
     return { snapshot: await fetchSnapshot(), stale: false };
   } catch {
-    // Off the home network (cloud access comes later): keep showing the last known state, muted.
+    // Neither the bridge nor Hue's cloud answered: keep showing the last known state, muted.
     return { snapshot: await cachedSnapshot(), stale: true };
   }
 }

@@ -1,6 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
 
 import { HueHttp } from '../../../modules/hue-http';
+import { disconnectCloud } from './cloud';
+import { syncNativeCloud } from './transport';
 
 export type BridgeConfig = {
   ip: string;
@@ -28,6 +30,8 @@ export async function saveBridge(config: BridgeConfig) {
 }
 
 export async function forgetBridge() {
+  const b = await getBridge();
+  if (b) await disconnectCloud(b.id);
   await SecureStore.deleteItemAsync(KEY);
   cached = null;
   await HueHttp.setFastConfig(null);
@@ -37,6 +41,7 @@ export async function forgetBridge() {
 export async function syncFastConfig() {
   const b = await getBridge();
   await HueHttp.setFastConfig(b);
+  if (b) await syncNativeCloud(b.id);
 }
 
 export type DiscoveredBridge = { id: string; ip: string; reachable: boolean };

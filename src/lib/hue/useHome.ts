@@ -6,7 +6,9 @@ import { HueHttp } from '../../../modules/hue-http';
 import type { Connection } from '../../ui/controls';
 import { refreshAllWidgets } from '../../widgets/task-handler';
 import type { Planned } from '../actions';
+import { getBridge } from './bridge';
 import { cachedSnapshot, fetchSnapshot, saveCachedSnapshot, type Snapshot } from './client';
+import { currentRoute, onRouteChange, probeLocal } from './transport';
 
 /**
  * The home as every screen sees it: one shared state, so the map, the rooms, the light screen and
@@ -27,6 +29,9 @@ let drawn = '';
 const polls: number[] = [];
 let timer: ReturnType<typeof setInterval> | null = null;
 let interval = 0;
+/** Through Hue's cloud, polls are slower: each one is six requests to Hue's servers. */
+const CLOUD_POLL_MS = 10_000;
+let lastFetch = 0;
 
 function set(next: Partial<State>) {
   state = { ...state, ...next };
@@ -40,11 +45,14 @@ cachedSnapshot().then((s) => {
   if (s && !state.snapshot) set({ snapshot: s });
 });
 
+const connectionNow = (): Connection => (currentRoute() === 'cloud' ? 'cloud' : 'home');
+
 export async function refreshHome() {
   const started = version;
+  lastFetch = Date.now();
   try {
     const s = await fetchSnapshot();
-    set({ connection: 'home' });
+    set({ connection: connectionNow() });
     if (inFlight || started !== version) return;
     set({ snapshot: s });
     // Something else changed the lights (a switch, another app): bring the widgets along.
@@ -54,9 +62,14 @@ export async function refreshHome() {
       refreshAllWidgets(s).catch(() => null);
     }
   } catch {
-    // Cloud access comes later: off the home network, the bridge is out of reach.
+    // Neither the bridge nor Hue's cloud answered (or cloud access isn't connected).
     set({ connection: 'offline' });
   }
+}
+
+function poll() {
+  if (currentRoute() === 'cloud' && Date.now() - lastFetch < CLOUD_POLL_MS - 500) return;
+  refreshHome();
 }
 
 /** Applies a planned change optimistically: screens and widgets update at once, the bridge follows. */
@@ -84,7 +97,7 @@ function schedule() {
   const next = polls.length ? Math.min(...polls) : 0;
   if (next === interval) return;
   if (timer) clearInterval(timer);
-  timer = next ? setInterval(refreshHome, next) : null;
+  timer = next ? setInterval(poll, next) : null;
   if (next && !interval) refreshHome();
   interval = next;
 }
@@ -104,10 +117,16 @@ function listenToBridge() {
   if (subscribed) return;
   subscribed = true;
   // Back from the background: the lights may have changed meanwhile.
-  AppState.addEventListener('change', (s) => {
+  AppState.addEventListener('change', async (s) => {
     if (s !== 'active') return;
+    // Maybe back home: try the bridge before refreshing through the cloud.
+    const bridge = await getBridge();
+    if (bridge) await probeLocal(bridge, true);
     if (polls.length) refreshHome();
     HueHttp.startLive?.().catch(() => null);
+  });
+  onRouteChange(() => {
+    if (state.connection !== 'offline') set({ connection: connectionNow() });
   });
   try {
     HueHttp.addListener('onChange', () => {

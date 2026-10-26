@@ -6,7 +6,8 @@ import { requestPinWidget } from 'react-native-android-widget';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, Ellipse, Path, RadialGradient, Stop } from 'react-native-svg';
 
-import { discoverBridges, pairOnce, probeBridge, saveBridge, type BridgeConfig, type DiscoveredBridge } from '../lib/hue/bridge';
+import { discoverBridges, getBridge, pairOnce, probeBridge, saveBridge, type BridgeConfig, type DiscoveredBridge } from '../lib/hue/bridge';
+import { cloudConfigured, getCloud, startCloudSignIn } from '../lib/hue/cloud';
 import { cachedSnapshot, fetchSnapshot, type Light, type Snapshot } from '../lib/hue/client';
 import { isLit, lightShape } from '../lib/lights';
 import { loadMap, toPlan, type Plan } from '../lib/map/map';
@@ -19,16 +20,16 @@ import { color, font, hairline } from '../ui/theme';
 import { refreshAllWidgets } from '../widgets/task-handler';
 
 // First run: welcome, find the bridge, press its link button, see what was found, set up the map,
-// add a widget. Works from a fresh bridge (no rooms, even no lights). "Control from anywhere" (the
-// cloud step in the design) comes with cloud access, build step 4.
+// control from anywhere (Hue account, optional), add a widget. Works from a fresh bridge (no
+// rooms, even no lights).
 
-type Step = 'welcome' | 'bridge' | 'link' | 'found' | 'map' | 'widget';
+type Step = 'welcome' | 'bridge' | 'link' | 'found' | 'map' | 'cloud' | 'widget';
 
 const HAS_WIDGETS = Platform.OS === 'android';
-const NUMBERED: Step[] = HAS_WIDGETS ? ['bridge', 'link', 'found', 'map', 'widget'] : ['bridge', 'link', 'found', 'map'];
+const NUMBERED = (['bridge', 'link', 'found', 'map', 'cloud', 'widget'] as Step[]).filter((s) => (s !== 'widget' || HAS_WIDGETS) && (s !== 'cloud' || cloudConfigured));
 /** Where Back goes. Not back to the link step once paired: that would pair again. */
-const PREVIOUS: Partial<Record<Step, Step>> = { bridge: 'welcome', link: 'bridge', map: 'found', widget: 'map' };
-const STEPS: Step[] = ['welcome', 'bridge', 'link', 'found', 'map', 'widget'];
+const PREVIOUS: Partial<Record<Step, Step>> = { bridge: 'welcome', link: 'bridge', map: 'found', cloud: 'map', widget: cloudConfigured ? 'cloud' : 'map' };
+const STEPS: Step[] = ['welcome', 'bridge', 'link', 'found', 'map', 'cloud', 'widget'];
 
 const PAIR_WINDOW_S = 30;
 
@@ -45,7 +46,8 @@ export default function Onboarding() {
   const back = PREVIOUS[step];
   const goBack = back ? () => setStep(back) : undefined;
   const finish = useCallback(() => router.replace('/'), []);
-  const afterMap = useCallback(() => (HAS_WIDGETS ? setStep('widget') : finish()), [finish]);
+  const afterCloud = useCallback(() => (HAS_WIDGETS ? setStep('widget') : finish()), [finish]);
+  const afterMap = useCallback(() => (cloudConfigured ? setStep('cloud') : afterCloud()), [afterCloud]);
 
   useFocusEffect(
     useCallback(() => {
@@ -79,6 +81,8 @@ export default function Onboarding() {
       return <FoundStep header={header} onNext={() => setStep('map')} />;
     case 'map':
       return <MapStep header={header} onNext={afterMap} />;
+    case 'cloud':
+      return <CloudStep header={header} onNext={afterCloud} />;
     case 'widget':
       return <WidgetStep header={header} onDone={finish} />;
   }
@@ -789,6 +793,51 @@ function MapStep({ header, onNext }: { header: ReactNode; onNext: () => void }) 
       <Txt size={13} tone="muted" style={{ marginTop: 18 }}>
         Either way, you can fine-tune the plan afterwards.
       </Txt>
+    </StepScreen>
+  );
+}
+
+// ——— Control from anywhere ———
+
+function CloudStep({ header, onNext }: { header: ReactNode; onNext: () => void }) {
+  // Hue's sign-in comes back to the "Control from anywhere" screen; back from it connected, move on.
+  const away = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!away.current) return;
+      away.current = false;
+      getBridge().then(async (b) => b && (await getCloud(b.id)) && onNext());
+    }, [onNext]),
+  );
+  const [error, setError] = useState<string | null>(null);
+  const connect = () => {
+    away.current = true;
+    setError(null);
+    startCloudSignIn().catch((e) => setError(String(e)));
+  };
+
+  return (
+    <StepScreen
+      header={header}
+      footer={
+        <>
+          <PillButton title="Connect Hue account" kind="primary" icon="cloud" onPress={connect} />
+          <PillButton title="Later" kind="text" onPress={onNext} />
+        </>
+      }
+    >
+      <Title accent="anywhere">{'Control from\n'}</Title>
+      <Lead>{"Sign in with your Hue account and your lights and widgets work away from home too, through Hue's cloud."}</Lead>
+      <View style={{ marginTop: 30 }}>
+        <HowToRow n={1} text="At home, the app talks to your bridge directly" />
+        <HowToRow n={2} text="Away, it goes through Hue's cloud, about a second slower" />
+        <HowToRow n={3} text="Tap the connection status at the top of any screen to change it" />
+      </View>
+      {error && (
+        <Txt size={13} tone="champagne" style={{ marginTop: 16 }}>
+          {error}
+        </Txt>
+      )}
     </StepScreen>
   );
 }

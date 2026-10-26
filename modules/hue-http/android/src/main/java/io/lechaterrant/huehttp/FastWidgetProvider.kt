@@ -24,20 +24,33 @@ open class FastWidgetProvider : RNWidgetProvider() {
       val config = FastConfig.load(context)
       if (path != null && body != null && config != null) {
         val pending = goAsync()
+        val cloud = FastConfig.loadCloud(context)
+        val local = {
+          BridgeClient.request(
+            url = "https://${config.ip}/clip/v2/resource/$path",
+            method = "PUT",
+            headers = mapOf("hue-application-key" to config.appKey),
+            body = body,
+            bridgeId = config.id,
+            pin = config.pin,
+            timeoutMs = 3000,
+          )
+        }
+        val remote = cloud?.let { c -> { CloudClient.request(path, "PUT", body, c.accessToken, config.appKey) } }
+        // Away from home (the app is on the cloud route), Hue's cloud first; otherwise the bridge
+        // first, and the cloud only if the bridge doesn't answer.
+        val routes = if (remote != null && cloud?.preferCloud == true) listOf(remote, local) else listOfNotNull(local, remote)
         executor.execute {
           try {
-            val r = BridgeClient.request(
-              url = "https://${config.ip}/clip/v2/resource/$path",
-              method = "PUT",
-              headers = mapOf("hue-application-key" to config.appKey),
-              body = body,
-              bridgeId = config.id,
-              pin = config.pin,
-              timeoutMs = 3000,
-            )
-            if (r.status >= 400) Log.w(TAG, "Fast action failed: ${r.status} ${r.body}")
-          } catch (e: Exception) {
-            Log.w(TAG, "Fast action failed", e)
+            for (send in routes) {
+              try {
+                val r = send()
+                if (r.status >= 400) Log.w(TAG, "Fast action failed: ${r.status} ${r.body}")
+                break
+              } catch (e: Exception) {
+                Log.w(TAG, "Fast action: no answer", e)
+              }
+            }
           } finally {
             pending.finish()
           }

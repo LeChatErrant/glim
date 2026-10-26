@@ -85,6 +85,9 @@
         }
       ],
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "cloudServer": ""
+    }
   }
 }

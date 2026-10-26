@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "glim-server",
+    "slug": "glim-server",
+    "scheme": "glimserver",
+    "web": { "output": "server", "bundler": "metro" },
+    "plugins": [["expo-router", { "root": "./src/app" }]]
+  }
+}

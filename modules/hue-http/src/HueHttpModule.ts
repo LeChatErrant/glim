@@ -18,6 +18,11 @@ declare class HueHttpModule extends NativeModule<Events> {
   request(options: HueHttpRequest): Promise<HueHttpResponse>;
   /** Credentials the native widget provider uses for instant taps. Null clears them. */
   setFastConfig(config: { ip: string; id: string; appKey: string; pin: string } | null): Promise<void>;
+  /**
+   * Hue cloud token for widget taps away from home, and whether to try the cloud first (the app
+   * is on the cloud route). Null clears it. Missing in builds older than cloud access.
+   */
+  setCloudConfig?(config: { accessToken: string; expiresAt: number; preferCloud: boolean } | null): Promise<void>;
   /** Starts live sync (widgets follow the bridge's event stream) if enabled and paired. */
   startLive(): Promise<void>;
   setLiveEnabled(on: boolean): Promise<void>;

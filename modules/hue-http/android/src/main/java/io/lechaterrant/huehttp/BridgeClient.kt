@@ -142,4 +142,50 @@ object FastConfig {
     val ip = p.getString("ip", null) ?: return null
     return Config(ip, p.getString("id", "")!!, p.getString("appKey", "")!!, p.getString("pin", "")!!)
   }
+
+  /** Hue cloud token (refreshed by JS), and whether the app is on the cloud route right now. */
+  data class Cloud(val accessToken: String, val expiresAt: Long, val preferCloud: Boolean)
+
+  fun saveCloud(context: Context, cloud: Cloud?) {
+    val e = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+    if (cloud == null) e.remove("cloudToken").remove("cloudExpiresAt").remove("preferCloud")
+    else e.putString("cloudToken", cloud.accessToken).putLong("cloudExpiresAt", cloud.expiresAt).putBoolean("preferCloud", cloud.preferCloud)
+    e.apply()
+  }
+
+  /** The cloud token, if there is one that hasn't expired. */
+  fun loadCloud(context: Context): Cloud? {
+    val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val token = p.getString("cloudToken", null) ?: return null
+    val expiresAt = p.getLong("cloudExpiresAt", 0)
+    if (expiresAt < System.currentTimeMillis()) return null
+    return Cloud(token, expiresAt, p.getBoolean("preferCloud", false))
+  }
+}
+
+/** CLIP v2 through Hue's cloud (Remote API). Publicly trusted certificate: default TLS checks. */
+object CloudClient {
+  private const val BASE = "https://api.meethue.com/route/clip/v2/resource/"
+
+  fun request(path: String, method: String, body: String?, accessToken: String, appKey: String, timeoutMs: Int = 8000): BridgeResponse {
+    val conn = URL(BASE + path).openConnection() as HttpURLConnection
+    try {
+      conn.requestMethod = method
+      conn.connectTimeout = timeoutMs
+      conn.readTimeout = timeoutMs
+      conn.setRequestProperty("Authorization", "Bearer $accessToken")
+      conn.setRequestProperty("hue-application-key", appKey)
+      body?.let { b ->
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.outputStream.use { it.write(b.toByteArray()) }
+      }
+      val status = conn.responseCode
+      val stream = if (status >= 400) conn.errorStream else conn.inputStream
+      val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
+      return BridgeResponse(status, text, "", "")
+    } finally {
+      conn.disconnect()
+    }
+  }
 }

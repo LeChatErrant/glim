@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useRouter } from 'expo-router';
 import { PanResponder, Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
 
@@ -236,15 +237,22 @@ export function Slider({
 
 export type Connection = 'home' | 'cloud' | 'offline';
 
-/** AT HOME (green dot) / AWAY · VIA CLOUD / OFFLINE. Quiet unless offline. */
+/** AT HOME (green dot) / AWAY · VIA CLOUD / OFFLINE. Quiet unless offline. Opens "Control from anywhere". */
 export function ConnectionBadge({ state }: { state: Connection }) {
   const dot = state === 'home' ? color.connected : state === 'cloud' ? color.champagne : color.error;
   const text = state === 'home' ? 'At home' : state === 'cloud' ? 'Away · via cloud' : 'Offline';
+  const router = useRouter();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }} accessibilityLabel={`Connection: ${text}`}>
+    <Pressable
+      onPress={() => router.push('/away')}
+      hitSlop={10}
+      accessibilityRole="button"
+      accessibilityLabel={`Connection: ${text}. Control from anywhere`}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 7, opacity: pressed ? 0.6 : 1 })}
+    >
       <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: dot }} />
       <Label tone={state === 'offline' ? 'ivory' : 'secondary'}>{text}</Label>
-    </View>
+    </Pressable>
   );
 }
 
