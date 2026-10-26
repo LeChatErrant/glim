@@ -322,7 +322,7 @@ function LightRow({ light, act, indent = 0 }: { light: Light; act: Act; indent?:
           </Txt>
         </View>
       </Pressable>
-      <Txt size={13} tone={on ? 'secondary' : 'muted'} style={{ minWidth: 38, textAlign: 'right', fontVariant: ['tabular-nums'], color: light.reachable ? undefined : color.warning }}>
+      <Txt size={13} tone={on ? 'secondary' : 'muted'} style={[{ minWidth: 38, textAlign: 'right', fontVariant: ['tabular-nums'] }, !light.reachable && { color: color.warning }]}>
         {lightLevel(light)}
       </Txt>
       <Switch on={light.on && light.reachable} label={`${light.name}, ${on ? 'on' : 'off'}`} onToggle={() => act((s) => planToggleLight(s, light.id))} />
@@ -382,7 +382,7 @@ function LightCard({ light, act, onPartOf }: { light: Light; act: Act; onPartOf:
             <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
               {light.name}
             </Display>
-            <Label size={9} numberOfLines={1} style={{ fontVariant: ['tabular-nums'], color: light.reachable ? undefined : color.warning }}>
+            <Label size={9} tone={on ? 'secondary' : 'muted'} numberOfLines={1} style={[{ fontVariant: ['tabular-nums'] }, !light.reachable && { color: color.warning }]}>
               {meta}
             </Label>
           </View>

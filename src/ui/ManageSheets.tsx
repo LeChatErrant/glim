@@ -41,12 +41,13 @@ export function ManageSheet({ editing, snapshot, onClose, onSaved }: { editing: 
   const [error, setError] = useState<string | null>(null);
 
   const roomOf = (l: Light) => snapshot.rooms.find((r) => r.lightIds.includes(l.id));
-  // Lights listed under their room (the room being edited first), then those in no room.
-  const ordered = existing && isRoom ? [existing as Room, ...snapshot.rooms.filter((r) => r.id !== existing.id)] : snapshot.rooms;
-  const sections = [
-    ...ordered.map((r) => ({ key: r.id, title: r.name, lights: snapshot.lights.filter((l) => roomOf(l)?.id === r.id) })),
-    { key: 'none', title: 'In no room', lights: snapshot.lights.filter((l) => !roomOf(l)) },
-  ].filter((sec) => sec.lights.length);
+  // Lights listed under their room. For a room: its own lights, then the free ones (in no room),
+  // then those it would take from another room. For a group: rooms first, free lights last.
+  const sectionOf = (r: Room) => ({ key: r.id, title: r.name, lights: snapshot.lights.filter((l) => roomOf(l)?.id === r.id) });
+  const free = { key: 'none', title: isRoom ? 'Not in a room yet' : 'In no room', lights: snapshot.lights.filter((l) => !roomOf(l)) };
+  const own = isRoom && existing ? snapshot.rooms.filter((r) => r.id === existing.id) : [];
+  const others = snapshot.rooms.filter((r) => !own.includes(r));
+  const sections = (isRoom ? [...own.map(sectionOf), free, ...others.map(sectionOf)] : [...others.map(sectionOf), free]).filter((sec) => sec.lights.length);
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const what = isRoom ? 'room' : 'group';
 
@@ -107,11 +108,9 @@ export function ManageSheet({ editing, snapshot, onClose, onSaved }: { editing: 
       </View>
       <View>
         <Label>{isRoom ? 'Lights in this room' : 'Lights in this group'}</Label>
-        {!isRoom && (
-          <Txt size={12} tone="muted" style={{ marginTop: 4 }}>
-            A group can mix lights from several rooms.
-          </Txt>
-        )}
+        <Txt size={12} tone="muted" style={{ marginTop: 4 }}>
+          {isRoom ? 'A light is in one room only: adding one from another room takes it out of that room.' : 'A group can mix lights from several rooms.'}
+        </Txt>
         {sections.map((sec) => {
           const ids = sec.lights.map((l) => l.id);
           const all = ids.every((id) => picked.includes(id));
@@ -172,11 +171,6 @@ export function ManageSheet({ editing, snapshot, onClose, onSaved }: { editing: 
             </View>
           );
         })}
-        {isRoom && (
-          <Txt size={12} tone="muted" style={{ marginTop: 6 }}>
-            A light is in one room only: adding it here takes it out of its other room.
-          </Txt>
-        )}
       </View>
       {error && (
         <Txt size={13} style={{ color: color.error }}>
