@@ -82,12 +82,11 @@ export function planToSvg(plan: Plan, lights: Light[], width: number, height: nu
   for (const r of zones) body.push(`<path d="${pathOf(r.pts)}" fill="none" stroke="${hairline(0.2)}" stroke-width="1" stroke-dasharray="2 3"/>`);
 
   for (const p of placed) {
-    if (!p.ends) continue;
-    const [a, b] = p.ends;
+    if (!p.line) continue;
     const on = p.light.on && p.light.reachable && !stale;
-    const xy = `x1="${n(f.x(a.u))}" y1="${n(f.y(a.v))}" x2="${n(f.x(b.u))}" y2="${n(f.y(b.v))}" stroke-linecap="round"`;
-    if (on) body.push(`<line ${xy} stroke="${p.light.color}" stroke-opacity="0.45" stroke-width="6"/>`);
-    body.push(`<line ${xy} stroke="${on ? '#FFE2B0' : stale ? STALE.core : '#4A4640'}" stroke-width="2"/>`);
+    const xy = `points="${p.line.map((q) => `${n(f.x(q.u))},${n(f.y(q.v))}`).join(' ')}" fill="none" stroke-linecap="round" stroke-linejoin="round"`;
+    if (on) body.push(`<polyline ${xy} stroke="${p.light.color}" stroke-opacity="0.45" stroke-width="6"/>`);
+    body.push(`<polyline ${xy} stroke="${on ? '#FFE2B0' : stale ? STALE.core : '#4A4640'}" stroke-width="2"/>`);
   }
 
   for (const p of placed) {

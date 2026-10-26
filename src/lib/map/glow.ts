@@ -2,6 +2,7 @@ import type { Light, Snapshot } from '../hue/client';
 import { DEFAULT_LENGTH, lightShape, type LightShape } from '../lights';
 import { centroid, pointInPolygon } from './geometry';
 import type { FloorPoint, HomeMap, Plan } from './map';
+import { runPath, runSamples, wallRun } from './wallPath';
 
 type UV = { u: number; v: number };
 type PlanRoom = Plan['rooms'][number];
@@ -92,8 +93,8 @@ export type PlacedLight = {
   pools: Pool[];
   /** String lights: bead positions. */
   beads: UV[];
-  /** Lightstrips: both ends of the strip. */
-  ends: [UV, UV] | null;
+  /** Lightstrips: the strip as a polyline (it turns at corners when it runs along the walls). */
+  line: UV[] | null;
 };
 
 /**
@@ -115,7 +116,7 @@ export function placeLights(plan: Plan, lights: Light[]): PlacedLight[] {
     const b = (light.brightness ?? 100) / 100;
     const pools: Pool[] = [];
     let beads: UV[] = [];
-    let ends: [UV, UV] | null = null;
+    let line: UV[] | null = null;
     const at = { u: pl.u, v: pl.v, angle: 0 };
     switch (shape) {
       case 'pendant': {
@@ -146,45 +147,62 @@ export function placeLights(plan: Plan, lights: Light[]): PlacedLight[] {
         break;
       }
       case 'strip': {
-        // A line at its real length, centered on the light, along the direction set or the
-        // nearest wall; it washes the floor along its whole length.
-        const angle = set ?? wall?.angle ?? 0;
-        const half = (pl.length ?? DEFAULT_LENGTH.strip!) / 2;
-        const du = Math.cos(angle) * half;
-        const dv = Math.sin(angle) * half;
-        ends = [
-          { u: pl.u - du, v: pl.v - dv },
-          { u: pl.u + du, v: pl.v + dv },
-        ];
-        pools.push({ ...at, angle, rx: half + 0.8 + 0.6 * b, ry: 0.85 + 0.55 * b, alpha: 0.85 });
+        // Its real length: along the walls (around corners) when it sits by one, else a straight
+        // line through the light, along the direction set or the nearest wall. Washes along its length.
+        const len = pl.length ?? DEFAULT_LENGTH.strip!;
+        const run = set === null && room ? wallRun(room.pts, pl, len) : null;
+        if (run) {
+          line = runPath(run);
+        } else {
+          const angle = set ?? wall?.angle ?? 0;
+          const du = (Math.cos(angle) * len) / 2;
+          const dv = (Math.sin(angle) * len) / 2;
+          line = [
+            { u: pl.u - du, v: pl.v - dv },
+            { u: pl.u + du, v: pl.v + dv },
+          ];
+        }
+        for (let k = 0; k < line.length - 1; k++) {
+          const a = line[k];
+          const c = line[k + 1];
+          const half = Math.hypot(c.u - a.u, c.v - a.v) / 2;
+          pools.push({ u: (a.u + c.u) / 2, v: (a.v + c.v) / 2, angle: Math.atan2(c.v - a.v, c.u - a.u), rx: half + 0.8 + 0.6 * b, ry: 0.85 + 0.55 * b, alpha: 0.85 });
+        }
         break;
       }
       case 'string': {
-        // A row of beads sagging a little: along the direction the user set (centered on the
-        // light), else hanging along the nearest wall.
-        const angle = set ?? wall?.angle ?? 0;
-        const du = Math.cos(angle);
-        const dv = Math.sin(angle);
-        let nu = -dv;
-        let nv = du;
-        if (set === null && wall) {
-          nu = wall.nu;
-          nv = wall.nv;
+        // A row of beads sagging a little: hanging along the walls (around corners) when it sits
+        // by one, else along the direction set (centered on the light) or the nearest wall.
+        const len = pl.length ?? DEFAULT_LENGTH.string!;
+        const count = (n: number) => Math.max(4, Math.min(n, Math.round(len * 3)));
+        const run = set === null && room ? wallRun(room.pts, pl, len) : null;
+        if (run) {
+          beads = runSamples(run, count(36), (t) => 0.13 + 0.26 * Math.sin(Math.PI * t));
+        } else {
+          const angle = set ?? wall?.angle ?? 0;
+          const du = Math.cos(angle);
+          const dv = Math.sin(angle);
+          let nu = -dv;
+          let nv = du;
+          if (set === null && wall) {
+            nu = wall.nu;
+            nv = wall.nv;
+          }
+          const half = len / 2;
+          const n = count(15);
+          const base = set === null ? { u: pl.u - nu * 0.3, v: pl.v - nv * 0.3 } : { u: pl.u, v: pl.v };
+          beads = Array.from({ length: n }, (_, i) => {
+            const t = i / (n - 1);
+            const along = -half + 2 * half * t;
+            const sag = (set === null ? 0.18 : 0) + 0.26 * Math.sin(Math.PI * t);
+            return { u: base.u + du * along + nu * sag, v: base.v + dv * along + nv * sag };
+          });
         }
-        const half = (pl.length ?? DEFAULT_LENGTH.string!) / 2;
-        const count = Math.max(4, Math.min(15, Math.round(half * 6)));
-        const base = set === null && wall && wall.dist < 1.2 ? { u: wall.u, v: wall.v } : set === null ? { u: pl.u - nu * 0.3, v: pl.v - nv * 0.3 } : { u: pl.u, v: pl.v };
-        beads = Array.from({ length: count }, (_, i) => {
-          const t = i / (count - 1);
-          const along = -half + 2 * half * t;
-          const sag = (set === null ? 0.18 : 0) + 0.26 * Math.sin(Math.PI * t);
-          return { u: base.u + du * along + nu * sag, v: base.v + dv * along + nv * sag };
-        });
         for (const p of beads) pools.push({ ...p, angle: 0, rx: 0.75, ry: 0.75, alpha: 0.59 });
         break;
       }
     }
-    out.push({ light, shape, u: pl.u, v: pl.v, room, wallAngle: set ?? wall?.angle ?? Math.PI / 2, pools, beads, ends });
+    out.push({ light, shape, u: pl.u, v: pl.v, room, wallAngle: set ?? wall?.angle ?? Math.PI / 2, pools, beads, line });
   }
   return out;
 }

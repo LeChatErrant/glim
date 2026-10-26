@@ -108,7 +108,11 @@ but never in a way that would need a rewrite to sell it later (see
 - 2026-10-26: String lights, bars and lanterns can be oriented in the 2D editor
   (handle; strings also get a length); default is along the nearest wall.
   2026-10-27: lightstrips too, at their real length (default 2 m; a line with
-  a wash along it), stretched like strings.
+  a wash along it), stretched like strings. A strip or string within 1.2 m of
+  a wall and not turned by hand runs along the walls, around corners
+  (`src/lib/map/wallPath.ts`): each end stretches along the outline, the light
+  sits at the middle (no extra stored data), "Straight" turns it back into a
+  line.
   Glows breathe slowly in the app, never on widgets.
 - 2026-10-26: Three separate ideas, kept apart in the UI: **rooms/groups** say
   *which* lights; a **mood** saves *how* a room or group looks, light by light;
@@ -183,7 +187,8 @@ point.**
   hairlines, windows in champagne, door swings. Each light casts a glow clipped
   to its room's walls, shaped by its type: pendant = wide soft pool, bulb =
   round pool, Hue Go = small pool, light bar = wash along the wall, lightstrip
-  = glowing line at its real length with a wash along it, string
+  = glowing line at its real length with a wash along it (turning at corners
+  when it runs along the walls), string
   lights = row of beads with small glows, wall lantern = half pool away from the
   wall. Size and strength follow brightness; off = dark.
 - **Light markers:** small jewel (color core, dark gap, ivory ring, glow); smart

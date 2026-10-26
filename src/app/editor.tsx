@@ -2,7 +2,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { PanResponder, Pressable, ScrollView, Text, View, type GestureResponderEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, G, Line, Path, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 
 import { identifyLight, type Light, type Snapshot } from '../lib/hue/client';
 import { inkOn, LIGHT_ICON_PATHS } from '../lib/lightIcons';
@@ -20,8 +20,10 @@ import {
   type SnapTargets,
   type SnapTolerance,
 } from '../lib/map/geometry';
-import { loadMap, saveMap, saveMapRotation, type FloorPoint, type HomeMap, type MapLight, type MapRoom } from '../lib/map/map';
+import { roomForPoint } from '../lib/map/glow';
+import { loadMap, saveMap, saveMapRotation, type FloorPoint, type HomeMap, type MapLight, type MapRoom, type Plan } from '../lib/map/map';
 import { PLAN_COLORS } from '../lib/map/svg';
+import { locate, pointAt, runPath, runSamples, wallRun, wrapStep, type WallRun } from '../lib/map/wallPath';
 import { Body, Button, Chip } from '../ui/components';
 import { offerMoveToRoom } from '../ui/offerMoveToRoom';
 import { RoomAssign } from '../ui/RoomAssign';
@@ -176,7 +178,8 @@ function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number })
     if (selLight && kind) {
       for (const end of [1, -1] as const) {
         if (end === -1 && !stretchy(kind)) continue;
-        const { sx: x, sy: y } = toScreen(handleAt(selLight, d.rooms, kind, v.scale, end), v);
+        const run = runOf(selLight, d.rooms, live.current.snapshot, kind);
+        const { sx: x, sy: y } = toScreen(handleAt(selLight, d.rooms, kind, v.scale, end, run), v);
         if (Math.hypot(x - sx, y - sy) < HIT_PX) return { kind: 'handle' as const, lightId: selLight.lightId, end };
       }
     }
@@ -197,6 +200,8 @@ function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number })
   // The document a drag started from; moves are applied to it from scratch on every event.
   const dragBase = useRef<Doc | null>(null);
   const moved = useRef(false);
+  /** Stretching a string or strip along the walls: where it starts and how long it is, around the outline. */
+  const wallDrag = useRef<{ from: number; len: number } | null>(null);
 
   const responder = useMemo(
     () =>
@@ -207,6 +212,7 @@ function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number })
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (e) => {
           moved.current = false;
+          wallDrag.current = null;
           dragBase.current = live.current.doc;
           const { locationX: sx, locationY: sy } = e.nativeEvent;
           const hit = hitTest(sx, sy);
@@ -294,8 +300,24 @@ function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number })
             const light = from.lights.find((l) => l.lightId === d.lightId);
             const kind = light && directional(light.lightId, live.current.snapshot);
             if (!light || !kind) return;
+            const run = runOf(light, from.rooms, live.current.snapshot, kind);
+            if (run) {
+              // Along the walls: the end follows the finger around the room, corners included. The
+              // light moves to the middle of the run, so the run is still found from it.
+              const w = (wallDrag.current ??= { from: run.from, len: run.len });
+              const end = d.end === 1 ? w.from + w.len : w.from;
+              const knob = pointAt(run, end);
+              const step = wrapStep(end, locate(run.pts, { u: knob.u + dx, v: knob.v + dz }).s, run.total);
+              const len = Math.max(0.3, Math.min(run.total, w.len + (d.end === 1 ? step : -step)));
+              if (d.end === -1) w.from += w.len - len;
+              w.len = len;
+              const mid = pointAt(run, w.from + w.len / 2);
+              setGuides([]);
+              setDraft({ ...from, lights: from.lights.map((l) => (l.lightId === d.lightId ? { ...l, x: mid.u, z: mid.v, length: Math.round(len * 10) / 10 } : l)) });
+              return;
+            }
             // The handle follows the finger: its direction turns the light, its reach sets a string's or strip's length.
-            const knob = handleAt(light, from.rooms, kind, v.scale, d.end);
+            const knob = handleAt(light, from.rooms, kind, v.scale, d.end, null);
             const p = { x: knob.x + dx - light.x, z: knob.z + dz - light.z };
             const raw = (Math.atan2(p.z, p.x) * 180) / Math.PI + (d.end === -1 ? 180 : 0);
             const angle = snapAngle(raw, from.rooms);
@@ -401,6 +423,8 @@ function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number })
   const selLight = sel?.kind === 'light' ? snapshot?.lights.find((l) => l.id === sel.lightId) : undefined;
   const placedIds = new Set(doc.lights.map((l) => l.lightId));
   const selPlaced = sel?.kind === 'light' ? doc.lights.find((l) => l.lightId === sel.lightId) : undefined;
+  const selKind = selPlaced ? directional(selPlaced.lightId, snapshot) : null;
+  const selRun = selPlaced && selKind ? runOf(selPlaced, doc.rooms, snapshot, selKind) : null;
 
   return (
     <View style={{ flex: 1 }}>
@@ -516,26 +540,39 @@ function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number })
               />
               <Button title="Done" style={{ flex: 0.8 }} onPress={() => setSel(null)} />
             </View>
-            {selPlaced && directional(sel.lightId, snapshot) && (
+            {selPlaced && selKind && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <View style={{ flex: 1 }}>
                   <Body muted>
-                    {directional(sel.lightId, snapshot) === 'string'
-                      ? 'Drag a ⟳ end to turn the string and stretch it to its real length.'
-                      : directional(sel.lightId, snapshot) === 'strip'
-                        ? 'Drag a ⟳ end to turn the strip and stretch it to its real length. It snaps to walls.'
-                      : directional(sel.lightId, snapshot) === 'lantern'
-                        ? 'Drag ⟳ to turn it along the wall it hangs on. It snaps to walls.'
-                        : 'Drag ⟳ to turn the bar the way it really stands. It snaps to walls.'}
+                    {selRun
+                      ? `Drag a ⟳ end to stretch the ${selKind === 'strip' ? 'strip' : 'string'} along the walls, around corners. Drag the light to slide it.`
+                      : selKind === 'string'
+                        ? 'Drag a ⟳ end to turn the string and stretch it to its real length.'
+                        : selKind === 'strip'
+                          ? 'Drag a ⟳ end to turn the strip and stretch it to its real length. It snaps to walls.'
+                          : selKind === 'lantern'
+                            ? 'Drag ⟳ to turn it along the wall it hangs on. It snaps to walls.'
+                            : 'Drag ⟳ to turn the bar the way it really stands. It snaps to walls.'}
                   </Body>
                 </View>
-                {selPlaced.angle !== undefined && (
+                {selRun ? (
                   <Button
-                    title="Along the wall"
-                    onPress={() =>
-                      commit({ ...doc, lights: doc.lights.map((l) => (l.lightId === sel.lightId ? { ...l, angle: undefined, length: undefined } : l)) })
-                    }
+                    title="Straight"
+                    onPress={() => commit({ ...doc, lights: doc.lights.map((l) => (l.lightId === sel.lightId ? { ...l, angle: lightAngle(l, doc.rooms) } : l)) })}
                   />
+                ) : (
+                  selPlaced.angle !== undefined && (
+                    <Button
+                      title="Along the wall"
+                      onPress={() =>
+                        commit({
+                          ...doc,
+                          // Strings and strips keep their length: by a wall, they now follow it around corners.
+                          lights: doc.lights.map((l) => (l.lightId === sel.lightId ? { ...l, angle: undefined, length: stretchy(selKind) ? l.length : undefined } : l)),
+                        })
+                      }
+                    />
+                  )
                 )}
               </View>
             )}
@@ -559,6 +596,21 @@ function directional(lightId: string, s: Snapshot | null): Directional | null {
 const stretchy = (kind: Directional) => kind === 'string' || kind === 'strip';
 const lengthOf = (l: MapLight, kind: Directional) => l.length ?? DEFAULT_LENGTH[kind] ?? 0;
 
+const uv = (p: FloorPoint) => ({ u: p.x, v: p.z });
+const xz = (p: { u: number; v: number }): FloorPoint => ({ x: p.u, z: p.v });
+
+/**
+ * A string or strip that runs along the walls of its room, around corners (it sits by a wall and
+ * wasn't turned by hand); null when it's a straight line. Same rule as the Map tab draws.
+ */
+function runOf(l: MapLight, rooms: MapRoom[], s: Snapshot | null, kind: Directional): WallRun | null {
+  if (!stretchy(kind) || l.angle !== undefined) return null;
+  const plan: Plan = { width: 0, height: 0, rooms: rooms.map((r) => ({ ...r, pts: r.points.map(uv) })), lights: [] };
+  const hueRoomId = s?.lights.find((x) => x.id === l.lightId)?.roomId ?? null;
+  const room = roomForPoint(plan, uv(l), hueRoomId);
+  return room ? wallRun(room.pts, uv(l), lengthOf(l, kind)) : null;
+}
+
 /** The direction a light runs along, in degrees: set by the user, else along the nearest wall (as the map draws it). */
 function lightAngle(l: MapLight, rooms: MapRoom[]) {
   if (l.angle !== undefined) return l.angle;
@@ -576,8 +628,9 @@ function lightAngle(l: MapLight, rooms: MapRoom[]) {
   return angle;
 }
 
-/** Where a light's handle sits: the ends of a string or strip (its length), or a fixed reach for the others. */
-function handleAt(l: MapLight, rooms: MapRoom[], kind: Directional, scale: number, end: 1 | -1): FloorPoint {
+/** Where a light's handle sits: the ends of a string or strip (its length, around corners along the walls), or a fixed reach for the others. */
+function handleAt(l: MapLight, rooms: MapRoom[], kind: Directional, scale: number, end: 1 | -1, run: WallRun | null): FloorPoint {
+  if (run) return xz(pointAt(run, end === 1 ? run.from + run.len : run.from));
   const a = (lightAngle(l, rooms) * Math.PI) / 180;
   const reach = stretchy(kind) ? Math.max(lengthOf(l, kind) / 2, 30 / scale) : 46 / scale;
   return { x: l.x + Math.cos(a) * reach * end, z: l.z + Math.sin(a) * reach * end };
@@ -600,11 +653,11 @@ const ROTATE_ICON = 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4v4.5H15';
  * The selected light's handle: a knob with a turn icon at the end of a dashed arm, labeled with
  * what dragging it does. String lights and strips get a knob at each end, and their length in the middle.
  */
-function Handle({ l, rooms, kind, view }: { l: MapLight; rooms: MapRoom[]; kind: Directional; view: ViewBox }) {
+function Handle({ l, rooms, kind, view, run }: { l: MapLight; rooms: MapRoom[]; kind: Directional; view: ViewBox; run: WallRun | null }) {
   const X = (p: FloorPoint) => screenOf(p, view).sx;
   const Y = (p: FloorPoint) => screenOf(p, view).sy;
-  const a = handleAt(l, rooms, kind, view.scale, 1);
-  const b = stretchy(kind) ? handleAt(l, rooms, kind, view.scale, -1) : l;
+  const a = handleAt(l, rooms, kind, view.scale, 1, run);
+  const b = stretchy(kind) ? handleAt(l, rooms, kind, view.scale, -1, run) : l;
   const knob = (p: FloorPoint, key: string) => (
     <G key={key}>
       <Circle cx={X(p)} cy={Y(p)} r={14} fill={theme.bg} stroke={ACCENT} strokeWidth={2} />
@@ -614,11 +667,12 @@ function Handle({ l, rooms, kind, view }: { l: MapLight; rooms: MapRoom[]; kind:
   const length = stretchy(kind) ? `${lengthOf(l, kind).toFixed(1)} m` : null;
   return (
     <G>
-      <Line x1={X(b)} y1={Y(b)} x2={X(a)} y2={Y(a)} stroke={ACCENT} strokeWidth={1.5} strokeDasharray="5 4" />
+      {!run && <Line x1={X(b)} y1={Y(b)} x2={X(a)} y2={Y(a)} stroke={ACCENT} strokeWidth={1.5} strokeDasharray="5 4" />}
       {knob(a, 'a')}
       {stretchy(kind) && knob(b, 'b')}
-      <PlanChip x={X(a)} y={Y(a) - 30} text={stretchy(kind) ? 'TURN · STRETCH' : 'TURN'} />
-      {length && <PlanChip x={(X(a) + X(b)) / 2} y={(Y(a) + Y(b)) / 2 - 26} text={length} />}
+      {/* Along the walls the middle of the knobs can be anywhere (on the light, outside the room): the length goes with the label. */}
+      <PlanChip x={X(a)} y={Y(a) - 30} text={run ? `STRETCH · ${length}` : stretchy(kind) ? 'TURN · STRETCH' : 'TURN'} />
+      {length && !run && <PlanChip x={(X(a) + X(b)) / 2} y={(Y(a) + Y(b)) / 2 - 26} text={length} />}
     </G>
   );
 }
@@ -678,14 +732,38 @@ function MarkerG({ light, x, y, angle }: { light: Light; x: number; y: number; a
  * What the light physically is, on the floor: a light bar's length, a string's row of beads or a
  * strip (their real length), a lantern's wall plate. Turning the handle turns this, so its effect shows.
  */
-function Footprint({ l, light, rooms, kind, view }: { l: MapLight; light: Light; rooms: MapRoom[]; kind: Directional; view: ViewBox }) {
+function Footprint({ l, light, rooms, kind, view, run }: { l: MapLight; light: Light; rooms: MapRoom[]; kind: Directional; view: ViewBox; run: WallRun | null }) {
+  const on = light.on && light.reachable;
+  const tint = on ? light.color : 'rgba(242,232,216,0.45)';
+  if (run) {
+    // Along the walls, turning at corners: the strip itself, or the string's line and its beads.
+    const pts = runPath(run)
+      .map((p) => screenOf(xz(p), view))
+      .map((p) => `${p.sx},${p.sy}`)
+      .join(' ');
+    if (kind === 'strip') {
+      return (
+        <G>
+          {on && <Polyline points={pts} fill="none" stroke={tint} strokeOpacity={0.4} strokeWidth={8} strokeLinecap="round" strokeLinejoin="round" />}
+          <Polyline points={pts} fill="none" stroke={on ? '#FFE2B0' : tint} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+        </G>
+      );
+    }
+    const beads = runSamples(run, Math.max(3, Math.round(run.len / 0.3)) + 1).map((p) => screenOf(xz(p), view));
+    return (
+      <G>
+        <Polyline points={pts} fill="none" stroke={tint} strokeOpacity={0.5} strokeWidth={1} />
+        {beads.map((b, i) => (
+          <Circle key={i} cx={b.sx} cy={b.sy} r={2.6} fill={on ? light.color : theme.bg} stroke={on ? undefined : tint} strokeWidth={1} />
+        ))}
+      </G>
+    );
+  }
   const a = (lightAngle(l, rooms) * Math.PI) / 180;
   const half = stretchy(kind) ? lengthOf(l, kind) / 2 : kind === 'bar' ? 0.3 : 0.25;
   const at = (t: number) => screenOf({ x: l.x + Math.cos(a) * t, z: l.z + Math.sin(a) * t }, view);
   const p = at(-half);
   const q = at(half);
-  const on = light.on && light.reachable;
-  const tint = on ? light.color : 'rgba(242,232,216,0.45)';
   if (kind === 'string') {
     const n = Math.max(3, Math.round((half * 2) / 0.3));
     return (
@@ -857,7 +935,7 @@ function Canvas({
       {doc.lights.map((l) => {
         const kind = directional(l.lightId, snapshot);
         const light = snapshot?.lights.find((x) => x.id === l.lightId);
-        return kind && light ? <Footprint key={`f-${l.lightId}`} l={l} light={light} rooms={doc.rooms} kind={kind} view={view} /> : null;
+        return kind && light ? <Footprint key={`f-${l.lightId}`} l={l} light={light} rooms={doc.rooms} kind={kind} view={view} run={runOf(l, doc.rooms, snapshot, kind)} /> : null;
       })}
       {doc.lights.map((l) => {
         const light = snapshot?.lights.find((x) => x.id === l.lightId);
@@ -866,7 +944,7 @@ function Canvas({
         return (
           <G key={l.lightId}>
             {selected && <Circle cx={X(l)} cy={Y(l)} r={22} fill="none" stroke={ACCENT} strokeWidth={2} />}
-            {selected && light && kind && <Handle l={l} rooms={doc.rooms} kind={kind} view={view} />}
+            {selected && light && kind && <Handle l={l} rooms={doc.rooms} kind={kind} view={view} run={runOf(l, doc.rooms, snapshot, kind)} />}
             {light ? (
               <MarkerG light={light} x={X(l)} y={Y(l)} angle={kind === 'bar' ? lightAngle(l, doc.rooms) + view.rot : undefined} />
             ) : (
