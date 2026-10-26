@@ -2,10 +2,11 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { PanResponder, Pressable, ScrollView, Text, View, type GestureResponderEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
-import { identifyLight, type Snapshot } from '../lib/hue/client';
-import { lightShape } from '../lib/lights';
+import { identifyLight, type Light, type Snapshot } from '../lib/hue/client';
+import { inkOn, LIGHT_ICON_PATHS } from '../lib/lightIcons';
+import { isPlug, lightShape, lightType } from '../lib/lights';
 import { useSnapshot } from '../lib/hue/useSnapshot';
 import {
   centroid,
@@ -520,8 +521,10 @@ function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number })
                 <View style={{ flex: 1 }}>
                   <Body muted>
                     {directional(sel.lightId, snapshot) === 'string'
-                      ? 'Drag an end of the line to turn the string lights and set their length.'
-                      : 'Drag the handle to turn it.'}
+                      ? 'Drag a ⟳ end to turn the string and stretch it to its real length.'
+                      : directional(sel.lightId, snapshot) === 'lantern'
+                        ? 'Drag ⟳ to turn it along the wall it hangs on. It snaps to walls.'
+                        : 'Drag ⟳ to turn the bar the way it really stands. It snaps to walls.'}
                   </Body>
                 </View>
                 {selPlaced.angle !== undefined && (
@@ -583,18 +586,111 @@ function snapAngle(deg: number, rooms: MapRoom[]): { deg: number; wall?: [FloorP
   return { deg: Math.round(deg / 5) * 5 };
 }
 
+const ROTATE_ICON = 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4v4.5H15';
+
+/**
+ * The selected light's handle: a knob with a turn icon at the end of a dashed arm, labeled with
+ * what dragging it does. String lights get a knob at each end, and their length in the middle.
+ */
 function Handle({ l, rooms, kind, view }: { l: MapLight; rooms: MapRoom[]; kind: 'string' | 'bar' | 'lantern'; view: ViewBox }) {
   const X = (p: FloorPoint) => screenOf(p, view).sx;
   const Y = (p: FloorPoint) => screenOf(p, view).sy;
   const a = handleAt(l, rooms, kind, view.scale, 1);
   const b = kind === 'string' ? handleAt(l, rooms, kind, view.scale, -1) : l;
-  return (
-    <G>
-      <Line x1={X(b)} y1={Y(b)} x2={X(a)} y2={Y(a)} stroke={ACCENT} strokeWidth={2} strokeDasharray="5 4" />
-      <Circle cx={X(a)} cy={Y(a)} r={9} fill={theme.bg} stroke={ACCENT} strokeWidth={2.5} />
-      {kind === 'string' && <Circle cx={X(b)} cy={Y(b)} r={9} fill={theme.bg} stroke={ACCENT} strokeWidth={2.5} />}
+  const knob = (p: FloorPoint, key: string) => (
+    <G key={key}>
+      <Circle cx={X(p)} cy={Y(p)} r={14} fill={theme.bg} stroke={ACCENT} strokeWidth={2} />
+      <Path d={ROTATE_ICON} fill="none" stroke={ACCENT} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" transform={`translate(${X(p) - 8} ${Y(p) - 8}) scale(${16 / 24})`} />
     </G>
   );
+  const length = kind === 'string' ? `${(l.length ?? 2.4).toFixed(1)} m` : null;
+  return (
+    <G>
+      <Line x1={X(b)} y1={Y(b)} x2={X(a)} y2={Y(a)} stroke={ACCENT} strokeWidth={1.5} strokeDasharray="5 4" />
+      {knob(a, 'a')}
+      {kind === 'string' && knob(b, 'b')}
+      <PlanChip x={X(a)} y={Y(a) - 30} text={kind === 'string' ? 'TURN · STRETCH' : 'TURN'} />
+      {length && <PlanChip x={(X(a) + X(b)) / 2} y={(Y(a) + Y(b)) / 2 - 26} text={length} />}
+    </G>
+  );
+}
+
+/** A small dark label with champagne text, centered on (x, y). */
+function PlanChip({ x, y, text }: { x: number; y: number; text: string }) {
+  const w = text.length * 6.6 + 16;
+  return (
+    <G>
+      <Rect x={x - w / 2} y={y - 10} width={w} height={20} rx={10} fill="rgba(5,5,6,0.88)" stroke={ACCENT} strokeOpacity={0.45} strokeWidth={1} />
+      <SvgText x={x} y={y + 3.5} fill={ACCENT} fontSize={10} letterSpacing={1.2} textAnchor="middle">
+        {text}
+      </SvgText>
+    </G>
+  );
+}
+
+/**
+ * A light as the Map tab draws it: color core, dark gap, ivory ring, and its type icon on top.
+ * Plugs are diamonds, light bars capsules turned along `angle` (degrees on screen). Off = hollow.
+ */
+function MarkerG({ light, x, y, angle }: { light: Light; x: number; y: number; angle?: number }) {
+  const on = light.on && light.reachable;
+  const core = on ? light.color : theme.bg;
+  const ink = on ? inkOn(light.color) : 'rgba(242,232,216,0.85)';
+  const r = 13;
+  const plug = isPlug(light);
+  const shape = (grow: number, fill: string, stroke?: string, dash?: string) =>
+    plug ? (
+      <Rect x={x - r + 2 - grow} y={y - r + 2 - grow} width={(r - 2 + grow) * 2} height={(r - 2 + grow) * 2} transform={`rotate(45 ${x} ${y})`} fill={fill} stroke={stroke} strokeWidth={stroke ? 1.2 : 0} strokeDasharray={dash} />
+    ) : angle !== undefined ? (
+      <Rect x={x - r - 5 - grow} y={y - r + 3 - grow} width={(r + 5 + grow) * 2} height={(r - 3 + grow) * 2} rx={r - 3 + grow} transform={`rotate(${angle} ${x} ${y})`} fill={fill} stroke={stroke} strokeWidth={stroke ? 1.2 : 0} strokeDasharray={dash} />
+    ) : (
+      <Circle cx={x} cy={y} r={r + grow} fill={fill} stroke={stroke} strokeWidth={stroke ? 1.2 : 0} strokeDasharray={dash} />
+    );
+  const icon = 15;
+  return (
+    <G>
+      {on && <Circle cx={x} cy={y} r={r + 9} fill={light.color} fillOpacity={0.18} />}
+      {!light.reachable ? shape(3, 'none', '#F2B872', '3 3') : on ? shape(3, 'rgba(255,246,230,0.85)') : null}
+      {on && shape(1.6, PLAN_COLORS.off)}
+      {shape(0, core, on ? undefined : PLAN_COLORS.offStroke)}
+      <Path
+        d={LIGHT_ICON_PATHS[lightType(light.archetype)]}
+        fill="none"
+        stroke={ink}
+        strokeWidth={1.6 * (24 / icon)}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        transform={`translate(${x - icon / 2} ${y - icon / 2}) scale(${icon / 24})`}
+      />
+    </G>
+  );
+}
+
+/**
+ * What the light physically is, on the floor: a light bar's length, a string's row of beads
+ * (its real length), a lantern's wall plate. Turning the handle turns this, so its effect shows.
+ */
+function Footprint({ l, light, rooms, kind, view }: { l: MapLight; light: Light; rooms: MapRoom[]; kind: 'string' | 'bar' | 'lantern'; view: ViewBox }) {
+  const a = (lightAngle(l, rooms) * Math.PI) / 180;
+  const half = kind === 'string' ? (l.length ?? 2.4) / 2 : kind === 'bar' ? 0.3 : 0.25;
+  const at = (t: number) => screenOf({ x: l.x + Math.cos(a) * t, z: l.z + Math.sin(a) * t }, view);
+  const p = at(-half);
+  const q = at(half);
+  const on = light.on && light.reachable;
+  const tint = on ? light.color : 'rgba(242,232,216,0.45)';
+  if (kind === 'string') {
+    const n = Math.max(3, Math.round((half * 2) / 0.3));
+    return (
+      <G>
+        <Line x1={p.sx} y1={p.sy} x2={q.sx} y2={q.sy} stroke={tint} strokeOpacity={0.5} strokeWidth={1} />
+        {Array.from({ length: n + 1 }, (_, i) => {
+          const b = at(-half + (i * half * 2) / n);
+          return <Circle key={i} cx={b.sx} cy={b.sy} r={2.6} fill={on ? light.color : theme.bg} stroke={on ? undefined : tint} strokeWidth={1} />;
+        })}
+      </G>
+    );
+  }
+  return <Line x1={p.sx} y1={p.sy} x2={q.sx} y2={q.sy} stroke={tint} strokeOpacity={on ? 0.6 : 0.5} strokeWidth={kind === 'bar' ? 7 : 3} strokeLinecap="round" />;
 }
 
 /** A free spot in a room: its center, nudged so it doesn't land on a light already there. */
@@ -741,22 +837,26 @@ function Canvas({
           <Line key={`g${i}`} x1={X(g.a)} y1={Y(g.a)} x2={X(g.b)} y2={Y(g.b)} stroke={ACCENT} strokeWidth={2} strokeDasharray="6 4" />
         ),
       )}
+      {/* What each light is on the floor first (a bar, a row of beads), under every marker. */}
+      {doc.lights.map((l) => {
+        const kind = directional(l.lightId, snapshot);
+        const light = snapshot?.lights.find((x) => x.id === l.lightId);
+        return kind && light ? <Footprint key={`f-${l.lightId}`} l={l} light={light} rooms={doc.rooms} kind={kind} view={view} /> : null;
+      })}
       {doc.lights.map((l) => {
         const light = snapshot?.lights.find((x) => x.id === l.lightId);
         const selected = sel?.kind === 'light' && sel.lightId === l.lightId;
+        const kind = directional(l.lightId, snapshot);
         return (
           <G key={l.lightId}>
-            {selected && <Circle cx={X(l)} cy={Y(l)} r={20} fill="none" stroke={ACCENT} strokeWidth={2.5} />}
-            {selected && light && directional(l.lightId, snapshot) && <Handle l={l} rooms={doc.rooms} kind={directional(l.lightId, snapshot)!} view={view} />}
-            <Circle
-              cx={X(l)}
-              cy={Y(l)}
-              r={11}
-              fill={light?.on ? light.color : PLAN_COLORS.off}
-              stroke={light?.on ? 'none' : PLAN_COLORS.offStroke}
-              strokeWidth={2}
-            />
-            <SvgText x={X(l)} y={Y(l) + 28} fill={theme.muted} fontSize={11} textAnchor="middle">
+            {selected && <Circle cx={X(l)} cy={Y(l)} r={22} fill="none" stroke={ACCENT} strokeWidth={2} />}
+            {selected && light && kind && <Handle l={l} rooms={doc.rooms} kind={kind} view={view} />}
+            {light ? (
+              <MarkerG light={light} x={X(l)} y={Y(l)} angle={kind === 'bar' ? lightAngle(l, doc.rooms) + view.rot : undefined} />
+            ) : (
+              <Circle cx={X(l)} cy={Y(l)} r={11} fill={PLAN_COLORS.off} stroke={PLAN_COLORS.offStroke} strokeWidth={2} />
+            )}
+            <SvgText x={X(l)} y={Y(l) + 32} fill={selected ? ACCENT : theme.muted} fontSize={11} textAnchor="middle">
               {light?.name ?? '?'}
             </SvgText>
           </G>
