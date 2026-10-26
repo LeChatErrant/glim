@@ -4,15 +4,17 @@ import { Pressable, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
-import { hasTemperature, mirekFor, planLightBrightness, planLightColor, planLightKelvin, planToggleLight, type Planned } from '../../lib/actions';
+import { hasTemperature, mirekFor, planLightBrightness, planLightColor, planLightKelvin, planLightLook, planToggleLight, type Planned } from '../../lib/actions';
 import { identifyLight, type Light, type Room, type Snapshot } from '../../lib/hue/client';
 import { hexHueSat, KELVIN_MAX, KELVIN_MIN, kelvinTint, mirekToKelvin } from '../../lib/hue/color';
 import { useHome } from '../../lib/hue/useHome';
-import { isLit, lightShape, lightTypeLabel } from '../../lib/lights';
+import { isLit, lightShape, lightType, lightTypeLabel } from '../../lib/lights';
 import { addRecentColor, colorName, formatKelvin, kelvinName, loadRecentColors, near, WHITE_PRESETS, type Swatch } from '../../lib/palette';
 import { ConnectionBadge, Glow, IconButton, PillButton, type Connection } from '../../ui/controls';
 import { Icon } from '../../ui/icons';
 import { Brightness, ColorDot, Dial, ModeTabs, Orb, orbInk, PowerButton, ringColor, useThrottle } from '../../ui/LightControls';
+import { FavoritesRow } from '../../ui/Favorites';
+import { LightSetup } from '../../ui/LightSetup';
 import { Display, Label, Txt } from '../../ui/text';
 import { color, hairline } from '../../ui/theme';
 
@@ -67,6 +69,30 @@ function Header({ center, right }: { center: ReactNode; right?: ReactNode }) {
       <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 8 }}>{center}</View>
       {right ?? <View style={{ width: 40 }} />}
     </View>
+  );
+}
+
+/** The light's name; tap it to rename the light or say what it is. */
+function LightName({ light, size, act }: { light: Light; size: number; act: Act }) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <>
+      <Pressable
+        onPress={() => setEditing(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`${light.name}. Change name and type`}
+        style={({ pressed }) => ({ marginTop: 22, paddingHorizontal: 24, alignItems: 'center', gap: 6, opacity: pressed ? 0.6 : 1 })}
+      >
+        <Display size={size} numberOfLines={2} style={{ textAlign: 'center', lineHeight: Math.round(size * 1.08) }}>
+          {light.name}
+        </Display>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Icon name="edit" size={10} tint={color.muted} stroke={1.6} />
+          <Label size={9}>Name & type</Label>
+        </View>
+      </Pressable>
+      {editing && <LightSetup light={light} visible onClose={() => setEditing(false)} act={act} />}
+    </>
   );
 }
 
@@ -215,9 +241,7 @@ function LightView({ light, room, act }: { light: Light; room: Room | undefined;
         }
         right={<IconButton icon="blink" label={`Make ${light.name} blink`} onPress={blink} />}
       />
-      <Display size={32} numberOfLines={2} style={{ textAlign: 'center', marginTop: 22, paddingHorizontal: 24, lineHeight: 34 }}>
-        {light.name}
-      </Display>
+      <LightName light={light} size={32} act={act} />
       <Unreachable light={light} />
 
       <View style={{ marginTop: light.reachable ? 30 : 14 }}>{control}</View>
@@ -244,6 +268,13 @@ function LightView({ light, room, act }: { light: Light; room: Room | undefined;
           tint={light.color}
           onChange={(v) => throttle(() => act((s) => planLightBrightness(s, light.id, v)))}
           onCommit={(v) => act((s) => planLightBrightness(s, light.id, v))}
+        />
+      </View>
+
+      <View style={{ paddingHorizontal: 28, marginTop: 16 }}>
+        <FavoritesRow
+          current={on ? { ...(light.mirek ? { kelvin } : canColor ? { hex: light.color } : {}), brightness: bri } : null}
+          onApply={(f) => act((s) => planLightLook(s, light.id, f))}
         />
       </View>
 
@@ -316,16 +347,14 @@ function PlugView({ light, room, connection, act }: { light: Light; room: Room |
   const on = isLit(light);
   const shape = lightShape(light.archetype);
   const type = lightTypeLabel(light);
-  const what = shape === 'bulb' ? 'Smart plug' : `${type.replace(' · plug', '')} on a smart plug`;
+  const what = lightType(light.archetype) === 'plug' ? 'Smart plug' : `${type.replace(' · plug', '')} on a smart plug`;
   const tint = light.color;
 
   return (
     <View style={{ flex: 1 }}>
       {on && <Glow tint={tint} cx={width / 2} cy={240} rx={350} ry={320} alpha={0.18} />}
       <Header center={<ConnectionBadge state={connection} />} />
-      <Display size={34} numberOfLines={2} style={{ textAlign: 'center', marginTop: 22, paddingHorizontal: 24, lineHeight: 37 }}>
-        {light.name}
-      </Display>
+      <LightName light={light} size={34} act={act} />
       <Label size={9} tone="label" style={{ textAlign: 'center', marginTop: 10 }}>
         {`${room?.name ?? 'No room'} · ${what}`}
       </Label>

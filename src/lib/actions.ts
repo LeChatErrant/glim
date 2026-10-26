@@ -152,3 +152,61 @@ async function run(plan: (s: Snapshot) => Planned | null): Promise<Snapshot | nu
 export const toggleLight = (lightId: string) => run((s) => planToggleLight(s, lightId));
 export const toggleRoom = (roomId: string) => run((s) => planToggleRoom(s, roomId));
 export const setRoomBrightness = (roomId: string, brightness: number) => run((s) => planRoomBrightness(s, roomId, brightness));
+
+/** A saved look (palette Favorite) as a bridge state. */
+type Look = { hex?: string; kelvin?: number; brightness: number };
+
+/** Puts a light back in a saved look: its color or white, and its brightness. */
+export function planLightLook(s: Snapshot, lightId: string, look: Look): Planned | null {
+  const light = s.lights.find((l) => l.id === lightId);
+  if (!light || light.brightness === null) return null;
+  const xy = look.hex && light.kind === 'color' ? hexToXy(look.hex) : undefined;
+  const mirek = !xy && look.kelvin && hasTemperature(light) ? mirekFor(light, look.kelvin) : undefined;
+  const brightness = look.brightness;
+  return {
+    next: {
+      ...s,
+      lights: s.lights.map((l) =>
+        l.id !== lightId ? l : { ...l, on: true, brightness, ...(xy ? { color: look.hex!, mirek: null } : mirek ? { color: mirekToHex(mirek), mirek } : {}) },
+      ),
+    },
+    send: () => setLight(lightId, { on: true, brightness, xy, mirek }),
+  };
+}
+
+/** A saved look on a whole room: lights that can't do the color or white just take the brightness. */
+export function planRoomLook(s: Snapshot, roomId: string, look: Look): Planned | null {
+  const room = s.rooms.find((r) => r.id === roomId);
+  if (!room?.groupedLightId) return null;
+  const groupId = room.groupedLightId;
+  const xy = look.hex ? hexToXy(look.hex) : undefined;
+  const mirek = !xy && look.kelvin ? kelvinToMirek(look.kelvin) : undefined;
+  return {
+    next: {
+      ...s,
+      lights: s.lights.map((l) => {
+        if (!room.lightIds.includes(l.id)) return l;
+        const base = { ...l, on: true, brightness: l.brightness === null ? null : look.brightness };
+        if (xy && l.kind === 'color') return { ...base, color: look.hex!, mirek: null };
+        if (look.kelvin && hasTemperature(l)) {
+          const m = mirekFor(l, look.kelvin);
+          return { ...base, color: mirekToHex(m), mirek: m };
+        }
+        return base;
+      }),
+    },
+    send: () => setRoom(groupId, { on: true, brightness: look.brightness, xy, mirek }),
+  };
+}
+
+/** A group (Hue zone) on or off. */
+export function planToggleZone(s: Snapshot, zoneId: string, target?: boolean): Planned | null {
+  const zone = s.zones?.find((z) => z.id === zoneId);
+  if (!zone?.groupedLightId) return null;
+  const on = target ?? !s.lights.some((l) => zone.lightIds.includes(l.id) && l.on && l.reachable);
+  const groupId = zone.groupedLightId;
+  return {
+    next: { ...s, lights: s.lights.map((l) => (zone.lightIds.includes(l.id) ? { ...l, on } : l)) },
+    send: () => setRoom(groupId, { on }),
+  };
+}

@@ -3,16 +3,19 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { planAll, planRoomBrightness, planToggleLight, planToggleRoom, type Planned } from '../../lib/actions';
-import { roomIsOn, type Light, type Room, type Snapshot } from '../../lib/hue/client';
+import { planAll, planRoomBrightness, planToggleLight, planToggleRoom, planToggleZone, type Planned } from '../../lib/actions';
+import { roomIsOn, type Light, type Room, type Snapshot, type Zone } from '../../lib/hue/client';
 import { useHome } from '../../lib/hue/useHome';
 import { isLit, lightLevel, lightShape, lightsOf, lightTypeLabel } from '../../lib/lights';
 import { nestedRooms } from '../../lib/map/glow';
 import { loadMap, type HomeMap } from '../../lib/map/map';
-import { ConnectionBadge, Glow, PillButton, Slider, Switch } from '../../ui/controls';
-import { Jewel } from '../../ui/FloorPlan';
+import { ConnectionBadge, Glow, IconButton, PillButton, Slider, Switch } from '../../ui/controls';
+import { Jewel, LightMarker } from '../../ui/FloorPlan';
 import { Icon } from '../../ui/icons';
 import { useThrottle } from '../../ui/LightControls';
+import { ManageSheet, type Editing } from '../../ui/ManageSheets';
+import { ModalSheet } from '../../ui/ModalSheet';
+import { ChoiceRow } from '../../ui/scan/parts';
 import { Display, Label, Txt } from '../../ui/text';
 import { color, hairline, TAB_BAR_SPACE } from '../../ui/theme';
 
@@ -22,9 +25,11 @@ type Act = (plan: (s: Snapshot) => Planned | null) => void;
 
 export default function RoomsScreen() {
   const insets = useSafeAreaInsets();
-  const { snapshot, connection, act } = useHome();
+  const { snapshot, connection, act, refresh } = useHome();
   const [map, setMap] = useState<HomeMap | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Editing | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -58,7 +63,10 @@ export default function RoomsScreen() {
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + 28, paddingHorizontal: 24, paddingBottom: insets.bottom + TAB_BAR_SPACE + 32 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Display>Rooms</Display>
-          <PillButton title={on ? 'All off' : 'All on'} icon="power" height={40} onPress={() => act((s) => planAll(s, !on))} />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <IconButton icon="add" label="New room or group" onPress={() => setAdding(true)} />
+            <PillButton title={on ? 'All off' : 'All on'} icon="power" height={40} onPress={() => act((s) => planAll(s, !on))} />
+          </View>
         </View>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
           <Txt size={14} tone="secondary">
@@ -87,9 +95,40 @@ export default function RoomsScreen() {
             />
           ))}
           {homeless.length > 0 && <LooseLights lights={homeless} act={act} />}
+          {(snapshot.zones ?? []).length > 0 && (
+            <Label tone="label" style={{ marginTop: 14 }}>
+              Groups
+            </Label>
+          )}
+          {(snapshot.zones ?? []).map((z) => (
+            <GroupCard key={z.id} zone={z} snapshot={snapshot} act={act} onEdit={() => setEditing({ kind: 'group', zone: z })} />
+          ))}
           {snapshot.rooms.length === 0 && homeless.length === 0 && <Txt tone="secondary">No lights on this bridge yet.</Txt>}
         </View>
       </ScrollView>
+      <ModalSheet visible={adding} title="Add" onClose={() => setAdding(false)}>
+        <View>
+          <ChoiceRow
+            icon="rooms"
+            title="New room"
+            sub="A place in your home. Each light is in one room"
+            onPress={() => {
+              setAdding(false);
+              setEditing({ kind: 'new-room' });
+            }}
+          />
+          <ChoiceRow
+            icon="light"
+            title="New group"
+            sub="Any lights together, across rooms"
+            onPress={() => {
+              setAdding(false);
+              setEditing({ kind: 'new-group' });
+            }}
+          />
+        </View>
+      </ModalSheet>
+      {editing && <ManageSheet editing={editing} snapshot={snapshot} onClose={() => setEditing(null)} onSaved={refresh} />}
       <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: insets.bottom + 110, experimental_backgroundImage: `linear-gradient(rgba(5,5,6,0), ${color.ground} 66%)` }} />
     </View>
   );
@@ -247,8 +286,8 @@ function LightRow({ light, act, indent = 0 }: { light: Light; act: Act; indent?:
         accessibilityLabel={`Open ${light.name}`}
         style={({ pressed }) => ({ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'stretch', opacity: pressed ? 0.6 : 1 })}
       >
-        <View style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}>
-          <Jewel light={light} shape={lightShape(light.archetype)} ground={color.card} />
+        <View style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+          <LightMarker light={light} size={26} ground={color.card} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Txt size={14} numberOfLines={1} style={{ lineHeight: 18 }}>
@@ -267,6 +306,29 @@ function LightRow({ light, act, indent = 0 }: { light: Light; act: Act; indent?:
   );
 }
 
+/** A group (Hue zone): its lights across rooms, one switch. Tap the name to edit it. */
+function GroupCard({ zone, snapshot, act, onEdit }: { zone: Zone; snapshot: Snapshot; act: Act; onEdit: () => void }) {
+  const lights = snapshot.lights.filter((l) => zone.lightIds.includes(l.id));
+  const lit = lights.filter(isLit);
+  const on = lit.length > 0;
+  const meta = on ? `${lit.length} of ${lights.length} on` : lights.length ? 'All off' : 'No lights yet';
+  return (
+    <View style={{ borderRadius: 22, borderWidth: 1, borderColor: hairline(0.1), backgroundColor: color.card, paddingVertical: 12, paddingLeft: 18, paddingRight: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44 }}>
+        <Pressable onPress={onEdit} accessibilityRole="button" accessibilityLabel={`Edit ${zone.name}`} style={({ pressed }) => ({ flex: 1, minWidth: 0, gap: 6, opacity: pressed ? 0.6 : 1 })}>
+          <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
+            {zone.name}
+          </Display>
+          <JewelsMeta lights={lights} meta={meta} />
+        </Pressable>
+        {zone.groupedLightId && lights.length > 0 && (
+          <Switch big on={on} label={`${zone.name}, ${on ? 'on' : 'off'}`} onToggle={() => act((s) => planToggleZone(s, zone.id))} />
+        )}
+      </View>
+    </View>
+  );
+}
+
 /** Lights that belong to no room: still controllable. */
 function LooseLights({ lights, act }: { lights: Light[]; act: Act }) {
   return (
@@ -275,7 +337,7 @@ function LooseLights({ lights, act }: { lights: Light[]; act: Act }) {
         Not in a room
       </Display>
       <Label size={9} style={{ marginBottom: 8 }}>
-        Place them on the map to add them to a room
+        Edit a room to add them, or place them on the map
       </Label>
       {lights.map((l) => (
         <LightRow key={l.id} light={l} act={act} />

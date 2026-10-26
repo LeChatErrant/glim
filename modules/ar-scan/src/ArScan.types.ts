@@ -9,6 +9,8 @@ export type ArStatus = {
   reason: string;
   floorFound: boolean;
   aimingAtFloor: boolean;
+  /** Object aim mode: the center ray hits a real surface (the light itself). */
+  aimingAtObject: boolean;
   closesShape: boolean;
   camera?: FloorPoint;
   /** Radians, 0 = facing -Z in world space. */
@@ -16,7 +18,11 @@ export type ArStatus = {
   reticle?: FloorPoint;
 };
 
+/** In object aim mode with an object hit, x/z and rawX/rawZ are the floor point below it. */
 export type ArCapture = FloorPoint & { rawX: number; rawZ: number; closesShape: boolean };
+
+/** `floor`: aim at the floor (corners). `object`: point at anything, it lands on the floor below (lights). */
+export type ArAimMode = 'floor' | 'object';
 
 export type ArOverlay = {
   polylines: { points: FloorPoint[]; closed?: boolean; color?: string }[];
@@ -32,6 +38,7 @@ export type ArOverlay = {
 export type ArScanViewProps = {
   overlay: ArOverlay;
   snapEnabled?: boolean;
+  aimMode?: ArAimMode;
   onStatus?: (status: ArStatus) => void;
   onError?: (error: { message: string; kind: string }) => void;
   style?: StyleProp<ViewStyle>;

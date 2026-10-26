@@ -3,15 +3,17 @@ import { useEffect, useState } from 'react';
 import { Animated, PanResponder, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { hasTemperature, mirekFor, planRoomBrightness, planRoomColor, planRoomKelvin, planToggleRoom } from '../../lib/actions';
+import { hasTemperature, mirekFor, planRoomBrightness, planRoomColor, planRoomKelvin, planRoomLook, planToggleRoom } from '../../lib/actions';
 import { roomIsOn, type Light } from '../../lib/hue/client';
 import { kelvinTint } from '../../lib/hue/color';
 import { useHome } from '../../lib/hue/useHome';
-import { isLit, lightLevel, lightShape, lightsOf } from '../../lib/lights';
+import { isLit, lightLevel, lightsOf } from '../../lib/lights';
 import { formatKelvin, loadRecentColors, near, type Swatch } from '../../lib/palette';
-import { Glow, Switch } from '../../ui/controls';
-import { Jewel } from '../../ui/FloorPlan';
+import { Glow, IconButton, Switch } from '../../ui/controls';
+import { LightMarker } from '../../ui/FloorPlan';
+import { FavoritesRow } from '../../ui/Favorites';
 import { Icon } from '../../ui/icons';
+import { ManageSheet } from '../../ui/ManageSheets';
 import { Brightness, ColorDot, useThrottle } from '../../ui/LightControls';
 import { Display, Label, Txt } from '../../ui/text';
 import { color, hairline } from '../../ui/theme';
@@ -25,7 +27,8 @@ export default function RoomSheet() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
-  const { snapshot, act } = useHome();
+  const { snapshot, act, refresh } = useHome();
+  const [editing, setEditing] = useState(false);
   const throttle = useThrottle();
   const [recents, setRecents] = useState<Swatch[]>([]);
   useEffect(() => {
@@ -90,7 +93,7 @@ export default function RoomSheet() {
         {anyOn && <Glow tint={lead} cx={140} cy={10} rx={230} ry={160} alpha={0.11} />}
         <View {...drag.panHandlers}>
           <View style={{ position: 'absolute', alignSelf: 'center', top: -16, width: 36, height: 4, borderRadius: 2, backgroundColor: hairline(0.2) }} />
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Display size={24} numberOfLines={1} style={{ lineHeight: 27 }}>
                 {room?.name ?? (snapshot ? 'Room not found' : '')}
@@ -99,6 +102,7 @@ export default function RoomSheet() {
                 {room ? countLine : ' '}
               </Txt>
             </View>
+            {room && <IconButton icon="edit" label={`Edit ${room.name}`} onPress={() => setEditing(true)} />}
             {room && lights.length > 0 && <Switch big on={anyOn} label={`${room.name} lights`} onToggle={() => act((s) => planToggleRoom(s, room.id))} />}
           </View>
         </View>
@@ -187,6 +191,16 @@ export default function RoomSheet() {
           </View>
         )}
 
+        {room && dimmable.length > 0 && (
+          <View style={{ marginTop: 16 }}>
+            <FavoritesRow
+              ground={color.sheet}
+              current={anyOn ? roomLook(lit, level) : null}
+              onApply={(f) => act((s) => planRoomLook(s, room.id, f))}
+            />
+          </View>
+        )}
+
         {room && lights.length > 0 && (
           <View style={{ marginTop: 18, flexShrink: 1 }}>
             <Label tone="label">Lights</Label>
@@ -203,8 +217,19 @@ export default function RoomSheet() {
           </Txt>
         )}
       </Animated.View>
+      {editing && room && snapshot && (
+        <ManageSheet editing={{ kind: 'room', room }} snapshot={snapshot} onClose={() => setEditing(false)} onSaved={refresh} />
+      )}
     </View>
   );
+}
+
+/** The room's look to save: the color of its lit color lights, else their white, at the room level. */
+function roomLook(lit: Light[], brightness: number) {
+  const c = lit.find((l) => l.kind === 'color' && l.mirek === null);
+  if (c) return { hex: c.color, brightness };
+  const w = lit.find((l) => l.mirek);
+  return w ? { kelvin: Math.round(1_000_000 / w.mirek! / 50) * 50, brightness } : { brightness };
 }
 
 /** Says which lights the color and white rows reach: "Color for the 3 color lights, not the plug." */
@@ -235,7 +260,7 @@ function LightLink({ light }: { light: Light }) {
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, height: 46, borderTopWidth: 1, borderTopColor: hairline(0.08), opacity: pressed ? 0.6 : 1 })}
     >
       <View style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}>
-        <Jewel light={light} shape={lightShape(light.archetype)} ground={color.sheet} />
+        <LightMarker light={light} size={24} ground={color.sheet} />
       </View>
       <Txt size={14} numberOfLines={1} style={{ flex: 1, lineHeight: 18 }}>
         {light.name}

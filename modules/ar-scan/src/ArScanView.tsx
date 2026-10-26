@@ -2,11 +2,12 @@ import { requireNativeView } from 'expo';
 import * as React from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 
-import type { ArCapture, ArScanHandle, ArScanViewProps, ArStatus } from './ArScan.types';
+import type { ArAimMode, ArCapture, ArScanHandle, ArScanViewProps, ArStatus } from './ArScan.types';
 
 type NativeProps = {
   overlayJson: string;
   snapEnabled: boolean;
+  aimMode: ArAimMode;
   onStatus?: (e: { nativeEvent: ArStatus }) => void;
   onError?: (e: { nativeEvent: { message: string; kind: string } }) => void;
   style?: StyleProp<ViewStyle>;
@@ -18,7 +19,7 @@ const NativeView = requireNativeView<NativeProps>('ArScan') as unknown as React.
   NativeProps & { ref?: React.Ref<NativeRef> }
 >;
 
-export default function ArScanView({ ref, overlay, snapEnabled = true, onStatus, onError, style }: ArScanViewProps & { ref?: React.Ref<ArScanHandle> }) {
+export default function ArScanView({ ref, overlay, snapEnabled = true, aimMode = 'floor', onStatus, onError, style }: ArScanViewProps & { ref?: React.Ref<ArScanHandle> }) {
   const nativeRef = React.useRef<NativeRef>(null);
   React.useImperativeHandle(ref, () => ({ capture: () => nativeRef.current?.capture() ?? Promise.resolve(null) }), []);
   const overlayJson = React.useMemo(() => JSON.stringify(overlay), [overlay]);
@@ -27,6 +28,7 @@ export default function ArScanView({ ref, overlay, snapEnabled = true, onStatus,
       ref={nativeRef}
       overlayJson={overlayJson}
       snapEnabled={snapEnabled}
+      aimMode={aimMode}
       onStatus={onStatus && ((e) => onStatus(e.nativeEvent))}
       onError={onError && ((e) => onError(e.nativeEvent))}
       style={style}

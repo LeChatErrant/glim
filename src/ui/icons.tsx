@@ -27,6 +27,9 @@ const PATHS = {
   target: 'M12 3v4M12 17v4M3 12h4M17 12h4M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
   bridge: 'M8.5 4h7A4.5 4.5 0 0 1 20 8.5v7a4.5 4.5 0 0 1-4.5 4.5h-7A4.5 4.5 0 0 1 4 15.5v-7A4.5 4.5 0 0 1 8.5 4ZM15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z',
   warning: 'M12 3.5 2.8 19.5h18.4ZM12 10v4M12 16.8h.01',
+  check: 'm5 12.5 4.5 4.5L19 7.5',
+  rotate: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4v4.5H15',
+  fit: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
 };
 
 export type IconName = keyof typeof PATHS;

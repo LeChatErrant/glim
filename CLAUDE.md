@@ -91,6 +91,19 @@ but never in a way that would need a rewrite to sell it later (see
   renaming the package ID.
 - 2026-10-23: Our own vocabulary, not Hue's (Hue's "scene" confuses people).
   See [Vocabulary](#vocabulary).
+- 2026-10-26: Widgets follow the bridge live: a foreground service ("Live
+  widgets" notification, type connectedDevice) listens to the bridge's event
+  stream while the screen is on and redraws widgets on any change (physical
+  switch, Hue app). Screen off = disconnected; screen on = reconnect + redraw.
+- 2026-10-26: A device's kind comes from Hue's product data (a smart plug is
+  a plug), its look from the device archetype the user picks ("What is it?",
+  written to the bridge). Every light type has an icon (`src/lib/lightIcons.ts`)
+  shown in its marker; unreachable = dashed amber ring + strike-through.
+- 2026-10-26: Map orientation is saved with the map (twist or Turn left/right);
+  pinch zooms, drag pans. Each Map widget can show a subset of rooms and its
+  own orientation (long-press the widget → configure).
+- 2026-10-26: Favorites are saved looks (color or white + brightness), per
+  bridge, applied to a light or a whole room.
 
 ## Vocabulary
 
@@ -165,11 +178,13 @@ point.**
 - `src/app/`: Expo Router screens; `src/app/(tabs)/` holds the 4 tabs (Map,
   Rooms, Moods, Rituals) with a custom floating tab bar. `src/lib/hue/`: bridge
   pairing and CLIP v2 client; screens read the home through `useHome()`
-  (cached state first, polling, optimistic `act(plan)`). `src/lib/map/`: floor
+  (one shared store for every screen: cached state first, polling while
+  focused, refresh on bridge events, optimistic `act(plan)`). `src/lib/map/`: floor
   plan model, glow geometry (`glow.ts`: which walls clip a light, nested
   rooms) and the widget SVG. `src/lib/lights.ts`: light shapes from Hue
   archetypes, labels, headline mood. `src/widgets/`: home-screen widgets and
-  their task handler (registered in `index.ts`).
+  their task handler (registered in `index.ts`), plus the Map widget's
+  configuration screen (`MapWidgetConfig.tsx`, per-widget `settings.ts`).
 - `modules/hue-http/`: local Expo module (Kotlin). HTTPS to the bridge with
   certificate pinning (CN must equal the bridge ID; public key pinned at
   pairing). All bridge calls go through it; plain `fetch` can't reach the
@@ -182,6 +197,10 @@ point.**
   WorkManager + JS path took ~1.2 s. New widget actions that change lights
   should use `FAST_*`. Bridge credentials for this live in app-private
   SharedPreferences (`huelab_fast`), synced from JS at pairing and app start.
+- **Live sync** (`modules/hue-http/.../LiveSync.kt`): foreground service on
+  `/eventstream/clip/v2`, started from JS at app start, on widget taps, after
+  boot and after an app update. It broadcasts `APPWIDGET_UPDATE` (widgets
+  refetch in JS) and emits `onChange` to the running app.
 - `modules/ar-scan/`: local Expo module (Kotlin + ARCore). Camera view, floor
   detection, reticle cast on the floor, right-angle snapping, AR overlay of
   outlines and light markers. JS owns the scan logic (`src/app/scan.tsx`).

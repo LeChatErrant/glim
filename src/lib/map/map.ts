@@ -17,7 +17,14 @@ export type MapRoom = {
 
 export type MapLight = { lightId: string } & FloorPoint;
 
-export type HomeMap = { version: 2; rooms: MapRoom[]; lights: MapLight[]; updatedAt: number };
+export type HomeMap = {
+  version: 2;
+  rooms: MapRoom[];
+  lights: MapLight[];
+  updatedAt: number;
+  /** How the map is turned on screen, in degrees clockwise (map coordinates follow the first scanned wall, not the screen). */
+  rotation?: number;
+};
 
 const LEGACY_KEY = 'home-map';
 
@@ -47,8 +54,24 @@ export async function loadMap(): Promise<HomeMap | null> {
   return migrated;
 }
 
+/** Saves the map. The scan and the editor don't know the orientation: an unset one is kept. */
 export async function saveMap(map: HomeMap) {
-  await AsyncStorage.setItem(await key(), JSON.stringify({ ...map, updatedAt: Date.now() }));
+  const k = await key();
+  let rotation = map.rotation;
+  if (rotation === undefined) {
+    const raw = await AsyncStorage.getItem(k);
+    rotation = raw ? (JSON.parse(raw) as HomeMap).rotation : undefined;
+  }
+  await AsyncStorage.setItem(k, JSON.stringify({ ...map, rotation, updatedAt: Date.now() }));
+}
+
+/** Turns the map on screen (degrees clockwise, kept in 0–360). */
+export async function saveMapRotation(rotation: number) {
+  const map = await loadMap();
+  if (!map) return null;
+  const next = { ...map, rotation: ((Math.round(rotation) % 360) + 360) % 360 };
+  await saveMap(next);
+  return next;
 }
 
 /** A map laid out for drawing: shifted so the top-left of its bounding box is at (0, 0). */
@@ -59,7 +82,14 @@ export type Plan = {
   lights: (MapLight & { u: number; v: number })[];
 };
 
-export function toPlan(map: HomeMap): Plan {
+/** Lays out a map for drawing, turned by `rotation` degrees clockwise (default: the map's own). */
+export function toPlan(map: HomeMap, rotation = map.rotation ?? 0): Plan {
+  const a = (rotation * Math.PI) / 180;
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  // Screen y points down, so this turns clockwise on screen.
+  const turn = <T extends FloorPoint>(p: T): T => ({ ...p, x: cos * p.x - sin * p.z, z: sin * p.x + cos * p.z });
+  map = { ...map, rooms: map.rooms.map((r) => ({ ...r, points: r.points.map(turn) })), lights: map.lights.map(turn) };
   const all = [...map.rooms.flatMap((r) => r.points), ...map.lights];
   const minU = Math.min(...all.map((p) => p.x), 0);
   const minV = Math.min(...all.map((p) => p.z), 0);
@@ -74,10 +104,13 @@ export function toPlan(map: HomeMap): Plan {
   };
 }
 
-/** Scale and offsets to fit a plan into a box, keeping proportions. */
-export function fitPlan(plan: Plan, width: number, height: number, padding: number) {
-  const scale = Math.min((width - padding * 2) / plan.width, (height - padding * 2) / plan.height);
-  const offsetX = (width - plan.width * scale) / 2;
-  const offsetY = (height - plan.height * scale) / 2;
+/** Zoom (1 = whole plan) and pan in px, on top of the fit. */
+export type PlanView = { zoom: number; x: number; y: number };
+
+/** Scale and offsets to fit a plan into a box, keeping proportions, then zoomed and panned. */
+export function fitPlan(plan: Plan, width: number, height: number, padding: number, view?: PlanView) {
+  const scale = Math.min((width - padding * 2) / plan.width, (height - padding * 2) / plan.height) * (view?.zoom ?? 1);
+  const offsetX = (width - plan.width * scale) / 2 + (view?.x ?? 0);
+  const offsetY = (height - plan.height * scale) / 2 + (view?.y ?? 0);
   return { scale, x: (u: number) => offsetX + u * scale, y: (v: number) => offsetY + v * scale };
 }

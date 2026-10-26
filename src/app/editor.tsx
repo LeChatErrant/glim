@@ -1,12 +1,22 @@
 import { router, Stack } from 'expo-router';
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { PanResponder, Pressable, ScrollView, Text, View, type GestureResponderEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 
 import { identifyLight, type Snapshot } from '../lib/hue/client';
 import { useSnapshot } from '../lib/hue/useSnapshot';
-import { centroid, distance, pointInPolygon, snapPoint } from '../lib/map/geometry';
+import {
+  centroid,
+  distance,
+  pointInPolygon,
+  roomWalls,
+  snapCorner,
+  snapRoom,
+  type SnapGuide,
+  type SnapTargets,
+  type SnapTolerance,
+} from '../lib/map/geometry';
 import { loadMap, saveMap, type FloorPoint, type HomeMap, type MapLight, type MapRoom } from '../lib/map/map';
 import { PLAN_COLORS } from '../lib/map/svg';
 import { Body, Button, Chip } from '../ui/components';
@@ -40,6 +50,10 @@ type Drag =
   | { kind: 'pinch'; start: ViewBox; dist: number; cx: number; cy: number };
 
 const HIT_PX = 26;
+// Snap distances on screen, so snapping feels the same at any zoom.
+const SNAP_CORNER_PX = 16;
+const SNAP_WALL_PX = 12;
+const SNAP_AXIS_PX = 10;
 const ACCENT = theme.accent;
 
 export default function Editor() {
@@ -60,12 +74,16 @@ function EditorCanvas({ initial }: { initial: Doc }) {
   const [sel, setSel] = useState<Selection>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<ViewBox | null>(null);
+  // What the dragged corner or room snapped to, drawn until release.
+  const [guides, setGuides] = useState<SnapGuide[]>([]);
 
   const shown = draft ?? doc;
 
   // PanResponder is created once; it reads the latest values through this ref.
   const live = useRef({ doc, shown, sel, view, snapshot });
-  live.current = { doc, shown, sel, view, snapshot };
+  useLayoutEffect(() => {
+    live.current = { doc, shown, sel, view, snapshot };
+  });
 
   function commit(next: Doc) {
     setHistory((h) => [...h, doc]);
@@ -84,22 +102,9 @@ function EditorCanvas({ initial }: { initial: Doc }) {
   }
 
   async function persist(next: Doc) {
-    const map: HomeMap = { version: 2, rooms: next.rooms, lights: next.lights, updatedAt: Date.now() };
-    await saveMap(map);
+    await saveMap(toHomeMap(next));
     refreshAllWidgets();
   }
-
-  // Fit the whole plan on screen the first time we know the canvas size.
-  useEffect(() => {
-    if (!size.w || view) return;
-    const pts = [...doc.rooms.flatMap((r) => r.points), ...doc.lights];
-    const minX = pts.length ? Math.min(...pts.map((p) => p.x)) : -3;
-    const maxX = pts.length ? Math.max(...pts.map((p) => p.x)) : 3;
-    const minZ = pts.length ? Math.min(...pts.map((p) => p.z)) : -3;
-    const maxZ = pts.length ? Math.max(...pts.map((p) => p.z)) : 3;
-    const scale = Math.min((size.w - 60) / Math.max(maxX - minX, 2), (size.h - 60) / Math.max(maxZ - minZ, 2));
-    setView({ scale, ox: (size.w - (maxX + minX) * scale) / 2, oy: (size.h - (maxZ + minZ) * scale) / 2 });
-  }, [size, view, doc]);
 
   const toScreen = (p: FloorPoint, v: ViewBox) => ({ sx: p.x * v.scale + v.ox, sy: p.z * v.scale + v.oy });
   const toMeters = (sx: number, sy: number, v: ViewBox): FloorPoint => ({ x: (sx - v.ox) / v.scale, z: (sy - v.oy) / v.scale });
@@ -142,6 +147,8 @@ function EditorCanvas({ initial }: { initial: Doc }) {
 
   const responder = useMemo(
     () =>
+      // The handlers only read refs when touched, never during render.
+      // eslint-disable-next-line react-hooks/refs
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
@@ -185,6 +192,7 @@ function EditorCanvas({ initial }: { initial: Doc }) {
             if (drag.current?.kind !== 'pinch') {
               drag.current = { kind: 'pinch', start: v, dist, cx, cy };
               setDraft(null);
+              setGuides([]);
               return;
             }
             const p = drag.current;
@@ -204,18 +212,25 @@ function EditorCanvas({ initial }: { initial: Doc }) {
           const dx = g.dx / v.scale;
           const dz = g.dy / v.scale;
           const from = dragBase.current ?? base;
+          // Corners and rooms snap live, so what's shown is what gets saved on release.
           if (d.kind === 'corner') {
+            const start = from.rooms.find((r) => r.id === d.roomId)?.points[d.index];
+            if (!start) return;
+            const align = from.rooms.flatMap((r) => r.points.filter((_, i) => !(r.id === d.roomId && i === d.index)));
+            const snap = snapCorner({ x: start.x + dx, z: start.z + dz }, { ...snapTargets(from.rooms, d.roomId), align }, snapTolerance(v));
+            setGuides(snap.guides);
             setDraft({
               ...from,
-              rooms: from.rooms.map((r) =>
-                r.id === d.roomId ? { ...r, points: r.points.map((p, i) => (i === d.index ? { x: p.x + dx, z: p.z + dz } : p)) } : r,
-              ),
+              rooms: from.rooms.map((r) => (r.id === d.roomId ? { ...r, points: r.points.map((p, i) => (i === d.index ? snap.point : p)) } : r)),
             });
           } else if (d.kind === 'room') {
-            setDraft({
-              ...from,
-              rooms: from.rooms.map((r) => (r.id === d.roomId ? { ...r, points: r.points.map((p) => ({ x: p.x + dx, z: p.z + dz })) } : r)),
-            });
+            const room = from.rooms.find((r) => r.id === d.roomId);
+            if (!room) return;
+            const shifted = room.points.map((p) => ({ x: p.x + dx, z: p.z + dz }));
+            const { offset, guides: g } = snapRoom(shifted, snapTargets(from.rooms, d.roomId), snapTolerance(v));
+            setGuides(g);
+            const points = shifted.map((p) => ({ x: p.x + offset.x, z: p.z + offset.z }));
+            setDraft({ ...from, rooms: from.rooms.map((r) => (r.id === d.roomId ? { ...r, points } : r)) });
           } else if (d.kind === 'light') {
             setDraft({ ...from, lights: from.lights.map((l) => (l.lightId === d.lightId ? { ...l, x: l.x + dx, z: l.z + dz } : l)) });
           }
@@ -224,6 +239,7 @@ function EditorCanvas({ initial }: { initial: Doc }) {
           const d = drag.current;
           drag.current = null;
           dragBase.current = null;
+          setGuides([]);
           if (!moved.current) {
             setDraft(null);
             const { locationX: sx, locationY: sy } = e.nativeEvent;
@@ -237,11 +253,7 @@ function EditorCanvas({ initial }: { initial: Doc }) {
           const draftDoc = live.current.shown;
           if (!d || d.kind === 'pan' || d.kind === 'pinch' || draftDoc === live.current.doc) return;
           if (d.kind === 'corner') {
-            const others = draftDoc.rooms.flatMap((r) => r.points.filter((_, i) => !(r.id === d.roomId && i === d.index)));
-            const rooms = draftDoc.rooms.map((r) =>
-              r.id === d.roomId ? { ...r, points: r.points.map((p, i) => (i === d.index ? snapPoint(p, others) : p)) } : r,
-            );
-            commit({ ...draftDoc, rooms });
+            commit(draftDoc);
             setSel({ kind: 'corner', roomId: d.roomId, index: d.index });
           } else if (d.kind === 'room') {
             commit(draftDoc);
@@ -255,6 +267,7 @@ function EditorCanvas({ initial }: { initial: Doc }) {
         onPanResponderTerminate: () => {
           drag.current = null;
           setDraft(null);
+          setGuides([]);
         },
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -276,7 +289,7 @@ function EditorCanvas({ initial }: { initial: Doc }) {
     const c = toMeters(size.w / 2, size.h / 2, view);
     const half = 1.5;
     const room: MapRoom = {
-      id: `room-${Date.now()}`,
+      id: newRoomId(),
       name: 'New room',
       hueRoomId: null,
       points: [
@@ -319,11 +332,20 @@ function EditorCanvas({ initial }: { initial: Doc }) {
           ),
         }}
       />
-      <View style={{ flex: 1 }} onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })} {...responder.panHandlers}>
-        {view && <Canvas doc={shown} view={view} sel={sel} snapshot={snapshot} width={size.w} height={size.h} />}
+      <View
+        style={{ flex: 1 }}
+        onLayout={(e) => {
+          const { width: w, height: h } = e.nativeEvent.layout;
+          setSize({ w, h });
+          // Fit the whole plan on screen the first time we know the canvas size.
+          if (w && !view) setView(fitView(doc, w, h));
+        }}
+        {...responder.panHandlers}
+      >
+        {view && <Canvas doc={shown} view={view} sel={sel} guides={guides} snapshot={snapshot} width={size.w} height={size.h} />}
         {!doc.rooms.length && (
           <View pointerEvents="none" style={{ position: 'absolute', top: 24, left: 24, right: 24 }}>
-            <Body muted>Start with Add room, then drag the corners to the shape of your room. Tap a wall's middle dot to add a corner.</Body>
+            <Body muted>{"Start with Add room, then drag the corners to the shape of your room. Tap a wall's middle dot to add a corner."}</Body>
           </View>
         )}
       </View>
@@ -373,7 +395,7 @@ function EditorCanvas({ initial }: { initial: Doc }) {
               />
               <Button title="Done" style={{ flex: 0.8 }} onPress={() => setSel(null)} />
             </View>
-            <Body muted>Drag the room to move it, drag a corner to reshape it, tap a wall's middle dot to add a corner.</Body>
+            <Body muted>{"Drag the room to move it, drag a corner to reshape it, tap a wall's middle dot to add a corner."}</Body>
           </>
         )}
 
@@ -419,6 +441,32 @@ function sortLightsForPlacing(s: Snapshot, placed: Set<string>) {
   return [...s.lights].sort((a, b) => Number(placed.has(a.id)) - Number(placed.has(b.id)));
 }
 
+const newRoomId = () => `room-${Date.now()}`;
+
+const toHomeMap = (d: Doc): HomeMap => ({ version: 2, rooms: d.rooms, lights: d.lights, updatedAt: Date.now() });
+
+/** A view that fits the whole plan in a canvas of w × h. */
+function fitView(doc: Doc, w: number, h: number): ViewBox {
+  const pts = [...doc.rooms.flatMap((r) => r.points), ...doc.lights];
+  const minX = pts.length ? Math.min(...pts.map((p) => p.x)) : -3;
+  const maxX = pts.length ? Math.max(...pts.map((p) => p.x)) : 3;
+  const minZ = pts.length ? Math.min(...pts.map((p) => p.z)) : -3;
+  const maxZ = pts.length ? Math.max(...pts.map((p) => p.z)) : 3;
+  const scale = Math.min((w - 60) / Math.max(maxX - minX, 2), (h - 60) / Math.max(maxZ - minZ, 2));
+  return { scale, ox: (w - (maxX + minX) * scale) / 2, oy: (h - (maxZ + minZ) * scale) / 2 };
+}
+
+/** Snap distances in meters for the current zoom. */
+function snapTolerance(v: ViewBox): SnapTolerance {
+  return { corner: SNAP_CORNER_PX / v.scale, wall: SNAP_WALL_PX / v.scale, axis: SNAP_AXIS_PX / v.scale };
+}
+
+/** Corners and walls of every room but the one being edited. */
+function snapTargets(rooms: MapRoom[], exceptRoomId: string): SnapTargets {
+  const others = rooms.filter((r) => r.id !== exceptRoomId);
+  return { corners: others.flatMap((r) => r.points), walls: others.flatMap((r) => roomWalls(r.points)) };
+}
+
 function area(pts: FloorPoint[]) {
   let a = 0;
   for (let i = 0; i < pts.length; i++) {
@@ -429,7 +477,23 @@ function area(pts: FloorPoint[]) {
   return Math.abs(a) / 2;
 }
 
-function Canvas({ doc, view, sel, snapshot, width, height }: { doc: Doc; view: ViewBox; sel: Selection; snapshot: Snapshot | null; width: number; height: number }) {
+function Canvas({
+  doc,
+  view,
+  sel,
+  guides,
+  snapshot,
+  width,
+  height,
+}: {
+  doc: Doc;
+  view: ViewBox;
+  sel: Selection;
+  guides: SnapGuide[];
+  snapshot: Snapshot | null;
+  width: number;
+  height: number;
+}) {
   const X = (p: FloorPoint) => p.x * view.scale + view.ox;
   const Y = (p: FloorPoint) => p.z * view.scale + view.oy;
   const selRoomId = sel?.kind === 'room' || sel?.kind === 'corner' ? sel.roomId : null;
@@ -495,6 +559,13 @@ function Canvas({ doc, view, sel, snapshot, width, height }: { doc: Doc; view: V
           </G>
         );
       })}
+      {guides.map((g, i) =>
+        g.kind === 'point' ? (
+          <Circle key={`g${i}`} cx={X(g.at)} cy={Y(g.at)} r={17} fill="none" stroke={ACCENT} strokeWidth={2} />
+        ) : (
+          <Line key={`g${i}`} x1={X(g.a)} y1={Y(g.a)} x2={X(g.b)} y2={Y(g.b)} stroke={ACCENT} strokeWidth={2} strokeDasharray="6 4" />
+        ),
+      )}
       {doc.lights.map((l) => {
         const light = snapshot?.lights.find((x) => x.id === l.lightId);
         const selected = sel?.kind === 'light' && sel.lightId === l.lightId;

@@ -1,4 +1,6 @@
 import type { Light } from '../hue/client';
+import { inkOn, LIGHT_ICON_PATHS } from '../lightIcons';
+import { lightType } from '../lights';
 import { color, hairline } from '../../ui/theme';
 import { placeLights, walledRooms, type PlacedLight } from './glow';
 import { fitPlan, type Plan } from './map';
@@ -41,8 +43,8 @@ export function planToSvg(plan: Plan, lights: Light[], width: number, height: nu
   const px = (m: number) => m * f.scale;
   const n = (v: number) => v.toFixed(1);
   const pathOf = (pts: { u: number; v: number }[]) => pts.map((p, i) => `${i ? 'L' : 'M'}${n(f.x(p.u))},${n(f.y(p.v))}`).join(' ') + ' Z';
-  // Marker size follows the plan scale: 9 px on the app's map (about 34 px per meter), 6 px when small.
-  const size = Math.max(6, Math.min(9, Math.round(f.scale * 0.27)));
+  // Marker size follows the plan scale: 20 px on a roomy map, 13 px when the home is squeezed.
+  const size = Math.max(13, Math.min(20, Math.round(f.scale * 0.55)));
 
   const defs: string[] = [];
   const body: string[] = [];
@@ -100,42 +102,41 @@ export function planToSvg(plan: Plan, lights: Light[], width: number, height: nu
 }
 
 /**
- * A jewel marker as SVG: color core, dark gap, ivory ring, glow. Plugs are diamonds, light bars
- * capsules; off is a hollow outline (never color alone); unreachable gets a dashed amber ring.
+ * A light marker as SVG, like the app's LightMarker: a jewel holding the icon of what the light
+ * is. On = filled with its color, gap, ivory ring, glow; off = hollow; unreachable = dashed amber
+ * ring, faded icon, strike-through.
  */
 function jewel(p: PlacedLight, x: number, y: number, size: number, ground: string, stale: boolean, glowId: number) {
-  const { light, shape } = p;
+  const { light } = p;
   const on = light.on && light.reachable;
-  const gap = size >= 8 ? 2 : 1.5;
-  const out: string[] = [];
   const at = (d: number) => d.toFixed(1);
-
-  // The core shape, grown by `grow` px on each side.
-  const core = (grow: number, attrs: string) => {
-    if (light.kind === 'onoff') {
-      const s = (size - 1) / 2 + grow;
-      return `<rect x="${at(x - s)}" y="${at(y - s)}" width="${at(2 * s)}" height="${at(2 * s)}" transform="rotate(45 ${at(x)} ${at(y)})" ${attrs}/>`;
-    }
-    if (shape === 'bar') {
-      const w = Math.round(size * 0.66) / 2 + grow;
-      const h = Math.round(size * 1.8) / 2 + grow;
-      const deg = (p.wallAngle * 180) / Math.PI - 90;
-      return `<rect x="${at(x - w)}" y="${at(y - h)}" width="${at(2 * w)}" height="${at(2 * h)}" rx="${at(Math.min(w, 3 + grow))}" transform="rotate(${at(deg)} ${at(x)} ${at(y)})" ${attrs}/>`;
-    }
-    const r = (shape === 'portable' ? size - 2 : size) / 2 + grow;
-    return `<circle cx="${at(x)}" cy="${at(y)}" r="${at(r)}" ${attrs}/>`;
-  };
-
+  const r = size / 2;
+  const out: string[] = [];
+  const circle = (rr: number, attrs: string) => `<circle cx="${at(x)}" cy="${at(y)}" r="${at(rr)}" ${attrs}/>`;
+  let ink: string;
   if (!light.reachable) {
-    out.push(`<circle cx="${at(x)}" cy="${at(y)}" r="${at(size / 2 + 5)}" fill="none" stroke="${color.warning}" stroke-width="1" stroke-dasharray="2 2"/>`);
-  }
-  if (on && stale) {
-    out.push(core(gap + 1, `fill="${STALE.ring}"`), core(gap, `fill="${ground}"`), core(0, `fill="${STALE.core}"`));
+    out.push(circle(r, `fill="${ground}" stroke="${color.warning}" stroke-width="1" stroke-dasharray="2 2"`));
+    ink = hairline(0.32);
+  } else if (on && stale) {
+    out.push(circle(r + 2.5, `fill="${STALE.ring}"`), circle(r + 1.5, `fill="${ground}"`), circle(r, `fill="${STALE.core}"`));
+    ink = 'rgba(24,14,6,0.7)';
   } else if (on) {
-    out.push(`<circle cx="${at(x)}" cy="${at(y)}" r="${at(size + 7)}" fill="url(#j${glowId})"/>`);
-    out.push(core(gap + 1, `fill="${color.jewelRing}"`), core(gap, `fill="${ground}"`), core(0, `fill="${light.color}"`));
+    out.push(circle(r + 9, `fill="url(#j${glowId})"`));
+    out.push(circle(r + 2.5, `fill="${color.jewelRing}"`), circle(r + 1.5, `fill="${ground}"`), circle(r, `fill="${light.color}"`));
+    ink = inkOn(light.color);
   } else {
-    out.push(core(0.5, `fill="${ground}" stroke="${stale ? STALE.hollow : hairline(0.55)}" stroke-width="1"`));
+    out.push(circle(r, `fill="${ground}" stroke="${stale ? STALE.hollow : hairline(0.55)}" stroke-width="1"`));
+    ink = stale ? hairline(0.45) : hairline(0.78);
+  }
+  const icon = size * 0.6;
+  const k = icon / 24;
+  out.push(
+    `<path d="${LIGHT_ICON_PATHS[lightType(light.archetype)]}" fill="none" stroke="${ink}" stroke-width="${at(1.3 / k)}" ` +
+      `stroke-linecap="round" stroke-linejoin="round" transform="translate(${at(x - icon / 2)} ${at(y - icon / 2)}) scale(${k.toFixed(3)})"/>`,
+  );
+  if (!light.reachable) {
+    const d = r * 0.8;
+    out.push(`<path d="M${at(x - d)} ${at(y + d)}L${at(x + d)} ${at(y - d)}" stroke="${color.warning}" stroke-width="1.4" stroke-linecap="round"/>`);
   }
   return out.join('');
 }

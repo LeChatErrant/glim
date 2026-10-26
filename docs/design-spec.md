@@ -212,6 +212,8 @@ distinct shape for plugs. Your call.
 - **Lasso or two-finger select:** select several lights, then act on them
   together (on/off, brightness, color, apply a mood).
 - Pinch to zoom and pan (the plan should fit the screen by default).
+- Two-finger twist turns the map; the orientation is saved (also "Turn left /
+  right" in Edit map), since scanned maps don't follow the screen.
 
 **Also on this screen:**
 - A row of **favorite moods** (chips or small cards) for one-tap use.
@@ -243,6 +245,10 @@ Bottom sheet for one light. Content depends on its capabilities:
 - **Color lights:** on/off, brightness, a **Color** tab (color wheel or
   picker) and a **White** tab (warm ↔ cool temperature), recent colors, and
   "Blink" to identify it.
+- **Favorites:** saved looks (color or white + brightness) shared by all
+  lights and rooms: "+" saves the current look, tap restores it.
+- **Name & type:** rename, and say what it is (or what's plugged into a
+  plug); written to the bridge.
 - **On/off lights** (plugs): on/off only, and blink. No empty space where the
   other controls would be.
 - Footer: rename (writes to the Hue bridge), move on map.

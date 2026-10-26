@@ -3,10 +3,12 @@ import { PanResponder, Pressable, View } from 'react-native';
 import Svg, { ClipPath, Defs, Ellipse, G, Path, RadialGradient, Stop } from 'react-native-svg';
 
 import type { Light, Room } from '../lib/hue/client';
-import { lightLevel, lightTypeLabel } from '../lib/lights';
+import { inkOn, LIGHT_ICON_PATHS } from '../lib/lightIcons';
+import { lightLevel, lightType, lightTypeLabel } from '../lib/lights';
 import { placeLights, walledRooms, type PlacedLight } from '../lib/map/glow';
-import { fitPlan, type Plan } from '../lib/map/map';
+import { fitPlan, type Plan, type PlanView } from '../lib/map/map';
 import { Icon } from './icons';
+import { useLightTween } from './useLightTween';
 import { Label, Txt } from './text';
 import { color, hairline } from './theme';
 
@@ -16,6 +18,8 @@ type Props = {
   rooms: Room[];
   width: number;
   height: number;
+  /** Pinch zoom and pan; the whole plan fits when absent. */
+  view?: PlanView;
   selectedId: string | null;
   /** Tap on a light. */
   onLightPress: (id: string) => void;
@@ -28,21 +32,25 @@ type Props = {
 };
 
 const MARKER = 44;
+/** The visible marker inside the 44 px touch target. */
+const MARKER_SIZE = 22;
 
 /**
  * The Nocturne floor plan: rooms as free polygons with hairline walls, each light casting a glow
  * shaped by its type and clipped to its room's walls, jewel markers on top.
  */
-export function FloorPlan({ plan, lights, rooms, width, height, selectedId, onLightPress, onLightDrag, onRoomPress, onLightOpen }: Props) {
-  const f = useMemo(() => fitPlan(plan, width, height, 16), [plan, width, height]);
+export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId, onLightPress, onLightDrag, onRoomPress, onLightOpen }: Props) {
+  const f = useMemo(() => fitPlan(plan, width, height, 16, view), [plan, width, height, view]);
   const walled = useMemo(() => walledRooms(plan), [plan]);
-  const placed = useMemo(() => placeLights(plan, lights), [plan, lights]);
+  const tween = useLightTween(lights);
+  const placed = useMemo(() => placeLights(plan, tween.lights), [plan, tween.lights]);
+  const fade = (id: string) => tween.fade.get(id) ?? 1;
   const roomName = (r: Plan['rooms'][number]) => rooms.find((x) => x.id === r.hueRoomId)?.name ?? r.name;
   const pathOf = (pts: { u: number; v: number }[]) => pts.map((p, i) => `${i ? 'L' : 'M'}${f.x(p.u).toFixed(1)},${f.y(p.v).toFixed(1)}`).join(' ') + ' Z';
   const px = (m: number) => m * f.scale;
 
   const zones = plan.rooms.filter((r) => r.pts.length >= 3 && !walled.includes(r));
-  const lit = placed.filter((p) => p.light.on && p.light.reachable);
+  const lit = placed.filter((p) => p.light.on && p.light.reachable && fade(p.light.id) > 0.01);
 
   return (
     <View style={{ width, height }}>
@@ -68,7 +76,7 @@ export function FloorPlan({ plan, lights, rooms, width, height, selectedId, onLi
         ))}
 
         {lit.map((p) => (
-          <G key={p.light.id} clipPath={p.room ? `url(#clip-${p.room.id})` : undefined} opacity={p.pools[0]?.alpha ?? 1}>
+          <G key={p.light.id} clipPath={p.room ? `url(#clip-${p.room.id})` : undefined} opacity={(p.pools[0]?.alpha ?? 1) * fade(p.light.id)}>
             {p.pools.map((pool, i) => (
               <Ellipse
                 key={i}
@@ -229,6 +237,32 @@ export function Jewel({ light, shape, size = 9, ground = color.ground, angle = M
   return <View style={{ width: s, height: s, borderRadius: s / 2, ...look }} />;
 }
 
+/**
+ * A light on the map and in lists: a jewel big enough to hold the icon of what the light is.
+ * On: filled with its color, dark gap, ivory ring, glow. Off: hollow, ivory icon. Unreachable:
+ * dashed amber ring, faded icon and a strike-through, so it never looks like a lit light.
+ */
+export function LightMarker({ light, size = 24, ground = color.ground }: { light: Light; size?: number; ground?: string }) {
+  const on = light.on && light.reachable;
+  const icon = Math.round(size * 0.6);
+  const ink = on ? inkOn(light.color) : light.reachable ? hairline(0.78) : hairline(0.32);
+  const look = on
+    ? { backgroundColor: light.color, boxShadow: `0 0 0 2px ${ground}, 0 0 0 3px ${color.jewelRing}, 0 0 ${size}px ${Math.round(size / 4)}px ${light.color}` }
+    : light.reachable
+      ? { backgroundColor: ground, borderWidth: 1, borderColor: hairline(0.55) }
+      : { backgroundColor: ground, borderWidth: 1, borderStyle: 'dashed' as const, borderColor: color.warning };
+  return (
+    <View style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', ...look }}>
+      <Svg width={icon} height={icon} viewBox="0 0 24 24" fill="none">
+        <Path d={LIGHT_ICON_PATHS[lightType(light.archetype)]} stroke={ink} strokeWidth={size >= 22 ? 1.9 : 2.2} strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+      {!light.reachable && (
+        <View style={{ position: 'absolute', width: size * 1.15, height: 1.5, borderRadius: 1, backgroundColor: color.warning, transform: [{ rotate: '-45deg' }] }} />
+      )}
+    </View>
+  );
+}
+
 const LONG_PRESS_MS = 450;
 
 function Marker({
@@ -267,7 +301,8 @@ function Marker({
       // eslint-disable-next-line react-hooks/refs
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onPanResponderTerminationRequest: () => false,
+        // A second finger means pinch or twist on the map: let it go.
+        onPanResponderTerminationRequest: (e) => e.nativeEvent.touches.length > 1,
         onPanResponderGrant: () => {
           const l = latest.current.light;
           drag.current = { start: l.on ? (l.brightness ?? 100) : 1, moved: false, value: 0, long: false };
@@ -298,7 +333,11 @@ function Marker({
           if (drag.current.moved) latest.current.onDrag(drag.current.value, true);
           else latest.current.onPress();
         },
-        onPanResponderTerminate: stopTimer,
+        onPanResponderTerminate: () => {
+          stopTimer();
+          // Taken over by a pinch mid-drag: keep the brightness reached so far.
+          if (drag.current.moved && !drag.current.long) latest.current.onDrag(drag.current.value, true);
+        },
       }),
     [],
   );
@@ -311,9 +350,8 @@ function Marker({
       accessibilityLabel={`${light.name}, ${lightTypeLabel(light)}, ${lightLevel(light)}`}
       style={{ position: 'absolute', left: x - MARKER / 2, top: y - MARKER / 2, width: MARKER, height: MARKER, alignItems: 'center', justifyContent: 'center' }}
     >
-      {selected && <View style={{ position: 'absolute', width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(233,207,159,0.9)' }} />}
-      {!light.reachable && <View style={{ position: 'absolute', width: 28, height: 28, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', borderColor: color.warning }} />}
-      <Jewel light={light} shape={placed.shape} angle={placed.wallAngle} />
+      {selected && <View style={{ position: 'absolute', width: MARKER_SIZE + 12, height: MARKER_SIZE + 12, borderRadius: (MARKER_SIZE + 12) / 2, borderWidth: 1, borderColor: 'rgba(233,207,159,0.9)' }} />}
+      <LightMarker light={light} size={MARKER_SIZE} />
     </View>
   );
 }

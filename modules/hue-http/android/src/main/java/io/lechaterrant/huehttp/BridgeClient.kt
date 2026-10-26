@@ -98,6 +98,27 @@ object BridgeClient {
       conn.disconnect()
     }
   }
+
+  /**
+   * Opens a long-lived GET (the bridge's event stream). The caller reads `inputStream` and
+   * disconnects. A read times out after a few quiet minutes, so a dead Wi-Fi link is noticed.
+   */
+  fun openStream(url: String, headers: Map<String, String>, bridgeId: String, pin: String): HttpURLConnection {
+    val (socketFactory, _) = factory(bridgeId, pin)
+    val conn = URL(url).openConnection() as HttpURLConnection
+    if (conn is HttpsURLConnection) {
+      conn.sslSocketFactory = socketFactory
+      conn.hostnameVerifier = HostnameVerifier { _, _ -> true }
+    }
+    conn.connectTimeout = 4000
+    conn.readTimeout = 5 * 60_000
+    headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+    if (conn.responseCode != 200) {
+      conn.disconnect()
+      throw java.io.IOException("Event stream: HTTP ${conn.responseCode}")
+    }
+    return conn
+  }
 }
 
 /** Bridge credentials readable without starting JS, for widget fast actions. */

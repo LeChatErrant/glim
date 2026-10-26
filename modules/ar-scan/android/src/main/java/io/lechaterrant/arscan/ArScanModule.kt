@@ -32,7 +32,12 @@ class ArScanModule : Module() {
         view.snapEnabled = enabled
       }
 
-      // Current reticle position on the floor, or null when not aiming at the floor.
+      // "floor" (corners) or "object" (lights: point at the light itself, it lands on the floor below).
+      Prop("aimMode") { view: ArScanView, mode: String ->
+        view.aimMode = mode
+      }
+
+      // Current reticle position on the floor (object mode: below the point aimed at), or null.
       AsyncFunction("capture") { view: ArScanView ->
         view.capture()
       }

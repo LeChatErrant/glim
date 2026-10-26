@@ -10,7 +10,12 @@ export type Light = {
   id: string;
   deviceId: string;
   name: string;
+  /** What it looks like (pendant, string lights...): the device archetype, set by the user. */
   archetype: string;
+  /** What the hardware is (Hue's product archetype: "plug", "sultan_bulb", "hue_go"...). Missing in old cached snapshots. */
+  product?: string;
+  /** A smart plug: whatever is plugged in, it only turns on and off. Missing in old cached snapshots. */
+  plug?: boolean;
   roomId: string | null;
   kind: LightKind;
   on: boolean;
@@ -33,8 +38,19 @@ export type Room = {
   lightIds: string[];
 };
 
+/** A group of lights across rooms (Hue zone). */
+export type Zone = {
+  id: string;
+  name: string;
+  archetype: string;
+  groupedLightId: string | null;
+  lightIds: string[];
+};
+
 export type Snapshot = {
   rooms: Room[];
+  /** Groups (Hue zones). Missing in old cached snapshots. */
+  zones?: Zone[];
   lights: Light[];
   /** Grouped light for every light on the bridge ("all off"). Missing in old cached snapshots. */
   homeGroupId?: string | null;
@@ -65,12 +81,13 @@ async function call(path: string, method: 'GET' | 'PUT' | 'POST' | 'DELETE' = 'G
 const SNAPSHOT_KEY = 'snapshot';
 
 export async function fetchSnapshot(): Promise<Snapshot> {
-  const [lightsRaw, devices, rooms, connectivity, homes] = await Promise.all([
+  const [lightsRaw, devices, rooms, connectivity, homes, zones] = await Promise.all([
     call('light'),
     call('device'),
     call('room'),
     call('zigbee_connectivity'),
     call('bridge_home').catch(() => []),
+    call('zone').catch(() => []),
   ]);
   const deviceById = new Map(devices.map((d) => [d.id, d]));
   const roomByDevice = new Map<string, string>();
@@ -89,6 +106,9 @@ export async function fetchSnapshot(): Promise<Snapshot> {
       // Device names are the ones the user set; light names are often defaults.
       name: device?.metadata?.name ?? l.metadata.name,
       archetype: device?.metadata?.archetype ?? l.metadata.archetype,
+      product: device?.product_data?.product_archetype ?? '',
+      // Hue reports what the device is; a plug can be "string lights" if the user said so.
+      plug: device?.product_data?.product_archetype === 'plug' || (!l.dimming && !l.color),
       roomId: roomByDevice.get(l.owner.rid) ?? null,
       kind,
       on: l.on.on,
@@ -112,6 +132,13 @@ export async function fetchSnapshot(): Promise<Snapshot> {
       lightIds: r.children.map((c: { rid: string }) => lightIdsByDevice.get(c.rid)).filter(Boolean) as string[],
     })),
     lights,
+    zones: zones.map((z) => ({
+      id: z.id,
+      name: z.metadata.name,
+      archetype: z.metadata.archetype,
+      groupedLightId: z.services.find((x: { rtype: string }) => x.rtype === 'grouped_light')?.rid ?? null,
+      lightIds: z.children.filter((c: { rtype: string }) => c.rtype === 'light').map((c: { rid: string }) => c.rid),
+    })),
     homeGroupId: homes[0]?.services?.find((x: { rtype: string }) => x.rtype === 'grouped_light')?.rid ?? null,
     fetchedAt: Date.now(),
   };
@@ -172,6 +199,56 @@ export const ROOM_ARCHETYPES = [
   { id: 'terrace', label: 'Terrace' },
   { id: 'other', label: 'Other' },
 ] as const;
+
+/** Renames a light (its device: the name the user sees everywhere, Hue app included). */
+export function renameDevice(deviceId: string, name: string) {
+  return call(`device/${deviceId}`, 'PUT', { metadata: { name } });
+}
+
+/** Says what a light looks like (or what's plugged into a plug), e.g. "string_light". */
+export function setDeviceArchetype(deviceId: string, archetype: string) {
+  return call(`device/${deviceId}`, 'PUT', { metadata: { archetype } });
+}
+
+export function updateRoom(roomId: string, metadata: { name?: string; archetype?: string }) {
+  return call(`room/${roomId}`, 'PUT', { metadata });
+}
+
+/** Deletes a room on the bridge. Its lights stay, in no room. */
+export function deleteRoom(roomId: string) {
+  return call(`room/${roomId}`, 'DELETE');
+}
+
+/** Takes a light's device out of its room (it stays on the bridge, in no room). */
+export async function removeDeviceFromRoom(deviceId: string) {
+  for (const room of await call('room')) {
+    const children = room.children as { rid: string; rtype: string }[];
+    if (children.some((c) => c.rid === deviceId)) {
+      await call(`room/${room.id}`, 'PUT', { children: children.filter((c) => c.rid !== deviceId) });
+    }
+  }
+}
+
+const lightRefs = (lightIds: string[]) => lightIds.map((rid) => ({ rid, rtype: 'light' }));
+
+/** Creates a group (Hue zone) and returns its ID. */
+export async function createZone(name: string, archetype: string, lightIds: string[]): Promise<string> {
+  const data = await call('zone', 'POST', { metadata: { name, archetype }, children: lightRefs(lightIds) });
+  const id = (data[0] as unknown as { rid?: string })?.rid;
+  if (!id) throw new Error("The bridge didn't return the new group");
+  return id;
+}
+
+export function updateZone(zoneId: string, change: { name?: string; archetype?: string; lightIds?: string[] }) {
+  const body: Record<string, unknown> = {};
+  if (change.name !== undefined || change.archetype !== undefined) body.metadata = { name: change.name, archetype: change.archetype };
+  if (change.lightIds) body.children = lightRefs(change.lightIds);
+  return call(`zone/${zoneId}`, 'PUT', body);
+}
+
+export function deleteZone(zoneId: string) {
+  return call(`zone/${zoneId}`, 'DELETE');
+}
 
 /** Creates an empty room on the bridge and returns its ID. */
 export async function createRoom(name: string, archetype: string): Promise<string> {

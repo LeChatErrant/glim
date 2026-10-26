@@ -12,10 +12,16 @@ export type HueHttpRequest = {
 
 export type HueHttpResponse = { status: number; body: string; pin: string; cn: string };
 
-declare class HueHttpModule extends NativeModule<{}> {
+type Events = { onChange: () => void };
+
+declare class HueHttpModule extends NativeModule<Events> {
   request(options: HueHttpRequest): Promise<HueHttpResponse>;
   /** Credentials the native widget provider uses for instant taps. Null clears them. */
   setFastConfig(config: { ip: string; id: string; appKey: string; pin: string } | null): Promise<void>;
+  /** Starts live sync (widgets follow the bridge's event stream) if enabled and paired. */
+  startLive(): Promise<void>;
+  setLiveEnabled(on: boolean): Promise<void>;
+  isLiveEnabled(): boolean;
 }
 
 export default requireNativeModule<HueHttpModule>('HueHttp');

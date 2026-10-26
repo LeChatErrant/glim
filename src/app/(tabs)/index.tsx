@@ -8,9 +8,11 @@ import { getBridge, syncFastConfig } from '../../lib/hue/bridge';
 import { roomIsOn, type Light, type Snapshot } from '../../lib/hue/client';
 import { useHome } from '../../lib/hue/useHome';
 import { ambienceKelvin, averageBrightness, houseMood, isLit, lightsOf } from '../../lib/lights';
-import { loadMap, toPlan, type HomeMap } from '../../lib/map/map';
+import { loadMap, saveMapRotation, toPlan, type HomeMap } from '../../lib/map/map';
 import { ConnectionBadge, Glow, PillButton, Section, TagButton, type Connection } from '../../ui/controls';
 import { FloorPlan } from '../../ui/FloorPlan';
+import { turnTo, useMapGestures } from '../../ui/MapGestures';
+import { refreshAllWidgets } from '../../widgets/task-handler';
 import { ChoiceRow } from '../../ui/scan/parts';
 import { Display, Label, Txt } from '../../ui/text';
 import { color, font, hairline, TAB_BAR_SPACE } from '../../ui/theme';
@@ -43,6 +45,12 @@ function MapScreen() {
   );
 
   const plan = useMemo(() => (map && map.rooms.length ? toPlan(map) : null), [map]);
+  const turn = async (degrees: number) => {
+    const next = await saveMapRotation(turnTo(map?.rotation ?? 0, degrees));
+    if (next) setMap(next);
+    refreshAllWidgets().catch(() => null);
+  };
+  const gestures = useMapGestures({ width: size.w, height: size.h, onTurn: turn });
   const lights = useMemo(() => {
     const all = snapshot?.lights ?? [];
     return drag ? all.map((l) => (l.id === drag.id ? { ...l, on: true, brightness: drag.v } : l)) : all;
@@ -81,10 +89,19 @@ function MapScreen() {
 
       {map === undefined ? null : plan ? (
         <>
-          <View style={{ flex: 1, marginTop: 12, marginHorizontal: 24 }} onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
+          <View
+            style={{ flex: 1, marginTop: 12, marginHorizontal: 24, overflow: 'hidden' }}
+            onLayout={(e) => {
+              setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height });
+              gestures.measure(e);
+            }}
+            {...gestures.responder.panHandlers}
+          >
             {size.w > 0 && (
+              <View style={{ flex: 1, transform: [{ rotate: `${gestures.twist}deg` }] }}>
               <FloorPlan
                 plan={plan}
+                view={gestures.view}
                 lights={lights}
                 rooms={snapshot?.rooms ?? []}
                 width={size.w}
@@ -104,6 +121,12 @@ function MapScreen() {
                   router.push(`/light/${id}`);
                 }}
               />
+              </View>
+            )}
+            {gestures.zoomed && (
+              <View style={{ position: 'absolute', right: 0, bottom: 0 }}>
+                <TagButton title="Fit" icon="fit" onPress={gestures.fit} />
+              </View>
             )}
           </View>
           <Stats lights={lights} style={{ marginBottom: insets.bottom + TAB_BAR_SPACE + 18 }} />
@@ -113,6 +136,7 @@ function MapScreen() {
       )}
       <EditChoice
         visible={editing}
+        onTurn={(d) => turn(d)}
         onClose={() => setEditing(false)}
         onPick={(path) => {
           setEditing(false);
@@ -253,7 +277,7 @@ function NoMap({ snapshot, onToggleRoom, bottom }: { snapshot: Snapshot | null; 
 }
 
 /** Edit map: walk through it with the camera, or fix it on screen. */
-function EditChoice({ visible, onClose, onPick }: { visible: boolean; onClose: () => void; onPick: (path: '/scan' | '/editor') => void }) {
+function EditChoice({ visible, onClose, onPick, onTurn }: { visible: boolean; onClose: () => void; onPick: (path: '/scan' | '/editor') => void; onTurn: (degrees: number) => void }) {
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
@@ -275,6 +299,18 @@ function EditChoice({ visible, onClose, onPick }: { visible: boolean; onClose: (
         </Display>
         <ChoiceRow icon="scan" title="Walk through it in AR" sub="Add rooms, redraw one, move lights where they are" onPress={() => onPick('/scan')} />
         <ChoiceRow icon="edit" title="Edit on screen" sub="Drag corners and lights, draw rooms by hand" onPress={() => onPick('/editor')} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 62, borderTopWidth: 1, borderTopColor: hairline(0.08) }}>
+          <View style={{ flex: 1 }}>
+            <Display size={17} weight={400} style={{ lineHeight: 21 }}>
+              Turn the map
+            </Display>
+            <Txt size={12} tone="muted" style={{ lineHeight: 16 }}>
+              Or twist it with two fingers. Pinch to zoom
+            </Txt>
+          </View>
+          <PillButton title="Left" height={40} onPress={() => onTurn(-90)} />
+          <PillButton title="Right" height={40} onPress={() => onTurn(90)} />
+        </View>
       </View>
     </Modal>
   );

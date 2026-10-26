@@ -28,6 +28,12 @@ class HueHttpModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("HueHttp")
 
+    // The bridge reported a change (live sync): screens refresh without waiting for their poll.
+    Events("onChange")
+
+    OnCreate { LiveSync.listener = { sendEvent("onChange", emptyMap<String, Any>()) } }
+    OnDestroy { LiveSync.listener = null }
+
     AsyncFunction("request") { o: RequestOptions ->
       val r = BridgeClient.request(o.url, o.method, o.headers, o.body, o.bridgeId, o.pin, o.timeoutMs)
       mapOf("status" to r.status, "body" to r.body, "pin" to r.pin, "cn" to r.cn)
@@ -37,6 +43,19 @@ class HueHttpModule : Module() {
     AsyncFunction("setFastConfig") { c: FastConfigRecord? ->
       val context = appContext.reactContext ?: return@AsyncFunction
       if (c == null) FastConfig.clear(context) else FastConfig.save(context, c.ip, c.id, c.appKey, c.pin)
+    }
+
+    // Live sync of widgets with the bridge (foreground service). Started at app start, while it's allowed.
+    AsyncFunction("startLive") {
+      appContext.reactContext?.let { LiveSync.start(it) }
+    }
+
+    AsyncFunction("setLiveEnabled") { on: Boolean ->
+      appContext.reactContext?.let { LiveSync.setEnabled(it, on) }
+    }
+
+    Function("isLiveEnabled") {
+      appContext.reactContext?.let { LiveSync.enabled(it) } ?: false
     }
   }
 }

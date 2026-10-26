@@ -146,7 +146,7 @@ function ToggleRow({ title, sub, on, onToggle }: { title: string; sub: string; o
 
 export type LightRowState = 'active' | 'activePlaced' | 'placed' | 'skipped' | 'idle';
 
-/** Pick a light (it blinks), aim below it, Place. Placing again moves it. */
+/** Pick a light (it blinks), point at it, Place. Placing again moves it. */
 export function LightsSheet({
   title,
   rows,
@@ -195,7 +195,7 @@ export function LightsSheet({
             state === 'activePlaced'
               ? 'Blinking · place again to move it'
               : state === 'active'
-                ? 'Blinking now · aim below it'
+                ? 'Blinking now · point at it'
                 : state === 'placed'
                   ? 'Placed · tap to move it'
                   : state === 'skipped'

@@ -18,8 +18,10 @@ import android.view.WindowManager
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
 import com.google.ar.core.Coordinates2d
+import com.google.ar.core.DepthPoint
 import com.google.ar.core.Frame
 import com.google.ar.core.Plane
+import com.google.ar.core.Point
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import expo.modules.kotlin.AppContext
@@ -56,7 +58,8 @@ data class EdgeArrow(val x: Float, val y: Float, val angle: Float, val color: In
 /**
  * Camera feed + ARCore tracking. Finds the floor (lowest horizontal plane), casts a
  * reticle from the screen center onto it, and draws the JS-provided overlay
- * (room outlines, light markers) projected onto the floor.
+ * (room outlines, light markers) projected onto the floor. In "object" aim mode the
+ * center ray also hits real surfaces (depth), to place a light by pointing at it.
  */
 class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, appContext), GLSurfaceView.Renderer {
   override val shouldUseAndroidLayout = true
@@ -76,11 +79,18 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
   @Volatile private var floorY: Float? = null
   @Volatile private var reticle: FloorPoint? = null
   @Volatile private var snapped: FloorPoint? = null
+  /** Which snap moved the target: "close", "corner", "wall", "wallAngle", "angle", or null. */
+  @Volatile private var snapKind: String? = null
   @Volatile private var closesShape = false
+  /** Object mode: the 3D point (x, y, z) the center ray hits, or null. */
+  @Volatile private var objectHit: FloatArray? = null
   @Volatile private var polylines: List<Polyline> = emptyList()
   @Volatile private var markers: List<Marker> = emptyList()
   @Volatile private var activeIndex = -1
   @Volatile var snapEnabled = true
+  /** "floor": aim at the floor. "object": aim at anything (a light), it lands on the floor below. */
+  @Volatile var aimMode = AIM_FLOOR
+    set(value) { field = value; if (value != AIM_OBJECT) objectHit = null }
 
   private var lastStatusAt = 0L
   private var lastStatusKey = ""
@@ -143,6 +153,8 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
           focusMode = Config.FocusMode.AUTO
           updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
           lightEstimationMode = Config.LightEstimationMode.DISABLED
+          // Depth lets the center ray hit lights and furniture, not only detected planes.
+          if (s.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) depthMode = Config.DepthMode.AUTOMATIC
         }
         s.configure(config)
         session = s
@@ -201,6 +213,10 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
   }
 
   fun capture(): Map<String, Any>? {
+    // Object mode: the light goes on the floor plan right below the point aimed at.
+    if (aimMode == AIM_OBJECT) objectHit?.let { o ->
+      return mapOf("x" to o[0], "z" to o[2], "rawX" to o[0], "rawZ" to o[2], "closesShape" to false)
+    }
     val p = (if (snapEnabled) snapped else null) ?: reticle ?: return null
     val raw = reticle ?: p
     return mapOf("x" to p.x, "z" to p.z, "rawX" to raw.x, "rawZ" to raw.z, "closesShape" to closesShape)
@@ -233,6 +249,8 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
       if (camera.trackingState != TrackingState.TRACKING) {
         reticle = null
         snapped = null
+        snapKind = null
+        objectHit = null
         publish(camera.trackingState, camera.trackingFailureReason.name, null, null)
         overlayView.post { overlayView.update(null) }
         return
@@ -254,6 +272,7 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
       }
       reticle = hit
       computeSnap(hit)
+      objectHit = if (aimMode == AIM_OBJECT) hitObject(frame) else null
       val heading = atan2(dir[0].toDouble(), -dir[2].toDouble())
       publish(TrackingState.TRACKING, "NONE", FloorPoint(origin[0], origin[2]), heading)
       val scene = buildScene(s, pose)
@@ -280,36 +299,106 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
     }
   }
 
-  /** Right-angle snapping relative to the last segment of the active outline, and closing. */
+  /**
+   * Snapping while tracing, strongest first: closing on the first corner, a corner of another
+   * outline, then a right angle to the last wall (landing on another wall if it crosses one
+   * nearby). Before there is a last wall, the target can still land on another wall.
+   */
   private fun computeSnap(hit: FloorPoint?) {
     closesShape = false
     val line = polylines.getOrNull(activeIndex)
-    if (hit == null || line == null || line.points.isEmpty()) { snapped = hit; return }
+    if (hit == null || line == null) { snapped = hit; snapKind = null; return }
     val pts = line.points
-    val last = pts.last()
-    if (pts.size >= 3 && hypot(hit.x - pts[0].x, hit.z - pts[0].z) < CLOSE_RADIUS_M) {
+    if (pts.size >= 3 && dist(hit, pts[0]) < CLOSE_RADIUS_M) {
       closesShape = true
       snapped = pts[0]
+      snapKind = "close"
       return
     }
-    if (pts.size < 2) { snapped = hit; return }
+    if (!snapEnabled) { snapped = hit; snapKind = null; return }
+    val others = polylines.filterIndexed { i, _ -> i != activeIndex }
+    val corner = others.flatMap { it.points }.minByOrNull { dist(hit, it) }
+    if (corner != null && dist(hit, corner) < CORNER_SNAP_M) { snapped = corner; snapKind = "corner"; return }
+    val walls = others.flatMap { walls(it) }
+    val axis = rightAngleAxis(pts, hit)
+    if (axis == null) {
+      val onWall = walls.map { (a, b) -> closestOnSegment(hit, a, b) }.minByOrNull { dist(hit, it) }
+      if (onWall != null && dist(hit, onWall) < WALL_SNAP_M) { snapped = onWall; snapKind = "wall" }
+      else { snapped = hit; snapKind = null }
+      return
+    }
+    val (o, d) = axis
+    val t = (hit.x - o.x) * d.x + (hit.z - o.z) * d.z
+    val angled = FloorPoint(o.x + d.x * t, o.z + d.z * t)
+    val crossing = walls.mapNotNull { (a, b) -> crossLine(o, d, a, b) }.minByOrNull { dist(angled, it) }
+    if (crossing != null && dist(angled, crossing) < WALL_CROSS_M) { snapped = crossing; snapKind = "wallAngle" }
+    else { snapped = angled; snapKind = "angle" }
+  }
+
+  /** The line the right-angle snap holds the target on: through the last corner, along or across the last wall. */
+  private fun rightAngleAxis(pts: List<FloorPoint>, hit: FloorPoint): Pair<FloorPoint, FloorPoint>? {
+    if (pts.size < 2) return null
+    val last = pts.last()
     val prev = pts[pts.size - 2]
-    var dx = last.x - prev.x
-    var dz = last.z - prev.z
-    val len = hypot(dx, dz)
-    if (len < 1e-3f) { snapped = hit; return }
-    dx /= len; dz /= len
+    val len = dist(last, prev)
+    if (len < 1e-3f) return null
+    val dx = (last.x - prev.x) / len
+    val dz = (last.z - prev.z) / len
     val rx = hit.x - last.x
     val rz = hit.z - last.z
     val along = rx * dx + rz * dz
     val across = -rx * dz + rz * dx
-    snapped = if (abs(along) > abs(across)) FloorPoint(last.x + dx * along, last.z + dz * along)
-    else FloorPoint(last.x - dz * across, last.z + dx * across)
+    return last to (if (abs(along) > abs(across)) FloorPoint(dx, dz) else FloorPoint(-dz, dx))
+  }
+
+  private fun walls(line: Polyline): List<Pair<FloorPoint, FloorPoint>> {
+    val pts = line.points
+    val out = (0 until pts.size - 1).map { pts[it] to pts[it + 1] }
+    return if (line.closed && pts.size > 2) out + (pts.last() to pts[0]) else out
+  }
+
+  private fun closestOnSegment(p: FloorPoint, a: FloorPoint, b: FloorPoint): FloorPoint {
+    val ex = b.x - a.x; val ez = b.z - a.z
+    val l2 = ex * ex + ez * ez
+    if (l2 < 1e-6f) return a
+    val s = (((p.x - a.x) * ex + (p.z - a.z) * ez) / l2).coerceIn(0f, 1f)
+    return FloorPoint(a.x + ex * s, a.z + ez * s)
+  }
+
+  /** Where the line o + d·t crosses the wall a–b, or null (parallel, or outside the wall). */
+  private fun crossLine(o: FloorPoint, d: FloorPoint, a: FloorPoint, b: FloorPoint): FloorPoint? {
+    val ex = b.x - a.x; val ez = b.z - a.z
+    val len = hypot(ex, ez)
+    val denom = d.x * ez - d.z * ex
+    if (len < 1e-3f || abs(denom) < 0.1f * len) return null // Nearly parallel.
+    val wx = a.x - o.x; val wz = a.z - o.z
+    val s = (wx * d.z - wz * d.x) / denom
+    if (s !in 0f..1f) return null
+    return FloorPoint(a.x + ex * s, a.z + ez * s)
+  }
+
+  private fun dist(a: FloorPoint, b: FloorPoint) = hypot(a.x - b.x, a.z - b.z)
+
+  /** Object mode: the first real surface on the center ray (depth, feature point or plane), in world space. */
+  private fun hitObject(frame: Frame): FloatArray? {
+    for (hit in frame.hitTest(surfaceView.width / 2f, surfaceView.height / 2f)) {
+      if (hit.distance !in 0.15f..8f) continue
+      val ok = when (val t = hit.trackable) {
+        is DepthPoint, is Point -> true
+        is Plane -> t.isPoseInPolygon(hit.hitPose)
+        else -> false
+      }
+      if (!ok) continue
+      val p = hit.hitPose
+      return floatArrayOf(p.tx(), p.ty(), p.tz())
+    }
+    return null
   }
 
   private fun publish(state: TrackingState, reason: String, cam: FloorPoint?, heading: Double?) {
     val now = SystemClock.uptimeMillis()
-    val key = "$state|$reason|${floorY != null}|${reticle != null}"
+    val obj = objectHit
+    val key = "$state|$reason|${floorY != null}|${reticle != null}|${obj != null}"
     if (key == lastStatusKey && now - lastStatusAt < 150) return
     lastStatusKey = key
     lastStatusAt = now
@@ -318,11 +407,13 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
       "reason" to reason.lowercase(),
       "floorFound" to (floorY != null),
       "aimingAtFloor" to (reticle != null),
+      "aimingAtObject" to (obj != null),
       "closesShape" to closesShape,
     )
     cam?.let { payload["camera"] = mapOf("x" to it.x, "z" to it.z) }
     heading?.let { payload["heading"] = it }
-    (if (snapEnabled) snapped else reticle)?.let { payload["reticle"] = mapOf("x" to it.x, "z" to it.z) }
+    val target = obj?.let { FloorPoint(it[0], it[2]) } ?: (if (snapEnabled) snapped else reticle)
+    target?.let { payload["reticle"] = mapOf("x" to it.x, "z" to it.z) }
     post { onStatus(payload) }
   }
 
@@ -337,9 +428,18 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
     val markers: List<ScreenMarker>,
     /** Dots of the floor grid, with their size factor (bigger when closer). */
     val floorDots: List<FloatArray>,
-    val reticle: FloatArray?,
-    val reticleCloses: Boolean,
-    val snappedChip: Boolean,
+    /** Where a tap lands on the floor (snapped or not): the reticle ring. */
+    val target: FloatArray?,
+    val targetCloses: Boolean,
+    /** Which snap moved the target ("ON CORNER"...), shown as a chip near it. */
+    val chip: String?,
+    /** The center ray has something to aim at: bright crosshair, else dimmed. */
+    val aimed: Boolean,
+    /** Object mode: the point aimed at, its plumb line to the floor, and the ring where it lands. */
+    val objectMark: FloatArray?,
+    val plumb: Pair<FloatArray, FloatArray>?,
+    val landing: List<FloatArray>?,
+    val landingCenter: FloatArray?,
     val arrows: List<EdgeArrow>,
   )
 
@@ -404,11 +504,40 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
       }
     }
 
-    val r = (if (snapEnabled) snapped else null) ?: reticle
+    // Object mode: show the point hit, then drop it to the floor where the light lands on the map.
+    val obj = if (aimMode == AIM_OBJECT) objectHit else null
+    var plumb: Pair<FloatArray, FloatArray>? = null
+    var landing: List<FloatArray>? = null
+    var landingCenter: FloatArray? = null
+    val realFloor = floorY
+    if (obj != null && realFloor != null) {
+      if (obj[1] - realFloor > 0.08f) plumb = segment3(obj, floatArrayOf(obj[0], realFloor, obj[2]), w, h)
+      val ring = (0..32).map { k ->
+        val a = k / 32f * 2f * Math.PI.toFloat()
+        project(obj[0] + cos(a) * LANDING_RING_M, realFloor, obj[2] + sin(a) * LANDING_RING_M, w, h)
+      }
+      if (ring.all { it != null }) landing = ring.filterNotNull()
+      landingCenter = project(obj[0], realFloor, obj[2], w, h)
+    }
+
+    // With an object hit, the floor ring replaces the reticle.
+    val r = if (obj != null) null else (if (snapEnabled) snapped else null) ?: reticle
     val raw = reticle
-    val chip = snapEnabled && r != null && raw != null && !closesShape &&
-      (polylines.getOrNull(activeIndex)?.points?.size ?: 0) >= 2 && hypot(r.x - raw.x, r.z - raw.z) > 0.02f
-    return Scene(segs, band, corners, shown, dots, r?.let { project(it.x, fy, it.z, w, h) }, closesShape, chip, arrows)
+    val chip = if (r == null || raw == null || !snapEnabled) null else when (snapKind) {
+      "corner" -> "ON CORNER"
+      "wall" -> "ON WALL"
+      "wallAngle" -> "ON WALL · 90°"
+      "angle" -> if (hypot(r.x - raw.x, r.z - raw.z) > 0.02f) "SNAPPED · 90°" else null
+      else -> null
+    }
+    return Scene(
+      segs, band, corners, shown, dots,
+      r?.let { project(it.x, fy, it.z, w, h) }, closesShape && r != null, chip,
+      aimed = r != null || obj != null,
+      objectMark = obj?.let { project(it[0], it[1], it[2], w, h) },
+      plumb = plumb, landing = landing, landingCenter = landingCenter,
+      arrows = arrows,
+    )
   }
 
   private fun inside(x: Float, z: Float, poly: List<FloorPoint>): Boolean {
@@ -451,10 +580,14 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
   }
 
   /** Projects a floor segment, clipping it against the camera's near plane. */
-  private fun segment(a: FloorPoint, b: FloorPoint, y: Float, w: Float, h: Float): Pair<FloatArray, FloatArray>? {
+  private fun segment(a: FloorPoint, b: FloorPoint, y: Float, w: Float, h: Float) =
+    segment3(floatArrayOf(a.x, y, a.z), floatArrayOf(b.x, y, b.z), w, h)
+
+  /** Projects a 3D segment (world x, y, z), clipping it against the camera's near plane. */
+  private fun segment3(a: FloatArray, b: FloatArray, w: Float, h: Float): Pair<FloatArray, FloatArray>? {
     val va = FloatArray(4); val vb = FloatArray(4)
-    Matrix.multiplyMV(va, 0, viewMatrix, 0, floatArrayOf(a.x, y, a.z, 1f), 0)
-    Matrix.multiplyMV(vb, 0, viewMatrix, 0, floatArrayOf(b.x, y, b.z, 1f), 0)
+    Matrix.multiplyMV(va, 0, viewMatrix, 0, floatArrayOf(a[0], a[1], a[2], 1f), 0)
+    Matrix.multiplyMV(vb, 0, viewMatrix, 0, floatArrayOf(b[0], b[1], b[2], 1f), 0)
     val near = -0.1f
     var pa = va; var pb = vb
     if (pa[2] > near && pb[2] > near) return null
@@ -500,6 +633,16 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
       color = Color.rgb(0xF2, 0xE8, 0xD8); textSize = 11 * dp
       typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
     }
+    /** Fixed crosshair at the screen center, where the ray is cast from. A dark halo keeps it readable on white walls. */
+    private val cross = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE; strokeWidth = 1.5f * dp; strokeCap = Paint.Cap.ROUND
+      setShadowLayer(3 * dp, 0f, 0f, Color.argb(150, 0, 0, 0))
+    }
+    /** Thin dashed lines: center → snapped target, and the plumb line from a light to the floor. */
+    private val dashed = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE; strokeWidth = 1 * dp
+      pathEffect = android.graphics.DashPathEffect(floatArrayOf(2 * dp, 4 * dp), 0f)
+    }
     private val chipText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
       color = champagne; textSize = 9.5f * dp; letterSpacing = 0.2f
       typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
@@ -523,7 +666,9 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
     private var canvas: Canvas? = null
 
     override fun onDraw(c: Canvas) {
-      val s = scene ?: return
+      val cx = width / 2f
+      val cy = height / 2f
+      val s = scene ?: return crosshair(c, cx, cy, false)
       canvas = c
       s.floorDots.forEach { d -> c.drawCircle(d[0], d[1], d[2] * dp * 0.7f, dot) }
 
@@ -534,8 +679,8 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
       }
       line.clearShadowLayer()
       s.band?.let { (a, b) -> c.drawLine(a[0], a[1], b[0], b[1], band) }
-      // Outline corners: small diamonds.
-      s.corners.forEach { (p, col) -> diamond(c, p[0], p[1], 3.5f * dp, col) }
+      // Outline corners: diamonds with a soft glow, so corners to snap to are easy to spot.
+      s.corners.forEach { (p, col) -> diamond(c, p[0], p[1], 5.5f * dp, col, glow = true) }
 
       s.markers.forEach { m ->
         if (m.kind == "corner") {
@@ -574,9 +719,43 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
         }
       }
 
-      s.reticle?.let { p ->
-        val col = if (s.reticleCloses) champagne else ink
-        stroke.color = col; stroke.strokeWidth = (if (s.reticleCloses) 2f else 1f) * dp
+      // Object mode: plumb line from the point aimed at down to the ring where it lands on the map.
+      s.plumb?.let { (a, b) ->
+        dashed.color = champagne
+        c.drawLine(a[0], a[1], b[0], b[1], dashed)
+      }
+      s.landing?.let { ring ->
+        val path = Path()
+        ring.forEachIndexed { i, p -> if (i == 0) path.moveTo(p[0], p[1]) else path.lineTo(p[0], p[1]) }
+        stroke.color = champagne; stroke.strokeWidth = 1.5f * dp
+        stroke.setShadowLayer(6 * dp, 0f, 0f, champagne)
+        c.drawPath(path, stroke)
+        stroke.clearShadowLayer()
+      }
+      s.landingCenter?.let { p ->
+        fill.color = champagne
+        c.drawCircle(p[0], p[1], 2.5f * dp, fill)
+        pill(p[0], p[1] + 20 * dp, "ON THE MAP", chipText, Color.argb(115, 0xE9, 0xCF, 0x9F))
+      }
+      s.objectMark?.let { p ->
+        fill.color = champagne
+        fill.setShadowLayer(10 * dp, 0f, 0f, champagne)
+        c.drawCircle(p[0], p[1], 3.5f * dp, fill)
+        fill.clearShadowLayer()
+        stroke.color = Color.argb(220, 255, 246, 230); stroke.strokeWidth = 1 * dp
+        c.drawCircle(p[0], p[1], 6 * dp, stroke)
+      }
+
+      s.target?.let { p ->
+        val col = if (s.targetCloses) champagne else ink
+        // Snapped away from the center: a thin dashed link shows where the corner will land.
+        val dx = p[0] - cx; val dy = p[1] - cy
+        val d = hypot(dx, dy)
+        if (d > 52 * dp) {
+          dashed.color = Color.argb(190, 0xF3, 0xE3, 0xC3)
+          c.drawLine(cx + dx / d * 18 * dp, cy + dy / d * 18 * dp, p[0] - dx / d * 32 * dp, p[1] - dy / d * 32 * dp, dashed)
+        }
+        stroke.color = col; stroke.strokeWidth = (if (s.targetCloses) 2f else 1f) * dp
         c.drawCircle(p[0], p[1], 30 * dp, stroke)
         stroke.strokeWidth = 1.5f * dp
         val r0 = 22 * dp; val r1 = 38 * dp
@@ -586,17 +765,32 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
         c.drawLine(p[0] + r0, p[1], p[0] + r1, p[1], stroke)
         fill.color = col
         c.drawCircle(p[0], p[1], 3 * dp, fill)
-        if (s.reticleCloses) pill(p[0], p[1] + 46 * dp, "CLOSE ROOM", chipText, Color.argb(115, 0xE9, 0xCF, 0x9F))
-        else if (s.snappedChip) pill(p[0] - 112 * dp, p[1] - 58 * dp, "SNAPPED · 90°", chipText, Color.argb(115, 0xE9, 0xCF, 0x9F), leftAligned = true)
+        if (s.targetCloses) pill(p[0], p[1] + 46 * dp, "CLOSE ROOM", chipText, Color.argb(115, 0xE9, 0xCF, 0x9F))
+        else s.chip?.let { pill(p[0] - 112 * dp, p[1] - 58 * dp, it, chipText, Color.argb(115, 0xE9, 0xCF, 0x9F), leftAligned = true) }
       }
+
+      crosshair(c, cx, cy, s.aimed)
       canvas = null
     }
 
-    private fun diamond(c: Canvas, x: Float, y: Float, r: Float, col: Int) {
+    /** Always drawn, so the user knows where they aim; dimmed when the ray finds nothing (too high, no floor yet). */
+    private fun crosshair(c: Canvas, x: Float, y: Float, aimed: Boolean) {
+      cross.color = if (aimed) ink else Color.argb(110, 0xF3, 0xE3, 0xC3)
+      val r0 = 8 * dp; val r1 = 16 * dp
+      c.drawLine(x, y - r1, x, y - r0, cross)
+      c.drawLine(x, y + r0, x, y + r1, cross)
+      c.drawLine(x - r1, y, x - r0, y, cross)
+      c.drawLine(x + r0, y, x + r1, y, cross)
+    }
+
+    private fun diamond(c: Canvas, x: Float, y: Float, r: Float, col: Int, glow: Boolean = false) {
       val path = Path()
       path.moveTo(x, y - r); path.lineTo(x + r, y); path.lineTo(x, y + r); path.lineTo(x - r, y); path.close()
-      fill.color = col
+      // Dim outlines (saved rooms) keep dim walls, but their corners stay readable.
+      fill.color = if (glow) Color.argb(maxOf(Color.alpha(col), 215), Color.red(col), Color.green(col), Color.blue(col)) else col
+      if (glow) fill.setShadowLayer(7 * dp, 0f, 0f, Color.argb(140, Color.red(col), Color.green(col), Color.blue(col)))
       c.drawPath(path, fill)
+      fill.clearShadowLayer()
       stroke.color = ground; stroke.strokeWidth = 1.5f * dp
       c.drawPath(path, stroke)
     }
@@ -604,6 +798,17 @@ class ArScanView(context: Context, appContext: AppContext) : ExpoView(context, a
 }
 
 private const val CLOSE_RADIUS_M = 0.4f
+/** Snap onto a corner of another outline within this distance. */
+private const val CORNER_SNAP_M = 0.3f
+/** Snap onto a wall of another outline within this distance (1st and 2nd corners). */
+private const val WALL_SNAP_M = 0.15f
+/** With a right angle, land on a wall it crosses this close to the snapped point. */
+private const val WALL_CROSS_M = 0.25f
+/** Radius of the ring drawn on the floor below an object aimed at. */
+private const val LANDING_RING_M = 0.15f
+
+private const val AIM_FLOOR = "floor"
+private const val AIM_OBJECT = "object"
 
 /** Spacing of the floor dot grid. */
 private const val GRID_M = 0.3f

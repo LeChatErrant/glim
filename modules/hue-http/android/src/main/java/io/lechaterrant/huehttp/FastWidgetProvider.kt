@@ -44,6 +44,8 @@ open class FastWidgetProvider : RNWidgetProvider() {
         }
       }
     }
+    // A widget tap may start the foreground service again if the system stopped it.
+    if (action.startsWith(context.packageName + ".WIDGET")) LiveSync.start(context)
     super.onReceive(context, intent)
   }
 

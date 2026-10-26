@@ -105,3 +105,36 @@ export async function addRecentColor(hex: string): Promise<Swatch[]> {
   await AsyncStorage.setItem(k, JSON.stringify(next));
   return loadRecentColors();
 }
+
+/** A saved look: a color or a white, at a brightness. Applied to a light or a whole room. */
+export type Favorite = { id: string; hex?: string; kelvin?: number; brightness: number };
+
+const favKey = async () => `favorites:${(await getBridge())?.id ?? 'none'}`;
+
+export async function loadFavorites(): Promise<Favorite[]> {
+  try {
+    return JSON.parse((await AsyncStorage.getItem(await favKey())) ?? '[]');
+  } catch {
+    return [];
+  }
+}
+
+async function saveFavorites(list: Favorite[]) {
+  await AsyncStorage.setItem(await favKey(), JSON.stringify(list));
+  return list;
+}
+
+/** Adds a look to the front of the favorites (a near-identical one moves to the front instead). */
+export async function addFavorite(f: Omit<Favorite, 'id'>): Promise<Favorite[]> {
+  const same = (x: Favorite) =>
+    Math.abs(x.brightness - f.brightness) < 5 && (f.hex ? !!x.hex && near(x.hex, f.hex) : !!x.kelvin && Math.abs(x.kelvin - f.kelvin!) < 100);
+  const list = await loadFavorites();
+  return saveFavorites([{ ...f, id: `fav-${Date.now()}` }, ...list.filter((x) => !same(x))].slice(0, 12));
+}
+
+export async function removeFavorite(id: string): Promise<Favorite[]> {
+  return saveFavorites((await loadFavorites()).filter((f) => f.id !== id));
+}
+
+/** "Amber · 60%", "Warm white · 40%". */
+export const favoriteName = (f: Favorite) => `${f.hex ? colorName(f.hex) : kelvinName(f.kelvin ?? 2700)} · ${f.brightness}%`;

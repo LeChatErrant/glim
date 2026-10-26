@@ -3,19 +3,20 @@ import { requestWidgetUpdate, type WidgetInfo, type WidgetTaskHandlerProps } fro
 import { planAll, planToggleLight, planToggleRoom, type Planned } from '../lib/actions';
 import { getBridge } from '../lib/hue/bridge';
 import { cachedSnapshot, fetchSnapshot, saveCachedSnapshot, type Snapshot } from '../lib/hue/client';
-import { loadMap, toPlan } from '../lib/map/map';
+import { loadMap } from '../lib/map/map';
+import { forgetWidgetSettings, loadWidgetSettings, widgetPlan } from './settings';
 import { MapWidget, NotPaired, RoomsWidget } from './widgets';
 
 export const WIDGET_NAMES = ['Rooms', 'Map'] as const;
 
 /** A state to draw, and whether it is only the last known one (bridge unreachable). */
-type State = { snapshot: Snapshot | null; stale: boolean };
+export type State = { snapshot: Snapshot | null; stale: boolean };
 
-async function render(info: WidgetInfo, { snapshot, stale }: State) {
+export async function render(info: WidgetInfo, { snapshot, stale }: State) {
   if (!(await getBridge())) return <NotPaired />;
   if (info.widgetName === 'Map') {
-    const map = await loadMap();
-    return <MapWidget snapshot={snapshot} plan={map ? toPlan(map) : null} width={info.width} height={info.height} stale={stale} />;
+    const plan = widgetPlan(await loadMap(), await loadWidgetSettings(info.widgetId));
+    return <MapWidget snapshot={snapshot} plan={plan} width={info.width} height={info.height} stale={stale} />;
   }
   return <RoomsWidget snapshot={snapshot} width={info.width} height={info.height} stale={stale} />;
 }
@@ -40,12 +41,14 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
 
   switch (widgetAction) {
     case 'WIDGET_ADDED':
-    case 'WIDGET_UPDATE':
-    case 'WIDGET_RESIZED': {
+    case 'WIDGET_RESIZED':
       renderWidget(await render(widgetInfo, { snapshot: await cachedSnapshot(), stale: false }));
       renderWidget(await render(widgetInfo, await fresh()));
       break;
-    }
+    // Periodic, or live sync saw a change on the bridge: draw the fresh state directly.
+    case 'WIDGET_UPDATE':
+      renderWidget(await render(widgetInfo, await fresh()));
+      break;
     case 'WIDGET_CLICK': {
       const cached = await cachedSnapshot();
       const data = clickActionData ?? {};
@@ -70,6 +73,9 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
       await refreshAllWidgets(state.snapshot, state.stale);
       break;
     }
+    case 'WIDGET_DELETED':
+      await forgetWidgetSettings(widgetInfo.widgetId);
+      break;
     default:
       break;
   }

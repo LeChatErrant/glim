@@ -462,7 +462,15 @@ function Scanner({ base }: { base: HomeMap | null }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
-      <ArScanView ref={ar} style={StyleSheet.absoluteFill} overlay={overlay} snapEnabled={snap && step === 'corners'} onStatus={setStatus} onError={(e) => setError(e.message)} />
+      <ArScanView
+        ref={ar}
+        style={StyleSheet.absoluteFill}
+        overlay={overlay}
+        snapEnabled={snap && step === 'corners'}
+        aimMode={step === 'lights' ? 'object' : 'floor'}
+        onStatus={setStatus}
+        onError={(e) => setError(e.message)}
+      />
       <Fades bottom={step === 'corners' ? 300 : 0} />
 
       {step === 'align' && (
@@ -534,7 +542,7 @@ function Scanner({ base }: { base: HomeMap | null }) {
         <View style={{ position: 'absolute', left: 24, right: 24, bottom: insets.bottom + 26, gap: 20 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Label tone="ivory">{redrawn ? `Redrawing ${redrawn.name || 'room'}` : `Room ${roomNumber + 1}`}</Label>
-            <Choice label={snap ? 'Right angles · on' : 'Right angles · off'} chosen={false} onPress={() => setSnap((s) => !s)} />
+            <Choice label={snap ? 'Snapping · on' : 'Snapping · off'} chosen={false} onPress={() => setSnap((s) => !s)} />
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <SideButton title="Undo" icon="undo" onPress={undo} disabled={!history.length} />
@@ -565,7 +573,7 @@ function Scanner({ base }: { base: HomeMap | null }) {
           title={lightsRoom ? `Lights in ${lightsRoom.name || 'this room'}` : 'Your lights'}
           rows={lightRows}
           placedCount={lightRows.filter((r) => r.state === 'placed' || r.state === 'activePlaced').length}
-          canPlace={!!status?.aimingAtFloor}
+          canPlace={!!(status?.aimingAtFloor || status?.aimingAtObject)}
           onPick={pick}
           onSkip={skip}
           onPlace={place}
@@ -586,7 +594,7 @@ function Scanner({ base }: { base: HomeMap | null }) {
           </Txt>
           <ChoiceRow icon="add" title="Scan a new room" sub="Trace its corners on the floor" onPress={() => commit({ ...scan, step: 'corners', retracing: null })} />
           <ChoiceRow icon="edit" title="Redraw a room" sub="Trace its walls again, keep its name and lights" disabled={!allRooms.length} onPress={() => commit({ ...scan, step: 'pickRoom' })} />
-          <ChoiceRow icon="light" title="Place or move lights" sub="Each light blinks, aim below it" disabled={!snapshot?.lights.length} onPress={() => openLights(null)} />
+          <ChoiceRow icon="light" title="Place or move lights" sub="Each light blinks, point at it" disabled={!snapshot?.lights.length} onPress={() => openLights(null)} />
           <PillButton title="Finish and review" kind="primary" onPress={finish} style={{ marginTop: 14 }} />
         </Sheet>
       )}
@@ -615,13 +623,12 @@ function CornerTitle({ status, corners }: { status: ArStatus; corners: number })
   return <ScanTitle first="Find the" accent="next corner" sub="WHERE THE WALL MEETS THE FLOOR" />;
 }
 
-/** "Lumière du salon is blinking · aim at the floor right below it." */
+/** "Lumière du salon is blinking · point at it from where you stand." It lands on the floor below. */
 function LightHint({ light }: { light?: Light }) {
   const insets = useSafeAreaInsets();
   if (!light) return null;
   const shape = lightShape(light.archetype);
-  const aim =
-    shape === 'portable' ? 'Aim at its base, on the floor below the table.' : shape === 'string' ? 'Aim at the floor below its middle.' : shape === 'bar' || shape === 'lantern' ? 'Aim at the floor at the foot of the wall below it.' : 'Aim at the floor right below it.';
+  const aim = shape === 'string' || shape === 'bar' ? 'Point at its middle from where you stand.' : 'Point at it from where you stand.';
   return (
     <View
       pointerEvents="none"
@@ -632,6 +639,9 @@ function LightHint({ light }: { light?: Light }) {
       </Txt>
       <Txt size={12} tone="secondary">
         {light.reachable ? aim : "It doesn't answer, so it can't blink. Place it from memory."}
+      </Txt>
+      <Txt size={12} tone="muted">
+        Or aim at the floor right below it.
       </Txt>
     </View>
   );

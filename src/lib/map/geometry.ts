@@ -57,24 +57,144 @@ export function centroid(poly: FloorPoint[]): FloorPoint {
   return { x: poly.reduce((s, p) => s + p.x, 0) / n, z: poly.reduce((s, p) => s + p.z, 0) / n };
 }
 
+/** A wall of a room: two consecutive corners. */
+export type Segment = [FloorPoint, FloorPoint];
+
+/** The walls of a room outline, closed when it has 3 corners or more. */
+export function roomWalls(points: FloorPoint[]): Segment[] {
+  if (points.length < 2) return [];
+  if (points.length === 2) return [[points[0], points[1]]];
+  return points.map((p, i) => [p, points[(i + 1) % points.length]]);
+}
+
+export function closestOnSegment(p: FloorPoint, a: FloorPoint, b: FloorPoint): FloorPoint {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const len2 = dx * dx + dz * dz;
+  const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / len2)) : 0;
+  return { x: a.x + t * dx, z: a.z + t * dz };
+}
+
+/** What a drag snapped to, drawn while dragging: a corner (ring) or a wall / alignment line (dashed). */
+export type SnapGuide = { kind: 'point'; at: FloorPoint } | { kind: 'line'; a: FloorPoint; b: FloorPoint };
+
+/** Snap distances in meters (the editor derives them from screen pixels and its zoom). */
+export type SnapTolerance = { corner: number; wall: number; axis: number };
+
+/** Corners and walls of the other rooms, which a dragged corner or room snaps to. */
+export type SnapTargets = { corners: FloorPoint[]; walls: Segment[] };
+
+export type Snapped = { point: FloorPoint; guides: SnapGuide[] };
+
+const GRID = 0.05;
+
+/** Aligns x and z independently with nearby corners (so walls line up), otherwise rounds to a 5 cm grid. */
+function alignToCorners(p: FloorPoint, others: FloorPoint[], radius: number): Snapped {
+  let x = Math.round(p.x / GRID) * GRID;
+  let z = Math.round(p.z / GRID) * GRID;
+  let bestX = radius;
+  let bestZ = radius;
+  let byX: FloorPoint | null = null;
+  let byZ: FloorPoint | null = null;
+  for (const o of others) {
+    if (Math.abs(o.x - p.x) < bestX) {
+      bestX = Math.abs(o.x - p.x);
+      x = o.x;
+      byX = o;
+    }
+    if (Math.abs(o.z - p.z) < bestZ) {
+      bestZ = Math.abs(o.z - p.z);
+      z = o.z;
+      byZ = o;
+    }
+  }
+  const point = { x, z };
+  const guides: SnapGuide[] = [];
+  if (byX) guides.push({ kind: 'line', a: byX, b: point });
+  if (byZ) guides.push({ kind: 'line', a: byZ, b: point });
+  return { point, guides };
+}
+
 /**
  * Editor snapping: aligns x and z independently with nearby corners (so walls line up),
  * otherwise rounds to a 5 cm grid.
  */
 export function snapPoint(p: FloorPoint, others: FloorPoint[], radius = 0.15): FloorPoint {
-  let x = Math.round(p.x / 0.05) * 0.05;
-  let z = Math.round(p.z / 0.05) * 0.05;
-  let bestX = radius;
-  let bestZ = radius;
-  for (const o of others) {
-    if (Math.abs(o.x - p.x) < bestX) {
-      bestX = Math.abs(o.x - p.x);
-      x = o.x;
-    }
-    if (Math.abs(o.z - p.z) < bestZ) {
-      bestZ = Math.abs(o.z - p.z);
-      z = o.z;
+  return alignToCorners(p, others, radius).point;
+}
+
+/**
+ * Snaps a dragged corner, first match wins: onto another room's corner, else onto another
+ * room's wall (closest point), else x/z aligned with nearby corners (`align`), else the grid.
+ */
+export function snapCorner(p: FloorPoint, targets: SnapTargets & { align: FloorPoint[] }, tol: SnapTolerance): Snapped {
+  let corner: FloorPoint | null = null;
+  let best = tol.corner;
+  for (const q of targets.corners) {
+    const d = distance(p, q);
+    if (d < best) {
+      best = d;
+      corner = q;
     }
   }
-  return { x, z };
+  if (corner) return { point: { x: corner.x, z: corner.z }, guides: [{ kind: 'point', at: corner }] };
+
+  let onWall: Snapped | null = null;
+  best = tol.wall;
+  for (const [a, b] of targets.walls) {
+    const c = closestOnSegment(p, a, b);
+    const d = distance(p, c);
+    if (d < best) {
+      best = d;
+      onWall = { point: c, guides: [{ kind: 'line', a, b }] };
+    }
+  }
+  return onWall ?? alignToCorners(p, targets.align, tol.axis);
+}
+
+/**
+ * Snaps a moved room (rigid: translation only) so it touches its neighbors. Returns the
+ * correction to add to every corner: the smallest that makes one of its corners coincide
+ * with another room's corner, else the smallest that puts one of its corners on another
+ * room's wall or one of its walls on another room's corner. Parallel walls a small gap
+ * apart always have such a pair, so this also closes the gap onto a shared wall line.
+ */
+export function snapRoom(points: FloorPoint[], targets: SnapTargets, tol: SnapTolerance): { offset: FloorPoint; guides: SnapGuide[] } {
+  let found: { offset: FloorPoint; guides: SnapGuide[] } | null = null;
+  let best = tol.corner;
+  for (const p of points) {
+    for (const q of targets.corners) {
+      const d = distance(p, q);
+      if (d < best) {
+        best = d;
+        found = { offset: { x: q.x - p.x, z: q.z - p.z }, guides: [{ kind: 'point', at: q }] };
+      }
+    }
+  }
+  if (found) return found;
+
+  best = tol.wall;
+  for (const p of points) {
+    for (const [a, b] of targets.walls) {
+      const c = closestOnSegment(p, a, b);
+      const d = distance(p, c);
+      if (d < best) {
+        best = d;
+        found = { offset: { x: c.x - p.x, z: c.z - p.z }, guides: [{ kind: 'line', a, b }] };
+      }
+    }
+  }
+  for (const [a, b] of roomWalls(points)) {
+    for (const q of targets.corners) {
+      const c = closestOnSegment(q, a, b);
+      const d = distance(q, c);
+      if (d < best) {
+        best = d;
+        const o = { x: q.x - c.x, z: q.z - c.z };
+        const line: SnapGuide = { kind: 'line', a: { x: a.x + o.x, z: a.z + o.z }, b: { x: b.x + o.x, z: b.z + o.z } };
+        found = { offset: o, guides: [line, { kind: 'point', at: q }] };
+      }
+    }
+  }
+  return found ?? { offset: { x: 0, z: 0 }, guides: [] };
 }
