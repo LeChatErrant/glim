@@ -106,8 +106,15 @@ but never in a way that would need a rewrite to sell it later (see
 - 2026-10-26: String lights, bars and lanterns can be oriented in the 2D editor
   (handle; strings also get a length); default is along the nearest wall.
   Glows breathe slowly in the app, never on widgets.
-- 2026-10-26: Favorites are saved looks (color or white + brightness), per
-  bridge, applied to a light or a whole room.
+- 2026-10-26: Three separate ideas, kept apart in the UI: **rooms/groups** say
+  *which* lights; a **mood** saves *how* a room or group looks, light by light;
+  a **favorite** is just a color (or white) kept first in every color row
+  (★ to keep the current one, long-press to add/remove). No brightness in
+  favorites.
+- 2026-10-26: Hue's built-in effects (candle, fire, sparkle, prism, opal,
+  glisten, underwater, cosmos, sunbeam, enchant) via `effects_v2`: Effects tab
+  on the light screen (with speed), Effect row on room/group sheets, saved in
+  moods. Picking a color ends an effect. Candle/fire glows flicker on the map.
 - 2026-10-26: Moods v1: "Save as mood" on a room or group sheet keeps each
   light's state (on/off, color or white, brightness); tap to apply, long-press
   to update/rename/delete. Stored per bridge (`src/lib/moods.ts`), applied with

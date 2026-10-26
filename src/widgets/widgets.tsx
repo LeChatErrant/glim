@@ -3,6 +3,7 @@ import { FlexWidget, OverlapWidget, SvgWidget, TextWidget, type TextWidgetStyle 
 import type { Room, Snapshot } from '../lib/hue/client';
 import { averageBrightness, isLit, lightsOf } from '../lib/lights';
 import { walledRooms } from '../lib/map/glow';
+import { capsWidth, labelSpot } from '../lib/map/labels';
 import { fitPlan, type Plan } from '../lib/map/map';
 import { iconSvg, jewelSvg, planToSvg } from '../lib/map/svg';
 import { color, font } from '../ui/theme';
@@ -285,6 +286,7 @@ export function MapWidget({
   const walled = walledRooms(plan);
   const outlines = plan.rooms.filter((r) => r.pts.length > 2);
   const showLabels = box.height >= 200;
+  const markers = plan.lights.map((l) => ({ x: X(l.u), y: Y(l.v) }));
 
   return (
     <OverlapWidget style={{ ...shell, borderColor: line(stale ? 0.07 : 0.09) }}>
@@ -295,22 +297,22 @@ export function MapWidget({
       {showLabels &&
         outlines.map((r) => {
           const xs = r.pts.map((p) => X(p.u));
-          const ys = r.pts.map((p) => Y(p.v));
           const w = Math.max(...xs) - Math.min(...xs);
           if (w < 56) return null;
           const zone = !walled.includes(r);
-          const name = snapshot.rooms.find((x) => x.id === r.hueRoomId)?.name ?? r.name;
+          const name = (snapshot.rooms.find((x) => x.id === r.hueRoomId)?.name ?? r.name).toUpperCase();
+          const size = zone || !r.hueRoomId ? 8 : 9;
+          const spot = labelSpot(
+            r.pts.map((p) => ({ x: X(p.u), y: Y(p.v) })),
+            markers,
+            Math.min(capsWidth(name, size), w - 14),
+            size + 4,
+            zone ? 5 : 8,
+            13,
+          );
           return (
-            <FlexWidget
-              key={`l${r.id}`}
-              style={{ marginLeft: Math.round(Math.min(...xs) + (zone ? 6 : 9)), marginTop: Math.round(Math.min(...ys) + (zone ? 5 : 8)), width: Math.round(w - 14) }}
-            >
-              <TextWidget
-                text={name.toUpperCase()}
-                maxLines={1}
-                truncate="END"
-                style={caps(zone || !r.hueRoomId ? 8 : 9, line(r.hueRoomId && !zone ? 0.82 : 0.6))}
-              />
+            <FlexWidget key={`l${r.id}`} style={{ marginLeft: Math.round(spot.x), marginTop: Math.round(spot.y), width: Math.round(w - 14) }}>
+              <TextWidget text={name} maxLines={1} truncate="END" style={caps(size, line(r.hueRoomId && !zone ? 0.82 : 0.6))} />
             </FlexWidget>
           );
         })}

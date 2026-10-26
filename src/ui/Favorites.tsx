@@ -2,87 +2,109 @@ import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 
 import { kelvinTint } from '../lib/hue/color';
-import { inkOn } from '../lib/lightIcons';
-import { addFavorite, favoriteName, loadFavorites, removeFavorite, type Favorite } from '../lib/palette';
+import { addFavorite, favoriteName, isFavorite, loadFavorites, removeFavorite, type Favorite, type Swatch } from '../lib/palette';
 import { Icon } from './icons';
 import { ColorDot } from './LightControls';
-import { Label, Txt } from './text';
-import { color, font, hairline } from './theme';
+import { Label } from './text';
+import { color, hairline } from './theme';
+
+/** A color to apply: a color (hex) or a white (kelvin). */
+export type ColorPick = { hex?: string; kelvin?: number };
+
+const swatchOf = (p: ColorPick) => p.hex ?? kelvinTint(p.kelvin ?? 2700);
 
 /**
- * Saved looks, one tap to come back to them: "+" saves the current look (color or white, and
- * brightness), tap applies, long-press removes. Shared by every light and room of the bridge.
+ * The colors to pick from: your favorites first (with a star), then recent colors. "+" keeps the
+ * current color as a favorite; long-press a recent color to keep it, a favorite to remove it.
  */
-export function FavoritesRow({
+export function ColorRow({
+  title,
   current,
-  onApply,
+  recents,
+  selected,
+  onPick,
   ground = color.ground,
-  title = 'Favorites',
+  labelWidth,
 }: {
-  /** The look to save with "+"; null when there's nothing to save (light off). */
-  current: Omit<Favorite, 'id'> | null;
-  onApply: (f: Favorite) => void;
+  title: string;
+  /** The color shown now, kept with "+"; null when there's none (off, plain white). */
+  current: ColorPick | null;
+  recents: Swatch[];
+  selected: (p: ColorPick) => boolean;
+  onPick: (p: ColorPick) => void;
   ground?: string;
-  title?: string;
+  /** Label beside the row instead of above it (room sheet). */
+  labelWidth?: number;
 }) {
-  const [list, setList] = useState<Favorite[]>([]);
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
   useEffect(() => {
-    loadFavorites().then(setList);
+    loadFavorites().then(setFavorites);
   }, []);
 
-  const remove = (f: Favorite) =>
-    Alert.alert('Remove this favorite?', favoriteName(f), [
-      { text: 'Keep', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => removeFavorite(f.id).then(setList) },
-    ]);
+  const items: (ColorPick & { fav?: Favorite })[] = [
+    ...favorites.map((f) => ({ hex: f.hex, kelvin: f.kelvin, fav: f })),
+    ...recents.filter((r) => !isFavorite(favorites, { hex: r.hex })).map((r) => ({ hex: r.hex })),
+  ];
+
+  const hold = (item: ColorPick & { fav?: Favorite }) => {
+    const name = favoriteName(item);
+    if (item.fav) {
+      const fav = item.fav;
+      Alert.alert(`Remove ${name} from favorites?`, undefined, [
+        { text: 'Keep', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: () => removeFavorite(fav.id).then(setFavorites) },
+      ]);
+    } else {
+      addFavorite(item).then(setFavorites);
+    }
+  };
+
+  const canSave = !!current && !isFavorite(favorites, current);
 
   return (
-    <View style={{ gap: 10 }}>
-      <Label>{title}</Label>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, alignItems: 'center', paddingRight: 8 }}>
+    <View style={labelWidth ? { flexDirection: 'row', alignItems: 'center' } : { gap: 10 }}>
+      <Label tone={labelWidth ? 'label' : 'muted'} style={labelWidth ? { width: labelWidth } : undefined}>
+        {title}
+      </Label>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: labelWidth ? 1 : undefined }} contentContainerStyle={{ gap: 10, alignItems: 'center', paddingRight: 8 }}>
         <Pressable
-          onPress={() => current && addFavorite(current).then(setList)}
-          disabled={!current}
+          onPress={() => current && addFavorite(current).then(setFavorites)}
+          disabled={!canSave}
           accessibilityRole="button"
-          accessibilityLabel="Save this look as a favorite"
+          accessibilityLabel="Keep the current color as a favorite"
           hitSlop={4}
           style={({ pressed }) => ({
-            width: 40,
-            height: 40,
-            borderRadius: 20,
+            width: 36,
+            height: 36,
+            borderRadius: 18,
             borderWidth: 1,
             borderStyle: 'dashed',
             borderColor: hairline(0.35),
             alignItems: 'center',
             justifyContent: 'center',
-            opacity: !current ? 0.35 : pressed ? 0.6 : 1,
+            opacity: !canSave ? 0.3 : pressed ? 0.6 : 1,
           })}
         >
-          <Icon name="add" size={16} tint={color.secondary} />
+          <Icon name="star" size={14} tint={color.secondary} />
         </Pressable>
-        {list.map((f) => (
+        {items.map((item, i) => (
           <Pressable
-            key={f.id}
-            onPress={() => onApply(f)}
-            onLongPress={() => remove(f)}
+            key={item.fav?.id ?? `${item.hex}-${i}`}
+            onPress={() => onPick(item)}
+            onLongPress={() => hold(item)}
             accessibilityRole="button"
-            accessibilityLabel={`Favorite: ${favoriteName(f)}`}
-            accessibilityHint="Long-press to remove"
+            accessibilityLabel={`${favoriteName(item)}${item.fav ? ', favorite' : ''}`}
+            accessibilityHint={item.fav ? 'Long-press to remove from favorites' : 'Long-press to keep as a favorite'}
             hitSlop={4}
-            style={{ alignItems: 'center' }}
           >
-            <ColorDot hex={f.hex ?? kelvinTint(f.kelvin ?? 2700)} ground={ground} />
-            {/* Brightness on the dot, so two looks of the same color can be told apart. */}
-            <Txt size={9} style={{ position: 'absolute', top: 13, fontFamily: font.uiMedium, lineHeight: 12, color: inkOn(f.hex ?? kelvinTint(f.kelvin ?? 2700)) }}>
-              {f.brightness}
-            </Txt>
+            <ColorDot hex={swatchOf(item)} size={36} selected={selected(item)} ground={ground} />
+            {item.fav && (
+              <View style={{ position: 'absolute', right: -3, bottom: -3, width: 16, height: 16, borderRadius: 8, backgroundColor: ground, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="star" size={10} tint={color.champagne} stroke={1.8} />
+              </View>
+            )}
           </Pressable>
         ))}
-        {!list.length && (
-          <Txt size={12} tone="muted" style={{ maxWidth: 220 }}>
-            Tap + to keep this look and come back to it anytime.
-          </Txt>
-        )}
       </ScrollView>
     </View>
   );

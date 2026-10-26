@@ -106,8 +106,8 @@ export async function addRecentColor(hex: string): Promise<Swatch[]> {
   return loadRecentColors();
 }
 
-/** A saved look: a color or a white, at a brightness. Applied to a light or a whole room. */
-export type Favorite = { id: string; hex?: string; kelvin?: number; brightness: number };
+/** A favorite color: a color or a white the user keeps, offered first wherever colors are picked. */
+export type Favorite = { id: string; hex?: string; kelvin?: number };
 
 const favKey = async () => `favorites:${(await getBridge())?.id ?? 'none'}`;
 
@@ -124,17 +124,20 @@ async function saveFavorites(list: Favorite[]) {
   return list;
 }
 
-/** Adds a look to the front of the favorites (a near-identical one moves to the front instead). */
+const sameColor = (x: Omit<Favorite, 'id'>, f: Omit<Favorite, 'id'>) =>
+  f.hex ? !!x.hex && near(x.hex, f.hex) : !!x.kelvin && !!f.kelvin && Math.abs(x.kelvin - f.kelvin) < 100;
+
+export const isFavorite = (list: Favorite[], f: Omit<Favorite, 'id'>) => list.some((x) => sameColor(x, f));
+
+/** Adds a color to the front of the favorites (an almost identical one moves to the front instead). */
 export async function addFavorite(f: Omit<Favorite, 'id'>): Promise<Favorite[]> {
-  const same = (x: Favorite) =>
-    Math.abs(x.brightness - f.brightness) < 5 && (f.hex ? !!x.hex && near(x.hex, f.hex) : !!x.kelvin && Math.abs(x.kelvin - f.kelvin!) < 100);
   const list = await loadFavorites();
-  return saveFavorites([{ ...f, id: `fav-${Date.now()}` }, ...list.filter((x) => !same(x))].slice(0, 12));
+  return saveFavorites([{ hex: f.hex, kelvin: f.hex ? undefined : f.kelvin, id: `fav-${Date.now()}` }, ...list.filter((x) => !sameColor(x, f))].slice(0, 16));
 }
 
 export async function removeFavorite(id: string): Promise<Favorite[]> {
   return saveFavorites((await loadFavorites()).filter((f) => f.id !== id));
 }
 
-/** "Amber · 60%", "Warm white · 40%". */
-export const favoriteName = (f: Favorite) => `${f.hex ? colorName(f.hex) : kelvinName(f.kelvin ?? 2700)} · ${f.brightness}%`;
+/** "Amber", "Warm white". */
+export const favoriteName = (f: Omit<Favorite, 'id'>) => (f.hex ? colorName(f.hex) : kelvinName(f.kelvin ?? 2700));

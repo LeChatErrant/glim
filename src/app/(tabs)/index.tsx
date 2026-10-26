@@ -7,10 +7,10 @@ import { planAll, planLightBrightness, planToggleLight, planToggleRoom } from '.
 import { getBridge, syncFastConfig } from '../../lib/hue/bridge';
 import { roomIsOn, type Light, type Snapshot } from '../../lib/hue/client';
 import { useHome } from '../../lib/hue/useHome';
-import { ambienceKelvin, averageBrightness, houseMood, isLit, lightsOf } from '../../lib/lights';
+import { ambienceKelvin, averageBrightness, houseMood, isLit, lightLevel, lightsOf, lightTypeLabel } from '../../lib/lights';
 import { loadMap, saveMapRotation, toPlan, type HomeMap } from '../../lib/map/map';
-import { ConnectionBadge, Glow, PillButton, Section, TagButton, type Connection } from '../../ui/controls';
-import { FloorPlan } from '../../ui/FloorPlan';
+import { ConnectionBadge, Glow, IconButton, PillButton, Section, TagButton, type Connection } from '../../ui/controls';
+import { FloorPlan, LightMarker } from '../../ui/FloorPlan';
 import { turnTo, useMapGestures } from '../../ui/MapGestures';
 import { refreshAllWidgets } from '../../widgets/task-handler';
 import { ChoiceRow } from '../../ui/scan/parts';
@@ -68,6 +68,7 @@ function MapScreen() {
   };
 
   const anyOn = lights.some(isLit);
+  const selectedLight = lights.find((l) => l.id === selected);
 
   return (
     <View style={{ flex: 1, backgroundColor: color.ground }}>
@@ -116,6 +117,7 @@ function MapScreen() {
                   setSelected(null);
                   act((s) => planToggleRoom(s, roomId));
                 }}
+                onBackgroundPress={() => setSelected(null)}
                 onLightOpen={(id) => {
                   setSelected(id);
                   router.push(`/light/${id}`);
@@ -129,7 +131,16 @@ function MapScreen() {
               </View>
             )}
           </View>
-          <Stats lights={lights} style={{ marginBottom: insets.bottom + TAB_BAR_SPACE + 18 }} />
+          {selectedLight ? (
+            <LightBar
+              light={selectedLight}
+              onOpen={() => router.push(`/light/${selectedLight.id}`)}
+              onClose={() => setSelected(null)}
+              style={{ marginBottom: insets.bottom + TAB_BAR_SPACE + 18 }}
+            />
+          ) : (
+            <Stats lights={lights} style={{ marginBottom: insets.bottom + TAB_BAR_SPACE + 18 }} />
+          )}
         </>
       ) : (
         <NoMap snapshot={snapshot} onToggleRoom={(id) => act((s) => planToggleRoom(s, id))} bottom={insets.bottom + TAB_BAR_SPACE + 16} />
@@ -204,6 +215,26 @@ function Stats({ lights, style }: { lights: Light[]; style?: object }) {
           {k ? <Text style={unit}> K</Text> : null}
         </Text>
       </Stat>
+    </View>
+  );
+}
+
+/** The light tapped on the map, under it (never over it): name, type, level, Open, close. */
+function LightBar({ light, onOpen, onClose, style }: { light: Light; onOpen: () => void; onClose: () => void; style?: object }) {
+  return (
+    <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 24, marginTop: 12, paddingTop: 12, minHeight: 62, borderTopWidth: 1, borderTopColor: hairline(0.1) }, style]}>
+      <LightMarker light={light} size={30} glow={false} />
+      <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`Open ${light.name}`} style={({ pressed }) => ({ flex: 1, minWidth: 0, opacity: pressed ? 0.6 : 1 })}>
+        <Txt size={15} medium numberOfLines={1} style={{ lineHeight: 20 }}>
+          {light.name}
+        </Txt>
+        <Txt size={12} tone="muted" numberOfLines={1} style={{ lineHeight: 16 }}>
+          {`${lightTypeLabel(light)} · `}
+          <Text style={{ color: light.reachable ? color.champagne : color.warning }}>{lightLevel(light)}</Text>
+        </Txt>
+      </Pressable>
+      <PillButton title="Open" height={40} onPress={onOpen} />
+      <IconButton icon="close" label="Close" onPress={onClose} />
     </View>
   );
 }

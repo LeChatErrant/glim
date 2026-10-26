@@ -28,6 +28,12 @@ export type Light = {
   /** Supported white temperatures in mirek, [coolest, warmest]; null if the light has no white temperature. Missing in old cached snapshots. */
   mirekRange?: [number, number] | null;
   reachable: boolean;
+  /** Effect running now ("candle"...), "no_effect" or absent. */
+  effect?: string;
+  /** Effects the light supports; absent or empty when none (plugs, white lights). */
+  effects?: string[];
+  /** Speed of the running effect, 0–1. */
+  effectSpeed?: number;
 };
 
 export type Room = {
@@ -119,6 +125,9 @@ export async function fetchSnapshot(): Promise<Snapshot> {
         ? [l.color_temperature.mirek_schema.mirek_minimum, l.color_temperature.mirek_schema.mirek_maximum]
         : null,
       reachable: reachableByDevice.get(l.owner.rid) ?? true,
+      effect: l.effects_v2?.status?.effect ?? l.effects?.status,
+      effects: (l.effects_v2?.action?.effect_values ?? l.effects?.effect_values ?? []).filter((e: string) => e !== 'no_effect'),
+      effectSpeed: l.effects_v2?.status?.parameters?.speed,
     };
   });
 
@@ -155,8 +164,11 @@ export async function saveCachedSnapshot(snapshot: Snapshot) {
   await AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
 }
 
-/** A change to send: color (CIE xy) and white temperature (mirek) are exclusive. */
-export type LightState = { on?: boolean; brightness?: number; xy?: { x: number; y: number }; mirek?: number };
+/**
+ * A change to send: color (CIE xy) and white temperature (mirek) are exclusive. `effect` starts a
+ * built-in effect ("candle"...) or stops it ("no_effect"); `speed` is 0–1.
+ */
+export type LightState = { on?: boolean; brightness?: number; xy?: { x: number; y: number }; mirek?: number; effect?: string; speed?: number };
 
 function stateBody(state: LightState) {
   const body: Record<string, unknown> = {};
@@ -164,6 +176,7 @@ function stateBody(state: LightState) {
   if (state.brightness !== undefined) body.dimming = { brightness: state.brightness };
   if (state.xy) body.color = { xy: state.xy };
   else if (state.mirek !== undefined) body.color_temperature = { mirek: state.mirek };
+  if (state.effect) body.effects_v2 = { action: { effect: state.effect, ...(state.speed !== undefined ? { parameters: { speed: state.speed } } : {}) } };
   return body;
 }
 

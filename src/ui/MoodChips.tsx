@@ -101,7 +101,7 @@ export function MoodChips({
           onPress={() => setNaming({ name: suggestName(captureLights(lights)) })}
           disabled={!lights.length}
           accessibilityRole="button"
-          accessibilityLabel="Save these lights as a mood"
+          accessibilityLabel="Save how these lights look now as a mood"
           style={({ pressed }) => ({
             flexDirection: 'row',
             alignItems: 'center',
@@ -117,7 +117,7 @@ export function MoodChips({
         >
           <Icon name="add" size={14} tint={color.secondary} />
           <Txt size={13} tone="secondary" style={{ lineHeight: 17 }}>
-            Save as mood
+            Save current look
           </Txt>
         </Pressable>
         {mine.map((m) => (

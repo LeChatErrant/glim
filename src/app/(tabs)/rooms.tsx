@@ -91,6 +91,7 @@ export default function RoomsScreen() {
               outdoor={outdoor(room)}
               expanded={open === room.id}
               onExpand={() => setOpen(open === room.id ? null : room.id)}
+              onEdit={() => setEditing({ kind: 'room', room })}
               act={act}
             />
           ))}
@@ -141,6 +142,7 @@ function RoomCard({
   outdoor,
   expanded,
   onExpand,
+  onEdit,
   act,
 }: {
   room: Room;
@@ -149,6 +151,7 @@ function RoomCard({
   outdoor: boolean;
   expanded: boolean;
   onExpand: () => void;
+  onEdit: () => void;
   act: Act;
 }) {
   const own = lightsOf(room, snapshot);
@@ -186,30 +189,39 @@ function RoomCard({
       {c1 && <Glow tint={c1} cx={0} cy={0} rx={240} ry={150} alpha={0.11} />}
       {c2 && <Glow tint={c2} cx={width - 48} cy={0} rx={200} ry={130} alpha={0.08} />}
       <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: 2 }}>
-        <Pressable
-          onPress={() => router.push(`/room/${room.id}`)}
-          accessibilityRole="button"
-          accessibilityLabel={`Open ${room.name}`}
-          style={({ pressed }) => ({ flex: 1, minWidth: 0, gap: 6, opacity: pressed ? 0.6 : 1 })}
-        >
-          <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
-            {room.name}
-          </Display>
-          <JewelsMeta lights={all} meta={meta} />
-        </Pressable>
-        {plugOnly && (
-          <Txt size={12} tone="muted" style={{ marginRight: 2 }}>
-            On/off only
-          </Txt>
-        )}
+        {/* The whole row unfolds the room's lights; the name opens its sheet; long-press edits it. */}
         <Pressable
           onPress={onExpand}
+          onLongPress={onEdit}
           accessibilityRole="button"
           accessibilityState={{ expanded }}
           accessibilityLabel={`${expanded ? 'Hide' : 'Show'} lights in ${room.name}`}
-          style={{ width: 40, height: 44, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}
+          accessibilityHint="Long-press to edit the room"
+          style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' }}
         >
-          <Icon name="chevronDown" size={14} tint={expanded ? color.champagne : color.muted} stroke={1.6} />
+          <View style={{ flex: 1, minWidth: 0, gap: 6, paddingVertical: 4 }}>
+            <Pressable
+              onPress={() => router.push(`/room/${room.id}`)}
+              onLongPress={onEdit}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${room.name}`}
+              hitSlop={{ top: 8, bottom: 4 }}
+              style={({ pressed }) => ({ alignSelf: 'flex-start', maxWidth: '100%', opacity: pressed ? 0.6 : 1 })}
+            >
+              <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
+                {room.name}
+              </Display>
+            </Pressable>
+            <JewelsMeta lights={all} meta={meta} />
+          </View>
+          {plugOnly && (
+            <Txt size={12} tone="muted" style={{ marginRight: 2 }}>
+              On/off only
+            </Txt>
+          )}
+          <View style={{ width: 40, height: 44, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
+            <Icon name="chevronDown" size={14} tint={expanded ? color.champagne : color.muted} stroke={1.6} />
+          </View>
         </Pressable>
         <Switch big on={anyOn} label={`${room.name}, ${anyOn ? 'on' : 'off'}`} onToggle={toggleAll} />
       </View>

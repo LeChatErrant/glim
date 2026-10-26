@@ -1,16 +1,17 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, PanResponder, Pressable, View } from 'react-native';
+import { Animated, Easing, PanResponder, View } from 'react-native';
 import Svg, { ClipPath, Defs, Ellipse, G, Path, RadialGradient, Stop } from 'react-native-svg';
 
+import { FLICKERS } from '../lib/effects';
 import type { Light, Room } from '../lib/hue/client';
 import { inkOn, LIGHT_ICON_PATHS } from '../lib/lightIcons';
 import { lightLevel, lightType, lightTypeLabel } from '../lib/lights';
 import { placeLights, walledRooms, type PlacedLight } from '../lib/map/glow';
+import { capsWidth, labelSpot } from '../lib/map/labels';
 import { fitPlan, type Plan, type PlanView } from '../lib/map/map';
-import { Icon } from './icons';
 import { useLightTween } from './useLightTween';
-import { Label, Txt } from './text';
+import { Label } from './text';
 import { color, hairline } from './theme';
 
 type Props = {
@@ -28,6 +29,8 @@ type Props = {
   onLightDrag: (id: string, brightness: number, done: boolean) => void;
   /** Tap inside a room, away from lights. */
   onRoomPress: (hueRoomId: string) => void;
+  /** Tap on the map away from rooms with lights (clears the selection). */
+  onBackgroundPress?: () => void;
   /** Long-press on a light, or "Open" in its label: the light screen. */
   onLightOpen: (id: string) => void;
 };
@@ -40,11 +43,12 @@ const MARKER_SIZE = 22;
  * The Nocturne floor plan: rooms as free polygons with hairline walls, each light casting a glow
  * shaped by its type and clipped to its room's walls, jewel markers on top.
  */
-export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId, onLightPress, onLightDrag, onRoomPress, onLightOpen }: Props) {
+export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId, onLightPress, onLightDrag, onRoomPress, onBackgroundPress, onLightOpen }: Props) {
   const f = useMemo(() => fitPlan(plan, width, height, 16, view), [plan, width, height, view]);
   const walled = useMemo(() => walledRooms(plan), [plan]);
   const tween = useLightTween(lights);
   const breath = useBreath();
+  const flicker = useFlicker();
   const placed = useMemo(() => placeLights(plan, tween.lights), [plan, tween.lights]);
   const fade = (id: string) => tween.fade.get(id) ?? 1;
   const roomName = (r: Plan['rooms'][number]) => rooms.find((x) => x.id === r.hueRoomId)?.name ?? r.name;
@@ -55,10 +59,12 @@ export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId
   // change with the layout (zoom, pan, turn) make it redraw them instead of clipping to old walls.
   const layout = useMemo(() => hash(walled.map((r) => pathOf(r.pts)).join('')), [walled, f]); // eslint-disable-line react-hooks/exhaustive-deps
   const zones = plan.rooms.filter((r) => r.pts.length >= 3 && !walled.includes(r));
+  const markers = placed.map((p) => ({ x: f.x(p.u), y: f.y(p.v) }));
   const lit = placed.filter((p) => p.light.on && p.light.reachable && fade(p.light.id) > 0.01);
 
   return (
-    <View style={{ width, height }}>
+    // A tap nothing else takes (outside rooms with lights) reaches the map itself.
+    <View style={{ width, height }} onStartShouldSetResponder={() => !!onBackgroundPress} onResponderRelease={onBackgroundPress}>
       <Svg width={width} height={height} style={{ position: 'absolute' }}>
         <Defs>
           {walled.map((r) => (
@@ -84,7 +90,7 @@ export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId
           <AnimatedG
             key={p.light.id}
             clipPath={p.room ? `url(#clip-${p.room.id}-${layout})` : undefined}
-            opacity={Animated.multiply(breath[i % breath.length], (p.pools[0]?.alpha ?? 1) * fade(p.light.id))}
+            opacity={Animated.multiply(FLICKERS.includes(p.light.effect ?? '') ? flicker : breath[i % breath.length], (p.pools[0]?.alpha ?? 1) * fade(p.light.id))}
           >
             {p.pools.map((pool, i) => (
               <Ellipse
@@ -122,14 +128,22 @@ export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId
 
       {[...walled, ...zones].map((r) => {
         const xs = r.pts.map((p) => f.x(p.u));
-        const ys = r.pts.map((p) => f.y(p.v));
         const w = Math.max(...xs) - Math.min(...xs);
         if (w < 56) return null;
         const zone = zones.includes(r);
+        const size = zone || !r.hueRoomId ? 8 : 9;
+        const name = roomName(r);
+        const spot = labelSpot(
+          r.pts.map((p) => ({ x: f.x(p.u), y: f.y(p.v) })),
+          markers,
+          Math.min(capsWidth(name, size), w - 16),
+          size + 4,
+          zone ? 6 : 10,
+        );
         return (
-          <View key={r.id} pointerEvents="none" style={{ position: 'absolute', left: Math.min(...xs) + (zone ? 8 : 12), top: Math.min(...ys) + (zone ? 6 : 11), maxWidth: w - 16 }}>
-            <Label size={zone || !r.hueRoomId ? 8 : 9} numberOfLines={1} style={{ color: `rgba(242,232,216,${r.hueRoomId && !zone ? 0.82 : 0.6})` }}>
-              {roomName(r)}
+          <View key={r.id} pointerEvents="none" style={{ position: 'absolute', left: spot.x, top: spot.y, maxWidth: w - 16 }}>
+            <Label size={size} numberOfLines={1} style={{ color: `rgba(242,232,216,${r.hueRoomId && !zone ? 0.82 : 0.6})` }}>
+              {name}
             </Label>
           </View>
         );
@@ -172,57 +186,6 @@ export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId
         />
       ))}
 
-      {(() => {
-        const p = placed.find((x) => x.light.id === selectedId);
-        if (!p) return null;
-        const x = f.x(p.u);
-        const right = x > width / 2;
-        return (
-          <View
-            pointerEvents="box-none"
-            style={{
-              position: 'absolute',
-              top: f.y(p.v) + 22,
-              ...(right ? { right: width - x - 14 } : { left: x - 14 }),
-              // Stays inside the map: the name shrinks instead.
-              maxWidth: right ? x + 14 : width - x + 14,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-              height: 28,
-              paddingHorizontal: 10,
-              borderRadius: 14,
-              backgroundColor: 'rgba(5,5,6,0.88)',
-              borderWidth: 1,
-              borderColor: 'rgba(233,207,159,0.32)',
-            }}
-          >
-            {/* The name gives way first, so "Open" always fits. */}
-            <Txt size={11} medium numberOfLines={1} style={{ lineHeight: 14, maxWidth: 150, flexShrink: 1 }}>
-              {p.light.name}
-            </Txt>
-            <Txt size={11} tone="muted" style={{ lineHeight: 14 }}>
-              {lightTypeLabel(p.light)}
-            </Txt>
-            <Txt size={11} tone="champagne" style={{ lineHeight: 14, fontVariant: ['tabular-nums'] }}>
-              {lightLevel(p.light)}
-            </Txt>
-            <View style={{ width: 1, height: 14, backgroundColor: hairline(0.16) }} />
-            <Pressable
-              onPress={() => onLightOpen(p.light.id)}
-              accessibilityRole="button"
-              accessibilityLabel={`Open ${p.light.name}`}
-              hitSlop={{ top: 8, bottom: 8, left: 4, right: 10 }}
-              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 2, opacity: pressed ? 0.6 : 1 })}
-            >
-              <Txt size={11} medium style={{ lineHeight: 14 }}>
-                Open
-              </Txt>
-              <Icon name="chevronRight" size={11} stroke={2} />
-            </Pressable>
-          </View>
-        );
-      })()}
     </View>
   );
 }
@@ -297,6 +260,23 @@ function useBreath() {
     }, [values]),
   );
   return values;
+}
+
+/** A candle-like flicker for lights running the Candle or Fireplace effect (map only). */
+function useFlicker() {
+  const [value] = useState(() => new Animated.Value(1));
+  useFocusEffect(
+    useCallback(() => {
+      // A fixed irregular pattern reads as a flame; true randomness isn't needed.
+      const steps = [0.78, 0.95, 0.84, 1, 0.72, 0.9, 0.97, 0.8, 0.93, 0.86, 1, 0.75];
+      const loop = Animated.loop(
+        Animated.sequence(steps.map((v, i) => Animated.timing(value, { toValue: v, duration: 90 + ((i * 37) % 110), easing: Easing.inOut(Easing.quad), useNativeDriver: false }))),
+      );
+      loop.start();
+      return () => loop.stop();
+    }, [value]),
+  );
+  return value;
 }
 
 /** Short string hash (djb2), for SVG ids that follow content. */

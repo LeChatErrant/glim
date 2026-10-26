@@ -4,16 +4,18 @@ import { Pressable, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
-import { hasTemperature, mirekFor, planLightBrightness, planLightColor, planLightKelvin, planLightLook, planToggleLight, type Planned } from '../../lib/actions';
+import { hasTemperature, mirekFor, planLightBrightness, planLightColor, planLightEffect, planLightKelvin, planToggleLight, type Planned } from '../../lib/actions';
+import { effectLabel, hasEffect } from '../../lib/effects';
 import { identifyLight, type Light, type Room, type Snapshot } from '../../lib/hue/client';
 import { hexHueSat, KELVIN_MAX, KELVIN_MIN, kelvinTint, mirekToKelvin } from '../../lib/hue/color';
 import { useHome } from '../../lib/hue/useHome';
 import { isLit, lightShape, lightType, lightTypeLabel } from '../../lib/lights';
 import { addRecentColor, colorName, formatKelvin, kelvinName, loadRecentColors, near, WHITE_PRESETS, type Swatch } from '../../lib/palette';
-import { ConnectionBadge, Glow, IconButton, PillButton, type Connection } from '../../ui/controls';
+import { ConnectionBadge, Glow, IconButton, PillButton, Slider, type Connection } from '../../ui/controls';
+import { EffectGrid } from '../../ui/Effects';
 import { Icon } from '../../ui/icons';
-import { Brightness, ColorDot, Dial, ModeTabs, Orb, orbInk, PowerButton, ringColor, useThrottle } from '../../ui/LightControls';
-import { FavoritesRow } from '../../ui/Favorites';
+import { Brightness, Dial, ModeTabs, Orb, orbInk, PowerButton, ringColor, useThrottle } from '../../ui/LightControls';
+import { ColorRow } from '../../ui/Favorites';
 import { LightSetup } from '../../ui/LightSetup';
 import { Display, Label, Txt } from '../../ui/text';
 import { color, hairline } from '../../ui/theme';
@@ -135,7 +137,8 @@ function LightView({ light, room, act }: { light: Light; room: Room | undefined;
   const { blinking, blink } = useBlink(light);
   const canColor = light.kind === 'color';
   const canWhite = hasTemperature(light);
-  const [tab, setTab] = useState<'color' | 'white'>(canColor && light.mirek === null ? 'color' : 'white');
+  const canEffects = !!light.effects?.length;
+  const [tab, setTab] = useState<'color' | 'white' | 'effects'>(hasEffect(light.effect) && canEffects ? 'effects' : canColor && light.mirek === null ? 'color' : 'white');
   const [recents, setRecents] = useState<Swatch[]>([]);
   const [preview, setPreview] = useState<number | null>(null);
   useEffect(() => {
@@ -155,7 +158,26 @@ function LightView({ light, room, act }: { light: Light; room: Room | undefined;
   };
 
   let control: ReactNode;
-  if (canColor && tab === 'color') {
+  if (canEffects && tab === 'effects') {
+    // Effects replace the dial: the light animates by itself, there's nothing to turn.
+    control = (
+      <View style={{ minHeight: dial, justifyContent: 'center', gap: 18 }}>
+        <EffectGrid supported={light.effects!} current={light.effect} width={width - 56} onPick={(e) => act((s) => planLightEffect(s, light.id, e))} />
+        {hasEffect(light.effect) && (
+          <View style={{ paddingHorizontal: 28, gap: 6 }}>
+            <Label>Speed</Label>
+            <Slider
+              value={Math.round((light.effectSpeed ?? 0.5) * 100)}
+              tint={light.color}
+              label="Effect speed"
+              ground={color.ground}
+              onCommit={(v) => act((s) => planLightEffect(s, light.id, light.effect!, v / 100))}
+            />
+          </View>
+        )}
+      </View>
+    );
+  } else if (canColor && tab === 'color') {
     const h = preview ?? hue;
     const shownColor = preview === null ? light.color : ringColor(preview);
     control = (
@@ -236,7 +258,7 @@ function LightView({ light, room, act }: { light: Light; room: Room | undefined;
       <Header
         center={
           <Label tone={blinking ? 'champagne' : 'label'} numberOfLines={1}>
-            {blinking ? 'Blinking' : `${room?.name ?? 'No room'} · ${lightTypeLabel(light)}`}
+            {blinking ? 'Blinking' : `${room?.name ?? 'No room'} · ${hasEffect(light.effect) ? `${effectLabel(light.effect) ?? 'Effect'} effect` : lightTypeLabel(light)}`}
           </Label>
         }
         right={<IconButton icon="blink" label={`Make ${light.name} blink`} onPress={blink} />}
@@ -246,12 +268,13 @@ function LightView({ light, room, act }: { light: Light; room: Room | undefined;
 
       <View style={{ marginTop: light.reachable ? 30 : 14 }}>{control}</View>
 
-      {canColor && canWhite ? (
+      {(canColor && canWhite) || canEffects ? (
         <View style={{ marginTop: 22 }}>
           <ModeTabs
             tabs={[
-              { id: 'color', title: 'Color' },
-              { id: 'white', title: 'White' },
+              ...(canColor ? [{ id: 'color' as const, title: 'Color' }] : []),
+              ...(canWhite ? [{ id: 'white' as const, title: 'White' }] : []),
+              ...(canEffects ? [{ id: 'effects' as const, title: 'Effects' }] : []),
             ]}
             value={tab}
             onChange={setTab}
@@ -271,27 +294,19 @@ function LightView({ light, room, act }: { light: Light; room: Room | undefined;
         />
       </View>
 
-      <View style={{ paddingHorizontal: 28, marginTop: 16 }}>
-        <FavoritesRow
-          current={on ? { ...(light.mirek ? { kelvin } : canColor ? { hex: light.color } : {}), brightness: bri } : null}
-          onApply={(f) => act((s) => planLightLook(s, light.id, f))}
-        />
-      </View>
-
       {canColor && tab === 'color' && (
-        <View style={{ paddingHorizontal: 28, marginTop: 16, gap: 12 }}>
-          <Label>Recent</Label>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            {recents.map((s) => (
-              <Pressable key={s.hex} onPress={() => act((x) => planLightColor(x, light.id, s.hex))} accessibilityRole="button" accessibilityLabel={s.name} hitSlop={4}>
-                <ColorDot hex={s.hex} selected={on && light.mirek === null && near(light.color, s.hex)} />
-              </Pressable>
-            ))}
-          </View>
+        <View style={{ paddingHorizontal: 28, marginTop: 16 }}>
+          <ColorRow
+            title="Colors"
+            current={on ? (light.mirek ? { kelvin } : { hex: light.color }) : null}
+            recents={recents}
+            selected={(p) => on && (p.hex ? light.mirek === null && near(light.color, p.hex) : light.mirek !== null && !!p.kelvin && Math.abs(light.mirek - mirekFor(light, p.kelvin)) <= 3)}
+            onPick={(p) => (p.hex ? pickColor(p.hex) : act((s) => planLightKelvin(s, light.id, p.kelvin!)))}
+          />
         </View>
       )}
 
-      {canWhite && (tab === 'white' || !canColor) && (
+      {canWhite && (tab === 'white' || (!canColor && tab !== 'effects')) && (
         <View style={{ paddingHorizontal: 28, marginTop: 16, gap: 12 }}>
           <Label>Presets</Label>
           <View style={{ flexDirection: 'row', gap: 8 }}>

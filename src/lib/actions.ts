@@ -1,4 +1,5 @@
 import { cachedSnapshot, roomIsOn, saveCachedSnapshot, setLight, setRoom, type Light, type Room, type Snapshot } from './hue/client';
+import { hasEffect } from './effects';
 import { hexToXy, kelvinToMirek, mirekToHex } from './hue/color';
 
 /**
@@ -71,8 +72,9 @@ export function planLightColor(s: Snapshot, lightId: string, hex: string): Plann
   if (!light || light.kind !== 'color') return null;
   const xy = hexToXy(hex);
   return {
-    next: { ...s, lights: s.lights.map((l) => (l.id === lightId ? { ...l, on: true, color: hex, mirek: null } : l)) },
-    send: () => setLight(lightId, { on: true, xy }),
+    next: { ...s, lights: s.lights.map((l) => (l.id === lightId ? { ...l, on: true, color: hex, mirek: null, effect: undefined } : l)) },
+    // Picking a color ends a running effect.
+    send: () => setLight(lightId, { on: true, xy, effect: hasEffect(light.effect) ? 'no_effect' : undefined }),
   };
 }
 
@@ -82,8 +84,8 @@ export function planLightKelvin(s: Snapshot, lightId: string, kelvin: number): P
   if (!light || !hasTemperature(light)) return null;
   const mirek = mirekFor(light, kelvin);
   return {
-    next: { ...s, lights: s.lights.map((l) => (l.id === lightId ? { ...l, on: true, color: mirekToHex(mirek), mirek } : l)) },
-    send: () => setLight(lightId, { on: true, mirek }),
+    next: { ...s, lights: s.lights.map((l) => (l.id === lightId ? { ...l, on: true, color: mirekToHex(mirek), mirek, effect: undefined } : l)) },
+    send: () => setLight(lightId, { on: true, mirek, effect: hasEffect(light.effect) ? 'no_effect' : undefined }),
   };
 }
 
@@ -158,52 +160,6 @@ export const toggleLight = (lightId: string) => run((s) => planToggleLight(s, li
 export const toggleRoom = (roomId: string) => run((s) => planToggleRoom(s, roomId));
 export const setRoomBrightness = (roomId: string, brightness: number) => run((s) => planRoomBrightness(s, roomId, brightness));
 
-/** A saved look (palette Favorite) as a bridge state. */
-type Look = { hex?: string; kelvin?: number; brightness: number };
-
-/** Puts a light back in a saved look: its color or white, and its brightness. */
-export function planLightLook(s: Snapshot, lightId: string, look: Look): Planned | null {
-  const light = s.lights.find((l) => l.id === lightId);
-  if (!light || light.brightness === null) return null;
-  const xy = look.hex && light.kind === 'color' ? hexToXy(look.hex) : undefined;
-  const mirek = !xy && look.kelvin && hasTemperature(light) ? mirekFor(light, look.kelvin) : undefined;
-  const brightness = look.brightness;
-  return {
-    next: {
-      ...s,
-      lights: s.lights.map((l) =>
-        l.id !== lightId ? l : { ...l, on: true, brightness, ...(xy ? { color: look.hex!, mirek: null } : mirek ? { color: mirekToHex(mirek), mirek } : {}) },
-      ),
-    },
-    send: () => setLight(lightId, { on: true, brightness, xy, mirek }),
-  };
-}
-
-/** A saved look on a whole room: lights that can't do the color or white just take the brightness. */
-export function planRoomLook(s: Snapshot, roomId: string, look: Look): Planned | null {
-  const room = findGroup(s, roomId);
-  if (!room?.groupedLightId) return null;
-  const groupId = room.groupedLightId;
-  const xy = look.hex ? hexToXy(look.hex) : undefined;
-  const mirek = !xy && look.kelvin ? kelvinToMirek(look.kelvin) : undefined;
-  return {
-    next: {
-      ...s,
-      lights: s.lights.map((l) => {
-        if (!room.lightIds.includes(l.id)) return l;
-        const base = { ...l, on: true, brightness: l.brightness === null ? null : look.brightness };
-        if (xy && l.kind === 'color') return { ...base, color: look.hex!, mirek: null };
-        if (look.kelvin && hasTemperature(l)) {
-          const m = mirekFor(l, look.kelvin);
-          return { ...base, color: mirekToHex(m), mirek: m };
-        }
-        return base;
-      }),
-    },
-    send: () => setRoom(groupId, { on: true, brightness: look.brightness, xy, mirek }),
-  };
-}
-
 /** A group (Hue zone) on or off. */
 export function planToggleZone(s: Snapshot, zoneId: string, target?: boolean): Planned | null {
   const zone = s.zones?.find((z) => z.id === zoneId);
@@ -213,5 +169,27 @@ export function planToggleZone(s: Snapshot, zoneId: string, target?: boolean): P
   return {
     next: { ...s, lights: s.lights.map((l) => (zone.lightIds.includes(l.id) ? { ...l, on } : l)) },
     send: () => setRoom(groupId, { on }),
+  };
+}
+
+/** Starts (or stops, with "no_effect") a built-in effect on a light; it turns on if needed. */
+export function planLightEffect(s: Snapshot, lightId: string, effect: string, speed?: number): Planned | null {
+  const light = s.lights.find((l) => l.id === lightId);
+  if (!light?.effects?.length) return null;
+  return {
+    next: { ...s, lights: s.lights.map((l) => (l.id === lightId ? { ...l, on: true, effect, effectSpeed: speed ?? l.effectSpeed } : l)) },
+    send: () => setLight(lightId, { on: true, effect, speed }),
+  };
+}
+
+/** The same effect on every light of a room or group that has it (groups can't run effects: one call per light). */
+export function planRoomEffect(s: Snapshot, roomId: string, effect: string): Planned | null {
+  const room = findGroup(s, roomId);
+  if (!room) return null;
+  const ids = s.lights.filter((l) => room.lightIds.includes(l.id) && l.effects?.includes(effect === 'no_effect' ? l.effects[0] : effect)).map((l) => l.id);
+  if (!ids.length) return null;
+  return {
+    next: { ...s, lights: s.lights.map((l) => (ids.includes(l.id) ? { ...l, on: true, effect } : l)) },
+    send: () => Promise.all(ids.map((id) => setLight(id, { on: true, effect }))),
   };
 }

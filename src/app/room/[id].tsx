@@ -3,20 +3,22 @@ import { useEffect, useState } from 'react';
 import { Animated, PanResponder, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { findGroup, hasTemperature, mirekFor, planRoomBrightness, planRoomColor, planRoomKelvin, planRoomLook, planToggleRoom } from '../../lib/actions';
+import { findGroup, hasTemperature, mirekFor, planRoomBrightness, planRoomColor, planRoomEffect, planRoomKelvin, planToggleRoom } from '../../lib/actions';
+import { hasEffect } from '../../lib/effects';
 import { roomIsOn, type Light } from '../../lib/hue/client';
 import { kelvinTint } from '../../lib/hue/color';
 import { useHome } from '../../lib/hue/useHome';
 import { isLit, lightLevel, lightsOf } from '../../lib/lights';
 import { loadMoods, planMood, type Mood } from '../../lib/moods';
 import { formatKelvin, loadRecentColors, near, type Swatch } from '../../lib/palette';
-import { Glow, IconButton, Switch } from '../../ui/controls';
+import { Glow, PillButton, Switch, TagButton } from '../../ui/controls';
 import { LightMarker } from '../../ui/FloorPlan';
-import { FavoritesRow } from '../../ui/Favorites';
+import { EffectRow } from '../../ui/Effects';
+import { ColorRow } from '../../ui/Favorites';
 import { Icon } from '../../ui/icons';
 import { ManageSheet } from '../../ui/ManageSheets';
 import { MoodChips } from '../../ui/MoodChips';
-import { Brightness, ColorDot, useThrottle } from '../../ui/LightControls';
+import { Brightness, useThrottle } from '../../ui/LightControls';
 import { Display, Label, Txt } from '../../ui/text';
 import { color, hairline } from '../../ui/theme';
 
@@ -66,6 +68,7 @@ export default function RoomSheet() {
   const level = pool.length ? Math.round(pool.reduce((s, l) => s + (l.brightness ?? 0), 0) / pool.length) : 0;
   const colorLights = lights.filter((l) => l.kind === 'color');
   const whiteLights = lights.filter(hasTemperature);
+  const effectLights = lights.filter((l) => l.effects?.length);
   const lead = (lit.find((l) => l.kind !== 'onoff') ?? lit[0])?.color ?? color.muted;
   const litColor = colorLights.filter(isLit);
   const litWhite = whiteLights.filter(isLit);
@@ -107,7 +110,7 @@ export default function RoomSheet() {
                 {room ? countLine : ' '}
               </Txt>
             </View>
-            {room && <IconButton icon="edit" label={`Edit ${room.name}`} onPress={() => setEditing(true)} />}
+            {room && <TagButton title="Edit" icon="edit" onPress={() => setEditing(true)} />}
             {room && lights.length > 0 && <Switch big on={anyOn} label={`${room.name} lights`} onToggle={() => act((s) => planToggleRoom(s, room.id))} />}
           </View>
         </View>
@@ -130,27 +133,25 @@ export default function RoomSheet() {
         {room && (colorLights.length > 0 || whiteLights.length > 0) && (
           <View style={{ marginTop: 10, gap: 6 }}>
             {colorLights.length > 0 && (
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Label tone="label" style={{ width: 58 }}>
-                  Color
-                </Label>
-                <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-between' }}>
-                  {recents.map((s) => {
-                    const sel = litColor.length > 0 && litColor.every((l) => l.mirek === null && near(l.color, s.hex));
-                    return (
-                      <Pressable
-                        key={s.hex}
-                        onPress={() => act((x) => planRoomColor(x, room.id, s.hex))}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Make the color lights ${s.name.toLowerCase()}`}
-                        style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
-                      >
-                        <ColorDot hex={s.hex} size={30} selected={sel} ground={color.sheet} />
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
+              <ColorRow
+                title="Color"
+                labelWidth={58}
+                ground={color.sheet}
+                current={roomColor(litColor)}
+                recents={recents}
+                selected={(p) =>
+                  p.hex
+                    ? litColor.length > 0 && litColor.every((l) => l.mirek === null && near(l.color, p.hex!))
+                    : litWhite.length > 0 && litWhite.every((l) => l.mirek !== null && !!p.kelvin && Math.abs(l.mirek - mirekFor(l, p.kelvin)) <= 3)
+                }
+                onPick={(p) => act((s) => (p.hex ? planRoomColor(s, room.id, p.hex) : planRoomKelvin(s, room.id, p.kelvin!)))}
+              />
+            )}
+            {effectLights.length > 0 && (
+              <EffectRow
+                current={effectLights.every((l) => l.effect === effectLights[0].effect && hasEffect(l.effect)) ? effectLights[0].effect : undefined}
+                onPick={(e) => act((s) => planRoomEffect(s, room.id, e))}
+              />
             )}
             {whiteLights.length > 0 && (
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -196,15 +197,6 @@ export default function RoomSheet() {
           </View>
         )}
 
-        {room && dimmable.length > 0 && (
-          <View style={{ marginTop: 16 }}>
-            <FavoritesRow
-              ground={color.sheet}
-              current={anyOn ? roomLook(lit, level) : null}
-              onApply={(f) => act((s) => planRoomLook(s, room.id, f))}
-            />
-          </View>
-        )}
 
         {room && lights.length > 0 && (
           <View style={{ marginTop: 16 }}>
@@ -214,7 +206,12 @@ export default function RoomSheet() {
 
         {room && lights.length > 0 && (
           <View style={{ marginTop: 18, flexShrink: 1 }}>
-            <Label tone="label">Lights</Label>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Label tone="label">Lights</Label>
+              <Pressable onPress={() => setEditing(true)} accessibilityRole="button" hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+                <Label tone="champagne">Add or remove</Label>
+              </Pressable>
+            </View>
             <ScrollView style={{ marginTop: 4, flexGrow: 0 }}>
               {lights.map((l) => (
                 <LightLink key={l.id} light={l} />
@@ -223,9 +220,10 @@ export default function RoomSheet() {
           </View>
         )}
         {room && !lights.length && (
-          <Txt tone="secondary" style={{ marginTop: 18 }}>
-            Place lights in this room from the map editor or a scan.
-          </Txt>
+          <View style={{ marginTop: 18, gap: 12, alignItems: 'flex-start' }}>
+            <Txt tone="secondary">No lights here yet.</Txt>
+            <PillButton title="Add lights" icon="add" height={44} onPress={() => setEditing(true)} />
+          </View>
         )}
       </Animated.View>
       {editing && room && snapshot && (
@@ -235,12 +233,10 @@ export default function RoomSheet() {
   );
 }
 
-/** The room's look to save: the color of its lit color lights, else their white, at the room level. */
-function roomLook(lit: Light[], brightness: number) {
-  const c = lit.find((l) => l.kind === 'color' && l.mirek === null);
-  if (c) return { hex: c.color, brightness };
-  const w = lit.find((l) => l.mirek);
-  return w ? { kelvin: Math.round(1_000_000 / w.mirek! / 50) * 50, brightness } : { brightness };
+/** The color the room's color lights share, to keep as a favorite; null if they differ or none is lit. */
+function roomColor(litColor: Light[]) {
+  const c = litColor.find((l) => l.mirek === null);
+  return c && litColor.every((l) => l.mirek === null && near(l.color, c.color)) ? { hex: c.color } : null;
 }
 
 /** Says which lights the color and white rows reach: "Color for the 3 color lights, not the plug." */

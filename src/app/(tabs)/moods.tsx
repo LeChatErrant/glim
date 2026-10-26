@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { effectLabel } from '../../lib/effects';
 import type { Snapshot } from '../../lib/hue/client';
 import { useHome } from '../../lib/hue/useHome';
 import { addMood, captureLights, deleteMood, loadMoods, moodLightColor, planMood, suggestName, type Mood, type MoodLight } from '../../lib/moods';
@@ -16,7 +17,7 @@ import { color, hairline, TAB_BAR_SPACE } from '../../ui/theme';
 
 /**
  * Every saved mood, by room and group. Tap applies it; open one to see each light's color and keep
- * one as a favorite. Moods are saved from a room or group sheet ("Save as mood"), or here for the
+ * one as a favorite. Moods are saved from a room or group sheet ("Save current look"), or here for the
  * whole home.
  */
 export default function MoodsScreen() {
@@ -63,7 +64,7 @@ export default function MoodsScreen() {
       {!moods.length && (
         <View style={{ marginTop: 40, gap: 10 }}>
           <Label tone="label">No moods yet</Label>
-          <Txt tone="secondary">Open a room or a group, set its lights the way you like, then tap “Save as mood”.</Txt>
+          <Txt tone="secondary">Open a room or a group, set its lights the way you like, then tap “Save current look”.</Txt>
         </View>
       )}
 
@@ -152,7 +153,7 @@ function MoodCard({
 function MoodLightRow({ m, name }: { m: MoodLight; name: string }) {
   const [kept, setKept] = useState(false);
   const c = moodLightColor(m);
-  const what = !m.on ? 'Off' : m.hex ? colorName(m.hex) : m.kelvin ? kelvinName(m.kelvin) : 'On';
+  const what = !m.on ? 'Off' : m.effect ? (effectLabel(m.effect) ?? 'Effect') : m.hex ? colorName(m.hex) : m.kelvin ? kelvinName(m.kelvin) : 'On';
   const level = m.on && m.brightness !== undefined ? ` · ${m.brightness}%` : '';
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, height: 52, borderTopWidth: 1, borderTopColor: hairline(0.08) }}>
@@ -165,10 +166,10 @@ function MoodLightRow({ m, name }: { m: MoodLight; name: string }) {
           {what + level}
         </Txt>
       </View>
-      {c && (
+      {c && !m.effect && (
         <Pressable
           onPress={() => {
-            addFavorite({ hex: m.hex, kelvin: m.hex ? undefined : m.kelvin, brightness: m.brightness ?? 100 }).then(() => setKept(true));
+            addFavorite({ hex: m.hex, kelvin: m.kelvin }).then(() => setKept(true));
           }}
           accessibilityRole="button"
           accessibilityLabel={`Keep ${what} as a favorite color`}

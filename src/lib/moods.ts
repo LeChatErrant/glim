@@ -3,11 +3,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { hasTemperature, mirekFor, type Planned } from './actions';
 import { getBridge } from './hue/bridge';
 import { hexToXy, mirekToHex, mirekToKelvin } from './hue/color';
-import { setLight, type Light, type Snapshot } from './hue/client';
+import { EFFECTS, effectLabel, hasEffect } from './effects';
+import { setLight, type Light, type LightState, type Snapshot } from './hue/client';
 import { colorName, kelvinName } from './palette';
 
 /** How one light looks in a mood. Off lights stay off; color lights keep a color or a white. */
-export type MoodLight = { lightId: string; on: boolean; brightness?: number; hex?: string; kelvin?: number };
+export type MoodLight = { lightId: string; on: boolean; brightness?: number; hex?: string; kelvin?: number; effect?: string };
 
 /**
  * A mood: a look for some lights, light by light (one red, one blue...). Our own data, not a
@@ -49,6 +50,8 @@ export function captureLights(lights: Light[]): MoodLight[] {
     .map((l) => {
       if (!l.on) return { lightId: l.id, on: false };
       const brightness = l.brightness ?? undefined;
+      const effect = hasEffect(l.effect) ? l.effect : undefined;
+      if (effect) return { lightId: l.id, on: true, brightness, effect };
       if (l.mirek) return { lightId: l.id, on: true, brightness, kelvin: Math.round(mirekToKelvin(l.mirek) / 50) * 50 };
       if (l.kind === 'color') return { lightId: l.id, on: true, brightness, hex: l.color };
       return { lightId: l.id, on: true, brightness };
@@ -56,13 +59,14 @@ export function captureLights(lights: Light[]): MoodLight[] {
 }
 
 /** The color a mood light shows (for swatches), or null when it's off or plain. */
-export const moodLightColor = (m: MoodLight) => (!m.on ? null : (m.hex ?? (m.kelvin ? mirekToHex(1_000_000 / m.kelvin) : null)));
+export const moodLightColor = (m: MoodLight) =>
+  !m.on ? null : (m.hex ?? (m.kelvin ? mirekToHex(1_000_000 / m.kelvin) : m.effect ? (EFFECTS.find((e) => e.id === m.effect)?.swatch[0] ?? null) : null));
 
 /** A first name for a new mood from its colors: "Red & blue", "Warm white", "All off". */
 export function suggestName(lights: MoodLight[]) {
   const on = lights.filter((l) => l.on);
   if (!on.length) return 'All off';
-  const names = [...new Set(on.map((l) => (l.hex ? colorName(l.hex) : l.kelvin ? kelvinName(l.kelvin) : 'On')))];
+  const names = [...new Set(on.map((l) => (l.effect ? (effectLabel(l.effect) ?? 'Effect') : l.hex ? colorName(l.hex) : l.kelvin ? kelvinName(l.kelvin) : 'On')))];
   if (names.length === 1) return names[0];
   return `${names[0]} & ${names[1].toLowerCase()}${names.length > 2 ? ' +' : ''}`;
 }
@@ -72,12 +76,15 @@ export function planMood(s: Snapshot, mood: Mood): Planned | null {
   const byId = new Map(s.lights.map((l) => [l.id, l]));
   const steps = mood.lights.filter((m) => byId.has(m.lightId));
   if (!steps.length) return null;
-  const state = (m: MoodLight, l: Light) => {
+  const state = (m: MoodLight, l: Light): LightState => {
     if (!m.on) return { on: false };
     const brightness = l.brightness !== null ? m.brightness : undefined;
-    if (m.hex && l.kind === 'color') return { on: true, brightness, xy: hexToXy(m.hex) };
-    if (m.kelvin && hasTemperature(l)) return { on: true, brightness, mirek: mirekFor(l, m.kelvin) };
-    return { on: true, brightness };
+    if (m.effect && l.effects?.includes(m.effect)) return { on: true, brightness, effect: m.effect };
+    // A mood without an effect stops one that's running.
+    const stop = hasEffect(l.effect) ? { effect: 'no_effect' } : {};
+    if (m.hex && l.kind === 'color') return { on: true, brightness, xy: hexToXy(m.hex), ...stop };
+    if (m.kelvin && hasTemperature(l)) return { on: true, brightness, mirek: mirekFor(l, m.kelvin), ...stop };
+    return { on: true, brightness, ...stop };
   };
   return {
     next: {
@@ -87,7 +94,7 @@ export function planMood(s: Snapshot, mood: Mood): Planned | null {
         if (!m) return l;
         const st = state(m, l);
         const color = st.xy ? m.hex! : st.mirek ? mirekToHex(st.mirek) : l.color;
-        return { ...l, on: st.on, brightness: st.brightness ?? l.brightness, color, mirek: st.mirek ?? (st.xy ? null : l.mirek) };
+        return { ...l, on: !!st.on, brightness: st.brightness ?? l.brightness, color, mirek: st.mirek ?? (st.xy ? null : l.mirek), effect: st.effect };
       }),
     },
     // One request per light: the bridge takes about 10 a second, plenty for a room.
