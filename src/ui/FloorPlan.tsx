@@ -250,13 +250,14 @@ export function Jewel({ light, shape, size = 9, ground = color.ground, angle = M
  * A light on the map and in lists: a jewel big enough to hold the icon of what the light is.
  * On: filled with its color, dark gap, ivory ring, glow. Off: hollow, ivory icon. Unreachable:
  * dashed amber ring, faded icon and a strike-through, so it never looks like a lit light.
+ * `glow` is off in lists: scroll views would cut it into a hard-edged block.
  */
-export function LightMarker({ light, size = 24, ground = color.ground }: { light: Light; size?: number; ground?: string }) {
+export function LightMarker({ light, size = 24, ground = color.ground, glow = true }: { light: Light; size?: number; ground?: string; glow?: boolean }) {
   const on = light.on && light.reachable;
   const icon = Math.round(size * 0.6);
   const ink = on ? inkOn(light.color) : light.reachable ? hairline(0.78) : hairline(0.32);
   const look = on
-    ? { backgroundColor: light.color, boxShadow: `0 0 0 2px ${ground}, 0 0 0 3px ${color.jewelRing}, 0 0 ${size}px ${Math.round(size / 4)}px ${light.color}` }
+    ? { backgroundColor: light.color, boxShadow: `0 0 0 2px ${ground}, 0 0 0 3px ${color.jewelRing}` + (glow ? `, 0 0 ${size}px ${Math.round(size / 4)}px ${light.color}` : '') }
     : light.reachable
       ? { backgroundColor: ground, borderWidth: 1, borderColor: hairline(0.55) }
       : { backgroundColor: ground, borderWidth: 1, borderStyle: 'dashed' as const, borderColor: color.warning };

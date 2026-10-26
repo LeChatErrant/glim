@@ -120,7 +120,7 @@ export function ManageSheet({ editing, snapshot, onClose, onSaved }: { editing: 
                 accessibilityLabel={l.name}
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, height: 52, borderTopWidth: 1, borderTopColor: hairline(0.08), opacity: pressed ? 0.6 : 1 })}
               >
-                <LightMarker light={l} size={24} ground={color.sheet} />
+                <LightMarker light={l} size={24} ground={color.sheet} glow={false} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Txt size={14} numberOfLines={1} style={{ lineHeight: 18 }}>
                     {l.name}

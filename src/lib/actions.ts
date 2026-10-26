@@ -1,4 +1,4 @@
-import { cachedSnapshot, roomIsOn, saveCachedSnapshot, setLight, setRoom, type Light, type Snapshot } from './hue/client';
+import { cachedSnapshot, roomIsOn, saveCachedSnapshot, setLight, setRoom, type Light, type Room, type Snapshot } from './hue/client';
 import { hexToXy, kelvinToMirek, mirekToHex } from './hue/color';
 
 /**
@@ -6,6 +6,11 @@ import { hexToXy, kelvinToMirek, mirekToHex } from './hue/color';
  * expected state (shown right away), `send` applies it on the bridge.
  */
 export type Planned = { next: Snapshot; send: () => Promise<unknown> };
+
+/** A room or a group (Hue zone): both switch their lights through one grouped light. */
+export function findGroup(s: Snapshot, id: string): Room | undefined {
+  return s.rooms.find((r) => r.id === id) ?? s.zones?.find((z) => z.id === id);
+}
 
 /** `target` forces the resulting state (widgets decide it when they render); default is to flip. */
 export function planToggleLight(s: Snapshot, lightId: string, target?: boolean): Planned | null {
@@ -19,7 +24,7 @@ export function planToggleLight(s: Snapshot, lightId: string, target?: boolean):
 }
 
 export function planToggleRoom(s: Snapshot, roomId: string, target?: boolean): Planned | null {
-  const room = s.rooms.find((r) => r.id === roomId);
+  const room = findGroup(s, roomId);
   if (!room?.groupedLightId) return null;
   const on = target ?? !roomIsOn(room, s.lights);
   const groupId = room.groupedLightId;
@@ -30,7 +35,7 @@ export function planToggleRoom(s: Snapshot, roomId: string, target?: boolean): P
 }
 
 export function planRoomBrightness(s: Snapshot, roomId: string, brightness: number): Planned | null {
-  const room = s.rooms.find((r) => r.id === roomId);
+  const room = findGroup(s, roomId);
   if (!room?.groupedLightId) return null;
   const groupId = room.groupedLightId;
   return {
@@ -87,7 +92,7 @@ export function planLightKelvin(s: Snapshot, lightId: string, kelvin: number): P
  * off, unless the whole room was off: then it turns on.
  */
 export function planRoomColor(s: Snapshot, roomId: string, hex: string): Planned | null {
-  const room = s.rooms.find((r) => r.id === roomId);
+  const room = findGroup(s, roomId);
   if (!room?.groupedLightId) return null;
   const groupId = room.groupedLightId;
   const wasOn = roomIsOn(room, s.lights);
@@ -108,7 +113,7 @@ export function planRoomColor(s: Snapshot, roomId: string, hex: string): Planned
 
 /** Sets every light in a room that takes a white temperature to it. */
 export function planRoomKelvin(s: Snapshot, roomId: string, kelvin: number): Planned | null {
-  const room = s.rooms.find((r) => r.id === roomId);
+  const room = findGroup(s, roomId);
   if (!room?.groupedLightId) return null;
   const groupId = room.groupedLightId;
   const wasOn = roomIsOn(room, s.lights);
@@ -176,7 +181,7 @@ export function planLightLook(s: Snapshot, lightId: string, look: Look): Planned
 
 /** A saved look on a whole room: lights that can't do the color or white just take the brightness. */
 export function planRoomLook(s: Snapshot, roomId: string, look: Look): Planned | null {
-  const room = s.rooms.find((r) => r.id === roomId);
+  const room = findGroup(s, roomId);
   if (!room?.groupedLightId) return null;
   const groupId = room.groupedLightId;
   const xy = look.hex ? hexToXy(look.hex) : undefined;

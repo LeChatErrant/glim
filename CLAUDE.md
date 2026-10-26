@@ -108,6 +108,11 @@ but never in a way that would need a rewrite to sell it later (see
   Glows breathe slowly in the app, never on widgets.
 - 2026-10-26: Favorites are saved looks (color or white + brightness), per
   bridge, applied to a light or a whole room.
+- 2026-10-26: Moods v1: "Save as mood" on a room or group sheet keeps each
+  light's state (on/off, color or white, brightness); tap to apply, long-press
+  to update/rename/delete. Stored per bridge (`src/lib/moods.ts`), applied with
+  one request per light. The Moods tab lists them by room/group; each light's
+  color can be kept as a favorite. Presets and map-aware moods come next.
 
 ## Vocabulary
 

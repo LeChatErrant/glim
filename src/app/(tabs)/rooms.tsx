@@ -287,7 +287,7 @@ function LightRow({ light, act, indent = 0 }: { light: Light; act: Act; indent?:
         style={({ pressed }) => ({ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'stretch', opacity: pressed ? 0.6 : 1 })}
       >
         <View style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
-          <LightMarker light={light} size={26} ground={color.card} />
+          <LightMarker light={light} size={26} ground={color.card} glow={false} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Txt size={14} numberOfLines={1} style={{ lineHeight: 18 }}>
@@ -306,7 +306,7 @@ function LightRow({ light, act, indent = 0 }: { light: Light; act: Act; indent?:
   );
 }
 
-/** A group (Hue zone): its lights across rooms, one switch. Tap the name to edit it. */
+/** A group (Hue zone): its lights across rooms, one switch. Tap for its sheet, long-press to edit it. */
 function GroupCard({ zone, snapshot, act, onEdit }: { zone: Zone; snapshot: Snapshot; act: Act; onEdit: () => void }) {
   const lights = snapshot.lights.filter((l) => zone.lightIds.includes(l.id));
   const lit = lights.filter(isLit);
@@ -315,7 +315,7 @@ function GroupCard({ zone, snapshot, act, onEdit }: { zone: Zone; snapshot: Snap
   return (
     <View style={{ borderRadius: 22, borderWidth: 1, borderColor: hairline(0.1), backgroundColor: color.card, paddingVertical: 12, paddingLeft: 18, paddingRight: 10 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44 }}>
-        <Pressable onPress={onEdit} accessibilityRole="button" accessibilityLabel={`Edit ${zone.name}`} style={({ pressed }) => ({ flex: 1, minWidth: 0, gap: 6, opacity: pressed ? 0.6 : 1 })}>
+        <Pressable onPress={() => router.push(`/room/${zone.id}`)} onLongPress={onEdit} accessibilityRole="button" accessibilityLabel={`Open ${zone.name}`} accessibilityHint="Long-press to edit" style={({ pressed }) => ({ flex: 1, minWidth: 0, gap: 6, opacity: pressed ? 0.6 : 1 })}>
           <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
             {zone.name}
           </Display>

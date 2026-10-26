@@ -3,17 +3,19 @@ import { useEffect, useState } from 'react';
 import { Animated, PanResponder, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { hasTemperature, mirekFor, planRoomBrightness, planRoomColor, planRoomKelvin, planRoomLook, planToggleRoom } from '../../lib/actions';
+import { findGroup, hasTemperature, mirekFor, planRoomBrightness, planRoomColor, planRoomKelvin, planRoomLook, planToggleRoom } from '../../lib/actions';
 import { roomIsOn, type Light } from '../../lib/hue/client';
 import { kelvinTint } from '../../lib/hue/color';
 import { useHome } from '../../lib/hue/useHome';
 import { isLit, lightLevel, lightsOf } from '../../lib/lights';
+import { loadMoods, planMood, type Mood } from '../../lib/moods';
 import { formatKelvin, loadRecentColors, near, type Swatch } from '../../lib/palette';
 import { Glow, IconButton, Switch } from '../../ui/controls';
 import { LightMarker } from '../../ui/FloorPlan';
 import { FavoritesRow } from '../../ui/Favorites';
 import { Icon } from '../../ui/icons';
 import { ManageSheet } from '../../ui/ManageSheets';
+import { MoodChips } from '../../ui/MoodChips';
 import { Brightness, ColorDot, useThrottle } from '../../ui/LightControls';
 import { Display, Label, Txt } from '../../ui/text';
 import { color, hairline } from '../../ui/theme';
@@ -22,7 +24,7 @@ const ROOM_WHITES = [2200, 2700, 4000, 6500];
 
 const close = () => (router.canGoBack() ? router.back() : router.replace('/rooms'));
 
-/** A room's controls as a sheet over the screen it was opened from. */
+/** A room's (or a group's) controls as a sheet over the screen it was opened from. */
 export default function RoomSheet() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -31,8 +33,10 @@ export default function RoomSheet() {
   const [editing, setEditing] = useState(false);
   const throttle = useThrottle();
   const [recents, setRecents] = useState<Swatch[]>([]);
+  const [moods, setMoods] = useState<Mood[]>([]);
   useEffect(() => {
     loadRecentColors().then(setRecents);
+    loadMoods().then(setMoods);
   }, []);
 
   // Slides up on open, follows the finger down, closes past a threshold.
@@ -52,7 +56,8 @@ export default function RoomSheet() {
     }),
   );
 
-  const room = snapshot?.rooms.find((r) => r.id === id);
+  const room = snapshot ? findGroup(snapshot, id) : undefined;
+  const isGroup = !!snapshot?.zones?.some((z) => z.id === id);
   const lights = room && snapshot ? lightsOf(room, snapshot) : [];
   const lit = lights.filter(isLit);
   const anyOn = room && snapshot ? roomIsOn(room, snapshot.lights) : false;
@@ -96,7 +101,7 @@ export default function RoomSheet() {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Display size={24} numberOfLines={1} style={{ lineHeight: 27 }}>
-                {room?.name ?? (snapshot ? 'Room not found' : '')}
+                {room?.name ?? (snapshot ? 'Not found' : '')}
               </Display>
               <Txt size={13} tone="secondary" style={{ marginTop: 4, fontVariant: ['tabular-nums'] }}>
                 {room ? countLine : ' '}
@@ -202,6 +207,12 @@ export default function RoomSheet() {
         )}
 
         {room && lights.length > 0 && (
+          <View style={{ marginTop: 16 }}>
+            <MoodChips targetId={room.id} lights={lights} moods={moods} onChange={setMoods} onApply={(m) => act((s) => planMood(s, m))} />
+          </View>
+        )}
+
+        {room && lights.length > 0 && (
           <View style={{ marginTop: 18, flexShrink: 1 }}>
             <Label tone="label">Lights</Label>
             <ScrollView style={{ marginTop: 4, flexGrow: 0 }}>
@@ -218,7 +229,7 @@ export default function RoomSheet() {
         )}
       </Animated.View>
       {editing && room && snapshot && (
-        <ManageSheet editing={{ kind: 'room', room }} snapshot={snapshot} onClose={() => setEditing(false)} onSaved={refresh} />
+        <ManageSheet editing={isGroup ? { kind: 'group', zone: room } : { kind: 'room', room }} snapshot={snapshot} onClose={() => setEditing(false)} onSaved={refresh} />
       )}
     </View>
   );
@@ -260,7 +271,7 @@ function LightLink({ light }: { light: Light }) {
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, height: 46, borderTopWidth: 1, borderTopColor: hairline(0.08), opacity: pressed ? 0.6 : 1 })}
     >
       <View style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}>
-        <LightMarker light={light} size={24} ground={color.sheet} />
+        <LightMarker light={light} size={24} ground={color.sheet} glow={false} />
       </View>
       <Txt size={14} numberOfLines={1} style={{ flex: 1, lineHeight: 18 }}>
         {light.name}
