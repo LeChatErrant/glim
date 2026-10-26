@@ -6,7 +6,7 @@ import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-
 
 import { identifyLight, type Light, type Snapshot } from '../lib/hue/client';
 import { inkOn, LIGHT_ICON_PATHS } from '../lib/lightIcons';
-import { isPlug, lightShape, lightType } from '../lib/lights';
+import { DEFAULT_LENGTH, isPlug, lightShape, lightType } from '../lib/lights';
 import { useSnapshot } from '../lib/hue/useSnapshot';
 import {
   centroid,
@@ -175,7 +175,7 @@ function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number })
     const kind = selLight ? directional(selLight.lightId, live.current.snapshot) : null;
     if (selLight && kind) {
       for (const end of [1, -1] as const) {
-        if (end === -1 && kind !== 'string') continue;
+        if (end === -1 && !stretchy(kind)) continue;
         const { sx: x, sy: y } = toScreen(handleAt(selLight, d.rooms, kind, v.scale, end), v);
         if (Math.hypot(x - sx, y - sy) < HIT_PX) return { kind: 'handle' as const, lightId: selLight.lightId, end };
       }
@@ -294,13 +294,13 @@ function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number })
             const light = from.lights.find((l) => l.lightId === d.lightId);
             const kind = light && directional(light.lightId, live.current.snapshot);
             if (!light || !kind) return;
-            // The handle follows the finger: its direction turns the light, its reach sets a string's length.
+            // The handle follows the finger: its direction turns the light, its reach sets a string's or strip's length.
             const knob = handleAt(light, from.rooms, kind, v.scale, d.end);
             const p = { x: knob.x + dx - light.x, z: knob.z + dz - light.z };
             const raw = (Math.atan2(p.z, p.x) * 180) / Math.PI + (d.end === -1 ? 180 : 0);
             const angle = snapAngle(raw, from.rooms);
             setGuides(angle.wall ? [{ kind: 'line', a: angle.wall[0], b: angle.wall[1] }] : []);
-            const length = kind === 'string' ? Math.max(0.4, Math.min(12, Math.round(Math.hypot(p.x, p.z) * 2 * 10) / 10)) : light.length;
+            const length = stretchy(kind) ? Math.max(0.4, Math.min(20, Math.round(Math.hypot(p.x, p.z) * 2 * 10) / 10)) : light.length;
             setDraft({ ...from, lights: from.lights.map((l) => (l.lightId === d.lightId ? { ...l, angle: angle.deg, length } : l)) });
           }
         },
@@ -522,6 +522,8 @@ function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number })
                   <Body muted>
                     {directional(sel.lightId, snapshot) === 'string'
                       ? 'Drag a ⟳ end to turn the string and stretch it to its real length.'
+                      : directional(sel.lightId, snapshot) === 'strip'
+                        ? 'Drag a ⟳ end to turn the strip and stretch it to its real length. It snaps to walls.'
                       : directional(sel.lightId, snapshot) === 'lantern'
                         ? 'Drag ⟳ to turn it along the wall it hangs on. It snaps to walls.'
                         : 'Drag ⟳ to turn the bar the way it really stands. It snaps to walls.'}
@@ -544,12 +546,18 @@ function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number })
   );
 }
 
-/** Lights drawn along a direction, with a handle to turn them: string lights, bars, lanterns. */
-function directional(lightId: string, s: Snapshot | null) {
+type Directional = 'string' | 'strip' | 'bar' | 'lantern';
+
+/** Lights drawn along a direction, with a handle to turn them: string lights, strips, bars, lanterns. */
+function directional(lightId: string, s: Snapshot | null): Directional | null {
   const light = s?.lights.find((l) => l.id === lightId);
   const shape = light ? lightShape(light.archetype) : null;
-  return shape === 'string' || shape === 'bar' || shape === 'lantern' ? shape : null;
+  return shape === 'string' || shape === 'strip' || shape === 'bar' || shape === 'lantern' ? shape : null;
 }
+
+/** String lights and strips are drawn at their real length: a handle at each end stretches them. */
+const stretchy = (kind: Directional) => kind === 'string' || kind === 'strip';
+const lengthOf = (l: MapLight, kind: Directional) => l.length ?? DEFAULT_LENGTH[kind] ?? 0;
 
 /** The direction a light runs along, in degrees: set by the user, else along the nearest wall (as the map draws it). */
 function lightAngle(l: MapLight, rooms: MapRoom[]) {
@@ -568,10 +576,10 @@ function lightAngle(l: MapLight, rooms: MapRoom[]) {
   return angle;
 }
 
-/** Where a light's handle sits: the ends of a string (its length), or a fixed reach for the others. */
-function handleAt(l: MapLight, rooms: MapRoom[], kind: 'string' | 'bar' | 'lantern', scale: number, end: 1 | -1): FloorPoint {
+/** Where a light's handle sits: the ends of a string or strip (its length), or a fixed reach for the others. */
+function handleAt(l: MapLight, rooms: MapRoom[], kind: Directional, scale: number, end: 1 | -1): FloorPoint {
   const a = (lightAngle(l, rooms) * Math.PI) / 180;
-  const reach = kind === 'string' ? Math.max((l.length ?? 2.4) / 2, 30 / scale) : 46 / scale;
+  const reach = stretchy(kind) ? Math.max(lengthOf(l, kind) / 2, 30 / scale) : 46 / scale;
   return { x: l.x + Math.cos(a) * reach * end, z: l.z + Math.sin(a) * reach * end };
 }
 
@@ -590,26 +598,26 @@ const ROTATE_ICON = 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4v4.5H15';
 
 /**
  * The selected light's handle: a knob with a turn icon at the end of a dashed arm, labeled with
- * what dragging it does. String lights get a knob at each end, and their length in the middle.
+ * what dragging it does. String lights and strips get a knob at each end, and their length in the middle.
  */
-function Handle({ l, rooms, kind, view }: { l: MapLight; rooms: MapRoom[]; kind: 'string' | 'bar' | 'lantern'; view: ViewBox }) {
+function Handle({ l, rooms, kind, view }: { l: MapLight; rooms: MapRoom[]; kind: Directional; view: ViewBox }) {
   const X = (p: FloorPoint) => screenOf(p, view).sx;
   const Y = (p: FloorPoint) => screenOf(p, view).sy;
   const a = handleAt(l, rooms, kind, view.scale, 1);
-  const b = kind === 'string' ? handleAt(l, rooms, kind, view.scale, -1) : l;
+  const b = stretchy(kind) ? handleAt(l, rooms, kind, view.scale, -1) : l;
   const knob = (p: FloorPoint, key: string) => (
     <G key={key}>
       <Circle cx={X(p)} cy={Y(p)} r={14} fill={theme.bg} stroke={ACCENT} strokeWidth={2} />
       <Path d={ROTATE_ICON} fill="none" stroke={ACCENT} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" transform={`translate(${X(p) - 8} ${Y(p) - 8}) scale(${16 / 24})`} />
     </G>
   );
-  const length = kind === 'string' ? `${(l.length ?? 2.4).toFixed(1)} m` : null;
+  const length = stretchy(kind) ? `${lengthOf(l, kind).toFixed(1)} m` : null;
   return (
     <G>
       <Line x1={X(b)} y1={Y(b)} x2={X(a)} y2={Y(a)} stroke={ACCENT} strokeWidth={1.5} strokeDasharray="5 4" />
       {knob(a, 'a')}
-      {kind === 'string' && knob(b, 'b')}
-      <PlanChip x={X(a)} y={Y(a) - 30} text={kind === 'string' ? 'TURN · STRETCH' : 'TURN'} />
+      {stretchy(kind) && knob(b, 'b')}
+      <PlanChip x={X(a)} y={Y(a) - 30} text={stretchy(kind) ? 'TURN · STRETCH' : 'TURN'} />
       {length && <PlanChip x={(X(a) + X(b)) / 2} y={(Y(a) + Y(b)) / 2 - 26} text={length} />}
     </G>
   );
@@ -667,12 +675,12 @@ function MarkerG({ light, x, y, angle }: { light: Light; x: number; y: number; a
 }
 
 /**
- * What the light physically is, on the floor: a light bar's length, a string's row of beads
- * (its real length), a lantern's wall plate. Turning the handle turns this, so its effect shows.
+ * What the light physically is, on the floor: a light bar's length, a string's row of beads or a
+ * strip (their real length), a lantern's wall plate. Turning the handle turns this, so its effect shows.
  */
-function Footprint({ l, light, rooms, kind, view }: { l: MapLight; light: Light; rooms: MapRoom[]; kind: 'string' | 'bar' | 'lantern'; view: ViewBox }) {
+function Footprint({ l, light, rooms, kind, view }: { l: MapLight; light: Light; rooms: MapRoom[]; kind: Directional; view: ViewBox }) {
   const a = (lightAngle(l, rooms) * Math.PI) / 180;
-  const half = kind === 'string' ? (l.length ?? 2.4) / 2 : kind === 'bar' ? 0.3 : 0.25;
+  const half = stretchy(kind) ? lengthOf(l, kind) / 2 : kind === 'bar' ? 0.3 : 0.25;
   const at = (t: number) => screenOf({ x: l.x + Math.cos(a) * t, z: l.z + Math.sin(a) * t }, view);
   const p = at(-half);
   const q = at(half);
@@ -687,6 +695,14 @@ function Footprint({ l, light, rooms, kind, view }: { l: MapLight; light: Light;
           const b = at(-half + (i * half * 2) / n);
           return <Circle key={i} cx={b.sx} cy={b.sy} r={2.6} fill={on ? light.color : theme.bg} stroke={on ? undefined : tint} strokeWidth={1} />;
         })}
+      </G>
+    );
+  }
+  if (kind === 'strip') {
+    return (
+      <G>
+        {on && <Line x1={p.sx} y1={p.sy} x2={q.sx} y2={q.sy} stroke={tint} strokeOpacity={0.4} strokeWidth={8} strokeLinecap="round" />}
+        <Line x1={p.sx} y1={p.sy} x2={q.sx} y2={q.sy} stroke={on ? '#FFE2B0' : tint} strokeWidth={2.5} strokeLinecap="round" />
       </G>
     );
   }

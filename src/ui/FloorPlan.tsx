@@ -1,7 +1,7 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, PanResponder, View } from 'react-native';
-import Svg, { ClipPath, Defs, Ellipse, G, Path, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { ClipPath, Defs, Ellipse, G, Line, Path, RadialGradient, Stop } from 'react-native-svg';
 
 import { FLICKERS } from '../lib/effects';
 import type { Light, Room } from '../lib/hue/client';
@@ -119,6 +119,20 @@ export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId
         {zones.map((r) => (
           <Path key={r.id} d={pathOf(r.pts)} fill="none" stroke={hairline(0.2)} strokeWidth={1} strokeDasharray="2 3" />
         ))}
+
+        {/* Lightstrips: the strip itself, a warm core in a halo of its color. */}
+        {placed.map((p) => {
+          if (!p.ends) return null;
+          const [a, b] = p.ends;
+          const on = p.light.on && p.light.reachable;
+          const line = { x1: f.x(a.u), y1: f.y(a.v), x2: f.x(b.u), y2: f.y(b.v), strokeLinecap: 'round' as const };
+          return (
+            <G key={`strip-${p.light.id}`} pointerEvents="none">
+              {on && <Line {...line} stroke={p.light.color} strokeOpacity={0.45} strokeWidth={6} />}
+              <Line {...line} stroke={on ? '#FFE2B0' : '#4A4640'} strokeWidth={2} />
+            </G>
+          );
+        })}
 
         {/* Tap targets last, so glows never swallow a tap. Zones after walls: the smaller one wins. */}
         {[...walled, ...zones].map((r) =>

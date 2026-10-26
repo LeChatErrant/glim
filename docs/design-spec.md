@@ -448,7 +448,7 @@ Open to your proposal. Starting points:
   the map, lists, widgets and mood previews. It must work tiny (widget grid)
   and large (light sheet).
 - **Icons for light types:** pendant lamp, bulb, portable lamp (Hue Go),
-  light bar (Hue Play), string lights, wall lantern, smart plug.
+  light bar (Hue Play), lightstrip, string lights, wall lantern, smart plug.
 - **Motion:** quick, soft transitions when a light changes (~200–300 ms).
   AR markers should feel tactile when placed.
 

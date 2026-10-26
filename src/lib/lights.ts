@@ -13,13 +13,17 @@ export function lightType(archetype: string): LightType {
   if (a.startsWith('ceiling') || a.includes('flush') || a === 'recessed_ceiling') return 'ceiling';
   if (a.includes('candle')) return 'candle';
   if (a.includes('spot') || a === 'recessed_floor') return 'spot';
+  // Bulbs by their shape (flood_bulb, luster_bulb...), before "flood" reads as a floodlight.
+  if (a.endsWith('_bulb')) return 'bulb';
+  if (a === 'hue_centris') return 'ceiling';
   if (a === 'hue_go' || a === 'hue_iris' || a === 'hue_bloom') return 'go';
-  if (a.includes('table') || a === 'flexible_lamp') return 'table';
-  if (a.includes('floor') || a.startsWith('up_and_down') || a === 'hue_signe') return 'floor';
+  // Twilight is a bedside wake-up lamp; "up and down" lights are wall lights.
+  if (a.includes('table') || a === 'flexible_lamp' || a.startsWith('twilight')) return 'table';
+  if (a.includes('floor') || a === 'hue_signe') return 'floor';
   if (a.includes('lightstrip') || a === 'hue_neon' || a === 'hue_omniglow') return 'strip';
-  if (a.startsWith('hue_play') || a.includes('bar') || a === 'hue_tube' || a === 'hue_centris' || a === 'wall_washer') return 'bar';
+  if (a.startsWith('hue_play') || a.includes('bar') || a === 'hue_tube' || a === 'wall_washer') return 'bar';
   if (a.includes('string') || a.includes('christmas') || a.includes('festavia')) return 'string';
-  if (a.includes('wall') || a.includes('lantern') || a.includes('flood') || a.includes('pedestal') || a.includes('bollard') || a.includes('garden') || a.startsWith('twilight')) return 'lantern';
+  if (a.includes('wall') || a.startsWith('up_and_down') || a.includes('lantern') || a.includes('flood') || a.includes('pedestal') || a.includes('bollard') || a.includes('garden')) return 'lantern';
   return 'bulb';
 }
 
@@ -46,7 +50,7 @@ const TYPE_LABEL = Object.fromEntries(LIGHT_TYPES.map((t) => [t.type, t.label]))
 export const isPlug = (l: Light) => l.plug ?? l.kind === 'onoff';
 
 /** How a light glows on the map: each shape casts its own pool (Nocturne design). */
-export type LightShape = 'pendant' | 'bulb' | 'portable' | 'bar' | 'string' | 'lantern';
+export type LightShape = 'pendant' | 'bulb' | 'portable' | 'bar' | 'strip' | 'string' | 'lantern';
 
 const SHAPE: Record<LightType, LightShape> = {
   pendant: 'pendant',
@@ -59,12 +63,15 @@ const SHAPE: Record<LightType, LightShape> = {
   table: 'portable',
   floor: 'portable',
   bar: 'bar',
-  strip: 'bar',
+  strip: 'strip',
   string: 'string',
   lantern: 'lantern',
 };
 
 export const lightShape = (archetype: string): LightShape => SHAPE[lightType(archetype)];
+
+/** Shapes drawn at their real length (stretched in the editor), with the length used until it is set, in meters. */
+export const DEFAULT_LENGTH: Partial<Record<LightShape, number>> = { string: 2.4, strip: 2 };
 
 /** "Pendant", "String lights · plug", "Smart plug". */
 export function lightTypeLabel(light: Light) {

@@ -82,6 +82,15 @@ export function planToSvg(plan: Plan, lights: Light[], width: number, height: nu
   for (const r of zones) body.push(`<path d="${pathOf(r.pts)}" fill="none" stroke="${hairline(0.2)}" stroke-width="1" stroke-dasharray="2 3"/>`);
 
   for (const p of placed) {
+    if (!p.ends) continue;
+    const [a, b] = p.ends;
+    const on = p.light.on && p.light.reachable && !stale;
+    const xy = `x1="${n(f.x(a.u))}" y1="${n(f.y(a.v))}" x2="${n(f.x(b.u))}" y2="${n(f.y(b.v))}" stroke-linecap="round"`;
+    if (on) body.push(`<line ${xy} stroke="${p.light.color}" stroke-opacity="0.45" stroke-width="6"/>`);
+    body.push(`<line ${xy} stroke="${on ? '#FFE2B0' : stale ? STALE.core : '#4A4640'}" stroke-width="2"/>`);
+  }
+
+  for (const p of placed) {
     if (p.shape !== 'string') continue;
     const on = p.light.on && p.light.reachable && !stale;
     const gi = lit.indexOf(p);

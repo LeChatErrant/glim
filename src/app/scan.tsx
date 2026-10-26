@@ -622,7 +622,7 @@ function LightHint({ light }: { light?: Light }) {
   const insets = useSafeAreaInsets();
   if (!light) return null;
   const shape = lightShape(light.archetype);
-  const aim = shape === 'string' || shape === 'bar' ? 'Point at its middle from where you stand.' : 'Point at it from where you stand.';
+  const aim = shape === 'string' || shape === 'strip' || shape === 'bar' ? 'Point at its middle from where you stand.' : 'Point at it from where you stand.';
   return (
     <View
       pointerEvents="none"

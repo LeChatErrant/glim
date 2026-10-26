@@ -19,7 +19,7 @@ export type MapLight = {
   lightId: string;
   /** Direction it runs along (string lights, bars, lanterns), degrees in map coordinates. Absent = along the nearest wall. */
   angle?: number;
-  /** Length of string lights, in meters. */
+  /** Length of string lights and lightstrips, in meters. */
   length?: number;
 } & FloorPoint;
 
