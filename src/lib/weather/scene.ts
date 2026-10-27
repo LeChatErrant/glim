@@ -237,8 +237,9 @@ function inside(p: Pt, pts: Pt[]) {
 }
 
 /** The far outside fades into the dark (into pale grey in fog); a band around the house stays. */
+/** Under the sky band the dark lifts and takes the horizon's color, so the sky meets lit ground. */
 /** `rings`: more steps give a smoother edge (the app can afford it; widget frames use fewer). */
-export function vignetteSvg(sky: Sky, W: number, H: number, geom: HouseGeom, u: number, extend = 0, rings = 18) {
+export function vignetteSvg(sky: Sky, W: number, H: number, geom: HouseGeom, skyH: number, u: number, extend = 0, rings = 18) {
   const box = geom.box;
   if (!box) return '';
   const M = 44 * u;
@@ -262,7 +263,17 @@ export function vignetteSvg(sky: Sky, W: number, H: number, geom: HouseGeom, u: 
       `H${n(x + r)}A${n(r)},${n(r)} 0 0 1 ${n(x)},${n(y + h - r)}V${n(y + r)}A${n(r)},${n(r)} 0 0 1 ${n(x + r)},${n(y)}Z`;
     out.push(`<path fill-rule="evenodd" d="M${n(x0)},${n(y0)}H${n(x1)}V${n(y1)}H${n(x0)}Z${hole}" fill="${rgba(sky.vig, A / rings)}"/>`);
   }
-  return out.join('');
+  if (!skyH) return out.join('');
+  // One smooth mask over all the rings: fading each faint ring instead rounds into visible steps.
+  const lit = Math.max(sky.day, 0.8 * sky.warm * (1 - sky.night));
+  const keep = 1 - (0.92 * lit + 0.4 * (1 - lit));
+  const fade = `<linearGradient id="vf" gradientUnits="userSpaceOnUse" x1="0" y1="${n(skyH * 0.5)}" x2="0" y2="${n(skyH * 1.4 + 120 * u)}">${stops([
+    [0, `rgba(255,255,255,${keep.toFixed(3)})`],
+    [0.45, `rgba(255,255,255,${(keep + (1 - keep) * 0.25).toFixed(3)})`],
+    [1, 'rgba(255,255,255,1)'],
+  ])}</linearGradient>`;
+  const area = `x="${n(x0)}" y="${n(y0)}" width="${n(x1 - x0)}" height="${n(y1 - y0)}"`;
+  return `<defs>${fade}<mask id="vm" maskUnits="userSpaceOnUse" ${area}><rect ${area} fill="url(#vf)"/></mask></defs><g mask="url(#vm)">${out.join('')}</g>`;
 }
 
 /** The sky band at the top of the screen, the sun and the moon in it. */
@@ -270,8 +281,9 @@ export function skySvg(sky: Sky, W: number, skyH: number, u: number) {
   if (!skyH) return '';
   const { sun, moon } = lights(sky, W, skyH, u);
   const out: string[] = [
-    `<defs><linearGradient id="sb" x1="0" y1="0" x2="0" y2="1">${stops([[0, rgba(sky.top, 0.92)], [0.42, rgba(sky.mid, 0.82)], [0.78, rgba(sky.low, 0.62)], [1, rgba(sky.low, 0)]])}</linearGradient></defs>`,
-    `<rect x="0" y="0" width="${n(W)}" height="${n(skyH)}" fill="url(#sb)"/>`,
+    `<defs><linearGradient id="sb" x1="0" y1="0" x2="0" y2="1">${stops([[0, rgba(sky.top, 0.92)], [0.34, rgba(sky.mid, 0.82)], [0.62, rgba(sky.low, 0.62)], [0.8, rgba(sky.low, 0.28)], [0.9, rgba(sky.low, 0.09)], [1, rgba(sky.low, 0)]])}</linearGradient></defs>`,
+    // The horizon fades out a little below the band, so the band has no bottom edge.
+    `<rect x="0" y="0" width="${n(W)}" height="${n(skyH * 1.25)}" fill="url(#sb)"/>`,
   ];
   const sunO = sky.weather === 'clear' ? 1 : sky.weather === 'fog' || sky.weather === 'cloudy' || sky.weather === 'snow' ? 0.3 : 0;
   if (sky.day > 0.05 && sunO > 0) {
@@ -502,6 +514,9 @@ export function fireflies(sky: Sky, geom: HouseGeom, u: number) {
 
 export type Frames = { frames: string[]; intervalMs: number };
 
+/** Rain speed on widgets, against the app's. */
+const WIDGET_RAIN = 0.45;
+
 /**
  * The outside for a widget, as a loop of SVG frames the launcher flips through. Everything below
  * the plan: ground, weather, outdoor areas, the dark edge, sky. The plan itself is drawn on top
@@ -515,16 +530,18 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
   const stars1 = starsSvg(sky, W, H, u, 1);
   const storm = sky.weather === 'storm';
   const drifting = sky.weather === 'fog' || (skyH > 0 && sky.weather !== 'clear') || (sky.weather !== 'clear' && sky.day > 0.1);
+  // The launcher flips right on time, so smoothness comes from small steps between frames:
+  // 25 fps rain whose streaks are longer than a frame's step, 10 fps snow, 5 fps for slow drifts.
   let count = 1;
   let intervalMs = 1000;
-  if (sky.wet) [count, intervalMs] = storm ? [24, 50] : [16, 50];
-  else if (sky.weather === 'snow') [count, intervalMs] = [20, 150];
-  else if (layers.length || flies.length || stars1 || drifting) [count, intervalMs] = [16, 250];
+  if (sky.wet) [count, intervalMs] = [32, 40];
+  else if (sky.weather === 'snow') [count, intervalMs] = [30, 100];
+  else if (layers.length || flies.length || stars1 || drifting) [count, intervalMs] = [24, 200];
   const loop = count * intervalMs;
 
   const base = groundSvg(sky, W, H, geom, skyH, u);
   const house = houseSvg(sky, W, geom, skyH, u);
-  const vignette = vignetteSvg(sky, W, H, geom, u);
+  const vignette = vignetteSvg(sky, W, H, geom, skyH, u);
   const skyBand = skySvg(sky, W, skyH, u);
   const stars0 = starsSvg(sky, W, H, u, 0);
   const clip = `<defs><clipPath id="wc"><rect x="0" y="0" width="${n(W)}" height="${n(H)}" rx="${n(radius)}" ry="${n(radius)}"/></clipPath></defs>`;
@@ -537,10 +554,17 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
     parts.push(`<g transform="translate(${n(12 * u * sway)} 0)">${cloudShadowsSvg(sky, W, H, u)}${fogSvg(sky, W, H, u, 0)}</g>`);
     parts.push(house);
     layers.forEach((l, i) => {
-      // A whole number of layer loops per frame loop, so the last frame meets the first.
-      const shift = l.tileH * l.tilesPerLoop * t * Math.max(1, Math.round(loop / l.loopMs));
+      // A whole number of tiles per frame loop, so the last frame meets the first; rain falls
+      // slower than in the app so each step stays shorter than a streak. A layer that moves less
+      // than a tile per loop (golden dust) bobs in place instead.
+      const tiles = (Math.abs(l.tilesPerLoop) * loop) / l.loopMs;
+      const shift =
+        tiles < 1
+          ? 6 * u * Math.sin(2 * Math.PI * t) * Math.sign(l.tilesPerLoop)
+          : l.tileH * Math.sign(l.tilesPerLoop) * Math.max(1, Math.round(tiles * (sky.wet ? WIDGET_RAIN : 1))) * t;
+      const sideways = tiles < 1 ? 4 * u * Math.cos(2 * Math.PI * t) : 0;
       parts.push(
-        `<defs><pattern id="p${i}" patternUnits="userSpaceOnUse" width="${n(l.tileW)}" height="${n(l.tileH)}" patternTransform="rotate(${l.angle}) translate(0 ${n(shift)})">${tileSvg(l)}</pattern></defs>` +
+        `<defs><pattern id="p${i}" patternUnits="userSpaceOnUse" width="${n(l.tileW)}" height="${n(l.tileH)}" patternTransform="rotate(${l.angle}) translate(${n(sideways)} ${n(shift)})">${tileSvg(l)}</pattern></defs>` +
           `<rect x="0" y="0" width="${n(W)}" height="${n(H)}" fill="url(#p${i})"/>`,
       );
     });
@@ -559,7 +583,9 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
       const o = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(2 * a + 1));
       parts.push(`<circle cx="${n(x)}" cy="${n(y)}" r="${n(5 * u)}" fill="rgba(226,240,140,${(0.25 * o).toFixed(2)})"/><circle cx="${n(x)}" cy="${n(y)}" r="${n(1.5 * u)}" fill="rgba(240,248,170,${(0.95 * o).toFixed(2)})"/>`);
     }
-    if (storm && (f === count - 4 || f === count - 2)) parts.push(`<rect x="0" y="0" width="${n(W)}" height="${n(H)}" fill="rgba(214,222,255,${f === count - 4 ? 0.4 : 0.28})"/>`);
+    // A double flash, each lasting two frames.
+    const flash = storm ? { [count - 6]: 0.4, [count - 5]: 0.3, [count - 3]: 0.28, [count - 2]: 0.16 }[f] : undefined;
+    if (flash) parts.push(`<rect x="0" y="0" width="${n(W)}" height="${n(H)}" fill="rgba(214,222,255,${flash})"/>`);
     frames.push(svg(W, H, `${clip}<g clip-path="url(#wc)">${parts.join('')}</g>`));
   }
   return { frames, intervalMs };

@@ -8,8 +8,12 @@ import { clamp } from '../lib/weather/sky';
 import type { Outside } from '../lib/weather/source';
 import { mapWidgetBox } from './widgets';
 
-/** Bitmap memory for one widget's frames (launchers cap what a widget may send). */
-const BUDGET = 6_000_000;
+/**
+ * Bitmap memory for one widget's frames, held by the launcher. Kept under what Android lets one
+ * widget send inline (1.5 screens of pixels, ~15 MB on a phone), and big enough for 32 rain
+ * frames near 1 px per dp.
+ */
+const BUDGET = 10_000_000;
 
 /**
  * Animates a map widget's outside: the frames go to native code, which renders them and puts

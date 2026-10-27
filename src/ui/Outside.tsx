@@ -61,8 +61,10 @@ export function OutsideBack({ sky, width, height, skyH, plan, lights, mapBox, vi
     () => svg(width, height, groundSvg(sky, width, height, geom, skyH, u) + cloudShadowsSvg(sky, width, height, u) + fogSvg(sky, width, height, u, 0)),
     [sky, width, height, geom, skyH],
   );
-  const house = useMemo(() => svg(width, height, houseSvg(sky, width, geom, skyH, u, false) + vignetteSvg(sky, width, height, geom, u, 200, 40)), [sky, width, height, geom, skyH]);
-  const skyBand = useMemo(() => (skyH ? svg(width, skyH, skySvg(sky, width, skyH, u)) : ''), [sky, width, skyH]);
+  const house = useMemo(() => svg(width, height, houseSvg(sky, width, geom, skyH, u, false) + vignetteSvg(sky, width, height, geom, skyH, u, 200, 40)), [sky, width, height, geom, skyH]);
+  // Taller than the band, so the sun's halo spills over the ground below instead of being cut.
+  const skyBoxH = Math.min(height, skyH + 150 * u);
+  const skyBand = useMemo(() => (skyH ? svg(width, skyBoxH, skySvg(sky, width, skyH, u)) : ''), [sky, width, skyH, skyBoxH]);
   const clouds = useMemo(() => skyCloudsSvg(sky, width + 60, skyH, u), [sky, width, skyH]);
   const fogHigh = useMemo(() => fogSvg(sky, width, height, u, 1), [sky, width, height]);
   const starry = useMemo(() => stars(sky, width, height, u), [sky, width, height]);
@@ -104,7 +106,7 @@ export function OutsideBack({ sky, width, height, skyH, plan, lights, mapBox, vi
           <Ripple key={`${kind}-${i}`} x={r.x} y={r.y} ms={r.ms} phase={r.phase} active={active} />
         ))}
       </View>
-      {skyBand !== '' && <SvgXml xml={skyBand} width={width} height={skyH} style={{ position: 'absolute', left: 0, top: 0 }} />}
+      {skyBand !== '' && <SvgXml xml={skyBand} width={width} height={skyBoxH} style={{ position: 'absolute', left: 0, top: 0 }} />}
       {clouds !== '' && (
         <Drift active={active} range={18} ms={22000} style={{ left: -30, width: width + 60, height: skyH }}>
           <SvgXml xml={svg(width + 60, skyH, clouds)} width={width + 60} height={skyH} />
