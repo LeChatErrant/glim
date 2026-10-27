@@ -10,6 +10,7 @@ const TABS: Record<string, { title: string; icon: IconName }> = {
   rooms: { title: 'Rooms', icon: 'rooms' },
   moods: { title: 'Moods', icon: 'moods' },
   rituals: { title: 'Rituals', icon: 'rituals' },
+  settings: { title: 'Settings', icon: 'settings' },
 };
 
 export default function TabsLayout() {

@@ -20,7 +20,14 @@ const REMOTE = 'https://api.meethue.com/route';
 /** Where our server sends the browser back to (src/app/away.tsx). */
 export const RETURN_PATH = 'away';
 
-export type CloudAccount = { accessToken: string; refreshToken: string; expiresAt: number };
+export type CloudAccount = {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  /** When the Hue account was connected, and when its tokens were last renewed (ms). */
+  connectedAt?: number;
+  refreshedAt?: number;
+};
 
 const key = (bridgeId: string) => `cloud.${bridgeId}`;
 const STATE_KEY = 'cloudSignInState';
@@ -91,7 +98,8 @@ async function tokens(grant: { code: string } | { refresh_token: string }): Prom
     throw json.error === 'invalid_grant' ? new SignedOut(message) : new Error(message);
   }
   const seconds = Number(json.expires_in ?? json.access_token_expires_in ?? 604800);
-  return { accessToken: json.access_token, refreshToken: json.refresh_token, expiresAt: Date.now() + seconds * 1000 };
+  const now = Date.now();
+  return { accessToken: json.access_token, refreshToken: json.refresh_token, expiresAt: now + seconds * 1000, connectedAt: now, refreshedAt: now };
 }
 
 /** Finishes the sign-in with the code Hue sent back, and checks the account reaches this bridge. */
@@ -114,7 +122,8 @@ async function refresh(bridgeId: string, account: CloudAccount): Promise<CloudAc
   let p = refreshing.get(bridgeId);
   if (!p) {
     p = tokens({ refresh_token: account.refreshToken })
-      .then(async (next) => {
+      .then(async (fresh) => {
+        const next = { ...fresh, connectedAt: account.connectedAt };
         await saveCloud(bridgeId, next);
         return next;
       })

@@ -100,12 +100,13 @@ another room's outline.
 
 ## 4. Navigation
 
-Bottom navigation with 4 destinations, plus Settings from the top bar:
+Bottom navigation with 5 destinations:
 
 1. **Map** (home): the floor plan with all lights.
 2. **Rooms:** list of rooms and lights, for precise control.
 3. **Moods:** library, favorites, editor.
 4. **Rituals:** wake-up, sleep, day rhythm, arriving home.
+5. **Settings:** see 5.10.
 
 A persistent **connection indicator** shows how the app reaches the lights:
 - **Home:** direct to the bridge on Wi-Fi (fast).
@@ -358,7 +359,11 @@ preview** of the widget at the top of the configuration screen.
 ### 5.10 Settings
 
 - **Bridge:** name, IP, connection status, re-link.
-- **Away from home:** Hue account connected or not, connect/disconnect.
+- **Away from home:** which route requests take now (At home: straight to
+  the bridge / Away: through Hue's cloud / Offline), the Hue account
+  (connected since, tokens renewed when), Connect / Disconnect, Check now
+  (tries the bridge first). Tapping the connection indicator opens the same
+  details as a full screen.
 - **Home location:** used by Arriving home (map picker, radius).
 - **Map:** rescan, edit, reset.
 - **Lights and rooms:** rename (writes to the bridge), hide from the app.
