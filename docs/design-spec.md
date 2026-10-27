@@ -358,12 +358,11 @@ preview** of the widget at the top of the configuration screen.
 
 ### 5.10 Settings
 
-- **Bridge:** name, IP, connection status, re-link.
+- **Bridge:** name, model, software version, IP and ID, lights and rooms
+  count, Disconnect bridge (confirmation; then pairing).
 - **Away from home:** which route requests take now (At home: straight to
   the bridge / Away: through Hue's cloud / Offline), the Hue account
-  (connected since, tokens renewed when), Connect / Disconnect, Check now
-  (tries the bridge first). Tapping the connection indicator opens the same
-  details as a full screen.
+  (connected since, tokens renewed when), Connect / Disconnect.
 - **Home location:** used by Arriving home (map picker, radius).
 - **Map:** rescan, edit, reset.
 - **Lights and rooms:** rename (writes to the bridge), hide from the app.

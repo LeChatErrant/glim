@@ -184,11 +184,8 @@ export function jewelSvg(opts: { color: string; on: boolean; plug: boolean; unre
 }
 
 /** Small line icons for widgets (24 px grid, stroked). */
-export function iconSvg(name: 'plan' | 'cloudOff' | 'rotate' | 'prev' | 'next', stroke: string, px = 16) {
+export function iconSvg(name: 'plan' | 'cloudOff', stroke: string, px = 16) {
   const paths = {
-    rotate: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4v4.5H15"/>',
-    prev: '<path d="m15 5-7 7 7 7"/>',
-    next: '<path d="m9 5 7 7-7 7"/>',
     plan: '<path d="M3 4h11v9H3zM14 4h7v6h-7zM14 10h7v10h-7zM3 13h11v7H3z"/>',
     cloudOff: '<path d="M7 18h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 7 18Z"/><path d="M4 4l16 16"/>',
   }[name];

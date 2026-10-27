@@ -103,8 +103,9 @@ but never in a way that would need a rewrite to sell it later (see
   shown in its marker; unreachable = dashed amber ring + strike-through.
 - 2026-10-26: Map orientation is saved with the map (twist or Turn left/right);
   pinch zooms, drag pans. Each Map widget can show a subset of rooms and its
-  own orientation (long-press the widget → configure); its ‹ › buttons zoom
-  room by room (the on/off button then switches that room) and ⟳ turns it.
+  own orientation (long-press the widget → configure). 2026-10-27: no
+  buttons over the widget's map (room-by-room arrows and turn removed): the
+  configuration screen is enough.
 - 2026-10-26: String lights, bars and lanterns can be oriented in the 2D editor
   (handle; strings also get a length); default is along the nearest wall.
   2026-10-27: lightstrips too, at their real length (default 2 m; a line with
@@ -161,10 +162,13 @@ but never in a way that would need a rewrite to sell it later (see
   from home; widgets redraw on taps and every 30 min there.
 - 2026-10-27: Settings is the 5th tab (`src/app/(tabs)/settings.tsx`), one
   component per section in `src/ui/settings/`, each mounted with one line.
-  First section: **Away from home** (`AwayFromHome.tsx`): the route in use
-  now, the Hue account (connected since, last token renewal), Connect /
-  Disconnect, Check now. Hue's Remote API exposes no account name, so the
-  app can't say "connected as …".
+  **Bridge** (`Bridge.tsx`): the bridge's name, model, software, address
+  and ID, and Disconnect bridge (forgets it and its Hue account link; map,
+  moods and widget settings stay, keyed by bridge ID, and come back on
+  re-pairing). **Away from home** (`AwayFromHome.tsx`): the route in use now
+  and the Hue account (connected since, last token renewal), Connect /
+  Disconnect. Hue's Remote API exposes no account name, so the app can't
+  say "connected as …".
 
 ## Vocabulary
 

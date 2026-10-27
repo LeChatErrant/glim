@@ -1,12 +1,10 @@
-import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { View } from 'react-native';
 
 import { getBridge, type BridgeConfig } from '../../lib/hue/bridge';
 import { cloudConfigured, disconnectCloud, getCloud, startCloudSignIn, watchCloud, type CloudAccount } from '../../lib/hue/cloud';
-import { probeLocal } from '../../lib/hue/transport';
 import { useHome } from '../../lib/hue/useHome';
-import { PillButton, Rule, Section, TagButton } from '../controls';
+import { PillButton, Rule, Section } from '../controls';
 import { Icon, type IconName } from '../icons';
 import { Display, Txt } from '../text';
 import { color } from '../theme';
@@ -17,11 +15,9 @@ import { color } from '../theme';
  * comes back to /away (src/app/away.tsx), which finishes the sign-in.
  */
 export function AwayFromHome() {
-  const router = useRouter();
-  const { connection, refresh } = useHome(15_000);
+  const { connection } = useHome(15_000);
   const [bridge, setBridge] = useState<BridgeConfig | null>(null);
   const [account, setAccount] = useState<CloudAccount | null | undefined>(undefined);
-  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,15 +44,6 @@ export function AwayFromHome() {
     }
   }
 
-  // Try the bridge first (maybe back home), then refresh by whichever route answers.
-  async function check() {
-    if (!bridge) return;
-    setChecking(true);
-    await probeLocal(bridge, true);
-    await refresh();
-    setChecking(false);
-  }
-
   const now =
     connection === 'home'
       ? { icon: 'wifi' as const, title: 'At home', detail: 'Straight to your bridge' }
@@ -65,7 +52,7 @@ export function AwayFromHome() {
         : { icon: 'warning' as const, title: 'Offline', detail: account ? "Neither your bridge nor Hue's cloud answers" : "Your bridge doesn't answer" };
 
   return (
-    <Section title="Away from home" right={checking ? <ActivityIndicator size="small" color={color.champagne} /> : <TagButton title="Check now" onPress={check} />}>
+    <Section title="Away from home">
       <Txt size={14} tone="secondary">
         {"Connect your Hue account and your lights, moods and widgets work anywhere, through Hue's cloud. At home, the app still talks to your bridge directly."}
       </Txt>
@@ -89,10 +76,7 @@ export function AwayFromHome() {
       )}
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
         {account ? (
-          <>
-            <PillButton title="Details" height={44} onPress={() => router.push('/away')} />
-            <PillButton title="Disconnect" kind="text" height={44} onPress={() => bridge && disconnectCloud(bridge.id)} />
-          </>
+          <PillButton title="Disconnect Hue account" kind="text" height={44} onPress={() => bridge && disconnectCloud(bridge.id)} />
         ) : (
           <PillButton
             title={error ? 'Try again' : 'Connect Hue account'}
