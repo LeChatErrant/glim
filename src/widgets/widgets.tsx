@@ -222,26 +222,34 @@ function AllButton({ snapshot, pill }: { snapshot: Snapshot; pill: boolean }) {
  * The floor plan with live light pools. Tap a light to toggle it, tap elsewhere in a room to
  * toggle the room. Wide sizes (4×2) get a side panel, taller ones a bar below the plan.
  */
+/** Where the plan sits in a map widget: left half when wide (4×2), above a bar otherwise. */
+export function mapWidgetBox(width: number, height: number) {
+  const wide = width / height >= 1.6;
+  const box = wide
+    ? { left: 9, top: 8, width: Math.round(width * 0.52), height: height - 16 }
+    : { left: 12, top: 10, width: width - 24, height: height - 10 - 58 };
+  return { wide, box, pad: 6, radius: 24 };
+}
+
 export function MapWidget({
   snapshot,
   plan,
   width,
   height,
   stale,
+  outside = false,
 }: {
   snapshot: Snapshot | null;
   plan: Plan | null;
   width: number;
   height: number;
+  /** The weather is drawn underneath (native frames): leave the ground see-through. */
+  outside?: boolean;
 } & Freshness) {
   if (!snapshot) return <NotPaired />;
   if (!plan) return <SetupCard title="Tap to set up" hint="Map · scan or draw your home" />;
   const lights = snapshot.lights;
-  const wide = width / height >= 1.6;
-  const box = wide
-    ? { left: 9, top: 8, width: Math.round(width * 0.52), height: height - 16 }
-    : { left: 12, top: 10, width: width - 24, height: height - 10 - 58 };
-  const pad = 6;
+  const { wide, box, pad } = mapWidgetBox(width, height);
   const f = fitPlan(plan, box.width, box.height, pad);
   const X = (u: number) => box.left + f.x(u);
   const Y = (v: number) => box.top + f.y(v);
@@ -252,9 +260,9 @@ export function MapWidget({
   const markers = plan.lights.map((l) => ({ x: X(l.u), y: Y(l.v) }));
 
   return (
-    <OverlapWidget style={{ ...shell, borderColor: line(stale ? 0.07 : 0.09) }}>
+    <OverlapWidget style={{ ...shell, borderColor: line(stale ? 0.07 : 0.09), ...(outside ? { backgroundColor: '#00000000' as Hex } : {}) }}>
       <SvgWidget
-        svg={planToSvg(plan, lights, box.width, box.height, { padding: pad, ground: GROUND, stale })}
+        svg={planToSvg(plan, lights, box.width, box.height, { padding: pad, ground: GROUND, stale, outdoorOpen: outside })}
         style={{ width: box.width, height: box.height, marginLeft: box.left, marginTop: box.top }}
       />
       {showLabels &&

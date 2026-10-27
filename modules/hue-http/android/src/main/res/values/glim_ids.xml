@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The flipper under a map widget's image (in the app's override of rn_widget.xml). -->
+    <item name="glim_frames" type="id" />
+    <item name="glim_frame_image" type="id" />
+</resources>

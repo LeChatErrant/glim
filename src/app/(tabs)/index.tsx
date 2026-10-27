@@ -1,4 +1,4 @@
-import { Redirect, router, useFocusEffect } from 'expo-router';
+import { Redirect, router, useFocusEffect, useIsFocused } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,8 +9,12 @@ import { roomIsOn, type Light, type Snapshot } from '../../lib/hue/client';
 import { useHome } from '../../lib/hue/useHome';
 import { ambienceKelvin, averageBrightness, houseMood, isLit, lightLevel, lightShape, lightsOf, lightTypeLabel } from '../../lib/lights';
 import { loadHiddenLights, loadMap, saveHiddenLights, saveMapRotation, toPlan, type HomeMap } from '../../lib/map/map';
+import { useOutside, type Outside } from '../../lib/weather/source';
+import type { WeatherKind } from '../../lib/weather/sky';
 import { ConnectionBadge, Glow, IconButton, PillButton, Section, TagButton, type Connection } from '../../ui/controls';
 import { FloorPlan, Jewel, LightMarker } from '../../ui/FloorPlan';
+import { Icon, type IconName } from '../../ui/icons';
+import { OutsideBack, OutsideFront } from '../../ui/Outside';
 import { turnTo, useMapGestures } from '../../ui/MapGestures';
 import { refreshAllWidgets } from '../../widgets/task-handler';
 import { ChoiceRow } from '../../ui/scan/parts';
@@ -33,6 +37,10 @@ function MapScreen() {
   const { snapshot, connection, act } = useHome();
   const [map, setMap] = useState<HomeMap | null | undefined>(undefined);
   const [size, setSize] = useState({ w: 0, h: 0 });
+  const [screen, setScreen] = useState({ w: 0, h: 0 });
+  const [mapAt, setMapAt] = useState({ x: 0, y: 0 });
+  const focused = useIsFocused();
+  const { outside } = useOutside(focused);
   const [selected, setSelected] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ id: string; v: number } | null>(null);
   const [editing, setEditing] = useState(false);
@@ -84,8 +92,23 @@ function MapScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: color.ground }}>
-      <Ambient lights={lights} />
+    <View style={{ flex: 1, backgroundColor: color.ground }} onLayout={(e) => setScreen({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
+      {outside && plan && size.w > 0 && screen.w > 0 ? (
+        <OutsideBack
+          sky={outside.sky}
+          width={screen.w}
+          height={screen.h}
+          skyH={Math.round(screen.h * 0.34)}
+          plan={plan}
+          lights={lights}
+          mapBox={{ x: mapAt.x, y: mapAt.y, w: size.w, h: size.h }}
+          view={gestures.view}
+          twist={gestures.twist}
+          active={focused}
+        />
+      ) : (
+        <Ambient lights={lights} />
+      )}
       <View style={{ paddingTop: insets.top + 22, paddingHorizontal: 24 }}>
         <Header connection={connection} />
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 16 }}>
@@ -99,6 +122,7 @@ function MapScreen() {
             {plan && <TagButton title="Edit map" icon="edit" onPress={() => setEditing(true)} />}
           </View>
         </View>
+        {outside && <WeatherPill outside={outside} />}
       </View>
 
       {map === undefined ? null : plan ? (
@@ -107,6 +131,7 @@ function MapScreen() {
             style={{ flex: 1, marginTop: 12, marginHorizontal: 24, overflow: 'hidden' }}
             onLayout={(e) => {
               setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height });
+              setMapAt({ x: e.nativeEvent.layout.x, y: e.nativeEvent.layout.y });
               gestures.measure(e);
             }}
             {...gestures.responder.panHandlers}
@@ -120,6 +145,7 @@ function MapScreen() {
                 rooms={snapshot?.rooms ?? []}
                 width={size.w}
                 height={size.h}
+                outdoorOpen={!!outside}
                 selectedId={selected}
                 onLightPress={(id) => {
                   setSelected(id);
@@ -144,6 +170,7 @@ function MapScreen() {
               </View>
             )}
           </View>
+          {outside && <OutsideFront sky={outside.sky} active={focused} />}
           {!selectedLight && missing.length > 0 && <MissingNote lights={missing} onPlace={() => setPlacing(true)} onHide={hideMissing} />}
           {selectedLight ? (
             <LightBar
@@ -202,6 +229,41 @@ function useClock() {
     return () => clearInterval(t);
   }, []);
   return now;
+}
+
+const WEATHER_ICONS: Record<WeatherKind, IconName> = { clear: 'sun', cloudy: 'cloud', fog: 'fog', rain: 'rain', storm: 'storm', snow: 'snow' };
+
+/** "Light rain · 10°" under the headline; opens the weather settings. Marked when forced. */
+function WeatherPill({ outside }: { outside: Outside }) {
+  const { sky, label, temp, forcedWeather, forcedTime } = outside;
+  const icon = sky.weather === 'clear' && sky.day < 0.5 ? 'sleep' : WEATHER_ICONS[sky.weather];
+  const forced = forcedWeather || forcedTime;
+  return (
+    <Pressable
+      onPress={() => router.navigate('/settings')}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}${temp !== null ? `, ${temp} degrees` : ''}. Weather settings`}
+      style={({ pressed }) => ({
+        alignSelf: 'flex-start',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        height: 30,
+        marginTop: 12,
+        paddingLeft: 10,
+        paddingRight: 12,
+        borderRadius: 15,
+        backgroundColor: 'rgba(5,5,6,0.38)',
+        borderWidth: 1,
+        borderColor: hairline(0.16),
+        opacity: pressed ? 0.7 : 1,
+      })}
+    >
+      <Icon name={icon} size={15} tint={color.champagne} stroke={1.6} />
+      <Txt size={13}>{temp !== null ? `${label} · ${temp}°` : label}</Txt>
+      {forced && <Label size={8} tone="champagne">{forcedTime && !forcedWeather ? 'Time set' : 'Set by hand'}</Label>}
+    </Pressable>
+  );
 }
 
 /** Faint warm glow at the top of the screen that fades as lights turn off. */

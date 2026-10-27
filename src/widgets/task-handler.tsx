@@ -4,6 +4,8 @@ import { planAll, planToggleLight, planToggleRoom, type Planned } from '../lib/a
 import { getBridge } from '../lib/hue/bridge';
 import { cachedSnapshot, fetchSnapshot, saveCachedSnapshot, type Snapshot } from '../lib/hue/client';
 import { loadMap } from '../lib/map/map';
+import { outsideNow } from '../lib/weather/source';
+import { sendMapFrames } from './frames';
 import { forgetWidgetSettings, loadWidgetSettings, widgetPlan } from './settings';
 import { MapWidget, NotPaired, RoomsWidget } from './widgets';
 
@@ -17,7 +19,10 @@ export async function render(info: WidgetInfo, { snapshot, stale }: State) {
   if (info.widgetName === 'Map') {
     const map = await loadMap();
     const plan = widgetPlan(map, await loadWidgetSettings(info.widgetId));
-    return <MapWidget snapshot={snapshot} plan={plan} width={info.width} height={info.height} stale={stale} />;
+    const outside = await outsideNow();
+    // Frames land under the image the library is about to draw; native code waits for it.
+    sendMapFrames(info, plan, snapshot?.lights ?? [], outside).catch((e) => console.warn('Map widget frames', e));
+    return <MapWidget snapshot={snapshot} plan={plan} width={info.width} height={info.height} stale={stale} outside={!!outside} />;
   }
   return <RoomsWidget snapshot={snapshot} width={info.width} height={info.height} stale={stale} />;
 }

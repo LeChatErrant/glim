@@ -20,7 +20,12 @@
       "predictiveBackGestureEnabled": false,
       "package": "io.lechaterrant.huelab",
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ],
+      "blockedPermissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION"
       ]
     },
     "web": {
@@ -84,7 +89,13 @@
           }
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Glim uses your location once to show the weather around your home on the map."
+        }
+      ]
     ],
     "extra": {
       "cloudServer": "https://glim-server.expo.app",

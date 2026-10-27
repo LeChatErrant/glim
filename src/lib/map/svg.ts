@@ -26,6 +26,8 @@ type Opts = {
   ground?: string;
   /** Bridge unreachable: draw the last known state, muted and without glows. */
   stale?: boolean;
+  /** The weather is drawn underneath: outdoor areas let it through. */
+  outdoorOpen?: boolean;
 };
 
 /**
@@ -34,7 +36,7 @@ type Opts = {
  * hairline walls, jewel markers on top. Room names are drawn by the widget itself (real fonts).
  */
 export function planToSvg(plan: Plan, lights: Light[], width: number, height: number, opts: Opts = {}) {
-  const { padding = 14, ground = color.ground, stale = false } = opts;
+  const { padding = 14, ground = color.ground, stale = false, outdoorOpen = false } = opts;
   const f = fitPlan(plan, width, height, padding);
   const walled = walledRooms(plan);
   const zones = plan.rooms.filter((r) => r.pts.length >= 3 && !walled.includes(r));
@@ -62,7 +64,7 @@ export function planToSvg(plan: Plan, lights: Light[], width: number, height: nu
     );
   });
 
-  for (const r of walled) body.push(`<path d="${pathOf(r.pts)}" fill="${r.outdoor ? color.floorOutdoor : color.floor}"/>`);
+  for (const r of walled) body.push(`<path d="${pathOf(r.pts)}" fill="${r.outdoor ? (outdoorOpen ? 'rgba(6,6,8,0.3)' : color.floorOutdoor) : color.floor}"/>`);
 
   lit.forEach((p, i) => {
     const clip = p.room ? ` clip-path="url(#c${walled.indexOf(p.room)})"` : '';

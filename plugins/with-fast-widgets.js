@@ -19,7 +19,58 @@ module.exports = function withFastWidgets(config, { widgets }) {
           `package ${pkg}.widget;\n\nimport io.lechaterrant.huehttp.FastWidgetProvider;\n\npublic class ${name} extends FastWidgetProvider {\n}\n`,
         );
       }
+      // The library's widget layout, with a flipper underneath for the map widget's weather
+      // loop (WidgetFrames.kt). App resources override the library's file of the same name.
+      const layout = path.join(cfg.modRequest.platformProjectRoot, 'app/src/main/res/layout');
+      fs.mkdirSync(layout, { recursive: true });
+      fs.writeFileSync(path.join(layout, 'rn_widget.xml'), widgetLayout(false));
+      // The library has a dark-mode copy (the dark image shown): override it too.
+      const night = path.join(cfg.modRequest.platformProjectRoot, 'app/src/main/res/layout-night');
+      fs.mkdirSync(night, { recursive: true });
+      fs.writeFileSync(path.join(night, 'rn_widget.xml'), widgetLayout(true));
       return cfg;
     },
   ]);
 };
+
+const widgetLayout = (dark) => `<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by plugins/with-fast-widgets.js: react-native-android-widget's rn_widget.xml plus glim_frames. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ViewFlipper
+        android:id="@id/glim_frames"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:autoStart="true"
+        android:flipInterval="100" />
+
+    <ImageView
+        android:id="@+id/rn_widget_image_light"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/transparent"
+        android:scaleType="matrix"
+        android:visibility="${dark ? 'gone' : 'visible'}" />
+
+    <ImageView
+        android:id="@+id/rn_widget_image_dark"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/transparent"
+        android:scaleType="matrix"
+        android:visibility="${dark ? 'visible' : 'gone'}" />
+
+    <FrameLayout
+        android:id="@+id/rn_widget_clickable_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <FrameLayout
+        android:id="@+id/rn_widget_collection_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+</FrameLayout>
+`;

@@ -33,6 +33,8 @@ type Props = {
   onBackgroundPress?: () => void;
   /** Long-press on a light, or "Open" in its label: the light screen. */
   onLightOpen: (id: string) => void;
+  /** The outside is drawn behind: outdoor areas let it through. */
+  outdoorOpen?: boolean;
 };
 
 const MARKER = 44;
@@ -43,7 +45,7 @@ const MARKER_SIZE = 22;
  * The Nocturne floor plan: rooms as free polygons with hairline walls, each light casting a glow
  * shaped by its type and clipped to its room's walls, jewel markers on top.
  */
-export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId, onLightPress, onLightDrag, onRoomPress, onBackgroundPress, onLightOpen }: Props) {
+export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId, onLightPress, onLightDrag, onRoomPress, onBackgroundPress, onLightOpen, outdoorOpen }: Props) {
   const f = useMemo(() => fitPlan(plan, width, height, 16, view), [plan, width, height, view]);
   const walled = useMemo(() => walledRooms(plan), [plan]);
   const tween = useLightTween(lights);
@@ -83,7 +85,7 @@ export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId
         </Defs>
 
         {walled.map((r) => (
-          <Path key={r.id} d={pathOf(r.pts)} fill={r.outdoor ? color.floorOutdoor : color.floor} />
+          <Path key={r.id} d={pathOf(r.pts)} fill={r.outdoor ? (outdoorOpen ? 'rgba(6,6,8,0.3)' : color.floorOutdoor) : color.floor} />
         ))}
 
         {lit.map((p, i) => (

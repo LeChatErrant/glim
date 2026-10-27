@@ -31,6 +31,15 @@ class CloudConfigRecord : Record {
   @Field val preferCloud: Boolean = false
 }
 
+class WidgetFramesRecord : Record {
+  @Field val widgetId: Int = 0
+  @Field val frames: List<String> = emptyList()
+  @Field val intervalMs: Int = 100
+  @Field val width: Double = 0.0
+  @Field val height: Double = 0.0
+  @Field val scale: Double = 1.0
+}
+
 class HueHttpModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("HueHttp")
@@ -59,6 +68,11 @@ class HueHttpModule : Module() {
     }
 
     // Live sync of widgets with the bridge (foreground service). Started at app start, while it's allowed.
+    AsyncFunction("setWidgetFrames") { r: WidgetFramesRecord ->
+      val context = appContext.reactContext ?: return@AsyncFunction
+      WidgetFrames.set(context, r.widgetId, r.frames, r.intervalMs, r.width, r.height, r.scale)
+    }
+
     AsyncFunction("startLive") {
       appContext.reactContext?.let { LiveSync.start(it) }
     }

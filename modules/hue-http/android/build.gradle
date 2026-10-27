@@ -20,4 +20,6 @@ android {
 dependencies {
   // FastWidgetProvider extends the widget library's provider.
   implementation project(':react-native-android-widget')
+  // Renders the map widget's weather frames (same SVG library the widget library uses).
+  implementation 'com.caverock:androidsvg-aar:1.4'
 }

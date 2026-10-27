@@ -23,6 +23,11 @@ declare class HueHttpModule extends NativeModule<Events> {
    * is on the cloud route). Null clears it. Missing in builds older than cloud access.
    */
   setCloudConfig?(config: { accessToken: string; expiresAt: number; preferCloud: boolean } | null): Promise<void>;
+  /**
+   * Plays SVG frames (one loop, `intervalMs` apart) under a widget's image: rendered natively at
+   * `scale` px per dp, flipped by the launcher. Empty frames clear them. Missing in older builds.
+   */
+  setWidgetFrames?(options: { widgetId: number; frames: string[]; intervalMs: number; width: number; height: number; scale: number }): Promise<void>;
   /** Starts live sync (widgets follow the bridge's event stream) if enabled and paired. */
   startLive(): Promise<void>;
   setLiveEnabled(on: boolean): Promise<void>;

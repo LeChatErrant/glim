@@ -231,6 +231,16 @@ distinct shape for plugs. Your call.
 - **All off** action, always reachable.
 - An **Edit map** entry point.
 
+**The outside:** the screen shows the sky and the weather around the home.
+A sky band at the top (sun crossing it through the day, crescent moon,
+clouds), and the ground around the house in the colors of the hour (sunrise,
+noon, golden hour, sunset, blue hour, night), recolored by the weather: rain,
+storm with lightning, snow, fog, clouds. The far outside fades to dark, a
+band around the house stays in the weather: the home feels sheltered.
+Outdoor rooms (terrace) take the weather: wet floors mirror their lights,
+snow piles up. Everything moves. A pill under the headline says the weather
+("Rain · 10°", "Set by hand" when forced) and opens Settings.
+
 **States:** map not set up (empty state inviting to scan, with "Draw it
 myself" as secondary), loading, offline, some lights unreachable, a selection
 active.
@@ -363,6 +373,13 @@ preview** of the widget at the top of the configuration screen.
 - **Away from home:** which route requests take now (At home: straight to
   the bridge / Away: through Hue's cloud / Offline), the Hue account
   (connected since, tokens renewed when), Connect / Disconnect.
+- **Outside:** weather on the map on/off; live weather at home (where the
+  home is, taken once from the phone, rounded to ~1 km; Update; Forget
+  location; "Weather data by Open-Meteo.com").
+- **Weather control:** force a weather (Live, Clear, Cloudy, Fog, Rain,
+  Storm, Snow) and a time of day (Live, A day in a minute, Sunrise, Morning,
+  Noon, Golden hour, Sunset, Blue hour, Night, or a slider), for trying every
+  sky on the map and widgets. Back to live.
 - **Home location:** used by Arriving home (map picker, radius).
 - **Map:** rescan, edit, reset.
 - **Lights and rooms:** rename (writes to the bridge), hide from the app.
@@ -390,7 +407,9 @@ columns × rows). Design each size, in dark and light, plus states.
    their current color and state. **Tap a light to toggle it**, tap inside a
    room to toggle the room. Light tap targets at least ~40 dp; when the plan
    is too dense at small sizes, the widget falls back to room-level taps.
-   Optional strip of 2–3 mood buttons along the bottom.
+   Optional strip of 2–3 mood buttons along the bottom. It shows the outside
+   like the Map tab (sky, weather around the house), animated by the launcher
+   from a loop of frames.
 
 **Widget states for every type:** normal, all off, partially on, updating
 (just tapped, waiting for confirmation), a light unreachable, offline (last

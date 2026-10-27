@@ -169,6 +169,27 @@ but never in a way that would need a rewrite to sell it later (see
   and the Hue account (connected since, last token renewal), Connect /
   Disconnect. Hue's Remote API exposes no account name, so the app can't
   say "connected as …".
+- 2026-10-27: **The outside on the map** (canvas
+  <https://claude.ai/artifact/MKhL1BqDP4Peeh95xcXX2v>, "Glim weather map"):
+  a sky band at the top of the Map tab (sun crossing it, moon, clouds) and the
+  weather around the house, cozy and lofi. Ground colors follow the hour
+  (peach and rose sunrise, sunny sage noon, amber then plum sunset, indigo
+  night), on a clock stretched to today's real sunrise and sunset; the
+  weather recolors them (grey, rain-teal, storm-violet, snow-blue, fog-pale).
+  The far outside fades to dark (pale grey in fog), a band around the house
+  stays, so the home feels sheltered. Outdoor rooms take the weather: wet
+  floors mirror their lights, rain glints in their pools, snow piles up and
+  glitters. Everything moves (rain, snow, fog, clouds, ripples, fireflies,
+  golden dust, lightning). Live weather: Open-Meteo (no key, CC BY 4.0,
+  credited in Settings) at the home's location, taken once with coarse
+  location only, rounded to ~1 km, per bridge. Settings → Weather control
+  forces a weather and/or a time of day (moments, a slider, "a day in a
+  minute") for testing and demos; the Map tab's weather pill says when it's
+  set by hand. Widgets animate too: JS builds a loop of SVG frames,
+  `WidgetFrames.kt` renders them and puts them in a ViewFlipper under the
+  widget's image (the launcher flips them; the app overrides the library's
+  `rn_widget.xml`, written by `plugins/with-fast-widgets.js`), re-sent after
+  every widget draw since a full redraw drops them.
 
 ## Vocabulary
 
@@ -251,7 +272,13 @@ point.**
   rooms) and the widget SVG. `src/lib/lights.ts`: light shapes from Hue
   archetypes, labels, headline mood. `src/widgets/`: home-screen widgets and
   their task handler (registered in `index.ts`), plus the Map widget's
-  configuration screen (`MapWidgetConfig.tsx`, per-widget `settings.ts`).
+  configuration screen (`MapWidgetConfig.tsx`, per-widget `settings.ts`) and
+  its weather frames (`frames.ts`).
+- `src/lib/weather/`: the outside. `sky.ts` (colors of the hour, recolored by
+  the weather; pure), `scene.ts` (SVG pieces shared by the app and the
+  widget, seamless particle tiles, widget frame loops), `source.ts` (Open-Meteo,
+  home location, forced weather/time, `useOutside()`). `src/ui/Outside.tsx`
+  draws it behind the Map tab (static SVG + Animated layers).
 - `src/lib/hue/transport.ts` picks the route (bridge or Hue's cloud) for every
   CLIP v2 request; `src/lib/hue/cloud.ts` holds the Hue account (sign-in,
   tokens, Remote API requests). `server/`: separate Expo project, API routes
