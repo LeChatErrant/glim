@@ -231,12 +231,12 @@ distinct shape for plugs. Your call.
 - **All off** action, always reachable.
 - An **Edit map** entry point.
 
-**The outside:** the screen shows the sky and the weather around the home.
-A sky band at the top (sun crossing it through the day, crescent moon,
-clouds), and the ground around the house in the colors of the hour (sunrise,
-noon, golden hour, sunset, blue hour, night), recolored by the weather: rain,
-storm with lightning, snow, fog, clouds. The far outside fades to dark, a
-band around the house stays in the weather: the home feels sheltered.
+**The outside:** we only see a few steps around the house, as if the rest
+were night: a band hugging the rooms' outlines, then the screen's black. The
+band carries the ambience of the hour rather than a realistic view (no sky,
+sun or moon): the sky's colors all around the house (peach at sunrise, blue
+at noon, orange at golden hour, navy at night), recolored by the weather:
+rain, storm with lightning, snow, fog, clouds. The home feels sheltered.
 Outdoor rooms (terrace) are a paved place of their own where the weather
 lands instead of passing by: splashes, eave drips and puddles in the rain,
 settling snow, low mist, leaves on grey days, moths around a lit lamp. Everything moves. A pill under the headline says the weather
@@ -374,7 +374,8 @@ preview** of the widget at the top of the configuration screen.
 - **Away from home:** which route requests take now (At home: straight to
   the bridge / Away: through Hue's cloud / Offline), the Hue account
   (connected since, tokens renewed when), Connect / Disconnect.
-- **Outside:** weather on the map on/off; live weather at home (where the
+- **Outside:** weather on the map on/off (off: the plain black map, and the
+  rest of this section and Weather control hide); live weather at home (where the
   home is, taken once from the phone, rounded to ~1 km; Update; Forget
   location; "Weather data by Open-Meteo.com").
 - **Weather control:** force a weather (Live, Clear, Cloudy, Fog, Rain,

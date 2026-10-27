@@ -93,12 +93,11 @@ function MapScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: color.ground }} onLayout={(e) => setScreen({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
-      {outside && plan && size.w > 0 && screen.w > 0 ? (
+      {outside && plan && size.w > 0 && screen.w > 0 && (
         <OutsideBack
           sky={outside.sky}
           width={screen.w}
           height={screen.h}
-          skyH={Math.round(screen.h * 0.34)}
           plan={plan}
           lights={lights}
           mapBox={{ x: mapAt.x, y: mapAt.y, w: size.w, h: size.h }}
@@ -106,9 +105,8 @@ function MapScreen() {
           twist={gestures.twist}
           active={focused}
         />
-      ) : (
-        <Ambient lights={lights} />
       )}
+      <Ambient lights={lights} />
       <View style={{ paddingTop: insets.top + 22, paddingHorizontal: 24 }}>
         <Header connection={connection} />
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 16 }}>

@@ -6,33 +6,32 @@ import type { Light } from '../lib/hue/client';
 import { fitPlan, type Plan, type PlanView } from '../lib/map/map';
 import {
   cloudShadowsSvg,
+  darknessSvg,
   fireflies,
   fogSvg,
   groundSvg,
   houseGeom,
+  glossSvg,
   houseSvg,
   mistSvg,
   outdoorAreas,
   particleLayers,
   puddlesSvg,
   ripples,
-  skyCloudsSvg,
-  skySvg,
   sparklePoints,
-  stars,
   svg,
   svgBox,
   terraceFx,
-  vignetteSvg,
   type Box as AreaBox,
   type HouseGeom,
   type ParticleLayer,
   type Pt,
 } from '../lib/weather/scene';
 import { rgba, type Sky } from '../lib/weather/sky';
+import { color } from './theme';
 
-// The outside around the map (sky at the top, weather around the house, the dark beyond),
-// drawn behind the Map tab. react-native-svg draws each SVG into a bitmap the size of its view,
+// The outside around the map (the light of the hour and the weather in a band around the house,
+// the dark beyond), drawn behind the Map tab. react-native-svg draws each SVG into a bitmap the size of its view,
 // so SVG layers stay screen-sized and everything that moves is made of plain views, moved by
 // Animated on the native driver.
 
@@ -43,8 +42,6 @@ type Props = {
   /** The whole screen. */
   width: number;
   height: number;
-  /** Height of the sky band at the top. */
-  skyH: number;
   plan: Plan;
   lights: Light[];
   /** Where the map sits on screen, and how it is zoomed, panned and twisted right now. */
@@ -57,28 +54,35 @@ type Props = {
 
 const PAD = 16;
 const u = 1;
+/** How far from the walls we still see, in dp. */
+const REACH = 46;
+/** Past the screen's edges, so panning and turning the map don't uncover it. */
+const EXTEND = 200;
 const FILL = { position: 'absolute' as const, left: 0, top: 0, right: 0, bottom: 0 };
 
-export function OutsideBack({ sky, width, height, skyH, plan, lights, mapBox, view, twist = 0, active }: Props) {
+export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, twist = 0, active }: Props) {
   // Screen geometry at the plain fit; the house layer then follows zoom, pan and twist.
   const geom = useMemo(() => offset(houseGeom(plan, fitPlan(plan, mapBox.w, mapBox.h, PAD), lights), mapBox.x, mapBox.y), [plan, mapBox, lights]);
 
   const ground = useMemo(
-    () => svg(width, height, groundSvg(sky, width, height, geom, skyH, u) + cloudShadowsSvg(sky, width, height, u) + fogSvg(sky, width, height, u, 0)),
-    [sky, width, height, geom, skyH],
+    () => svg(width, height, groundSvg(sky, width, height, geom, u) + cloudShadowsSvg(sky, width, height, u) + fogSvg(sky, width, height, u, 0)),
+    [sky, width, height, geom],
   );
-  const house = useMemo(() => svg(width, height, houseSvg(sky, width, geom, skyH, u, false) + vignetteSvg(sky, width, height, geom, skyH, u, 200, 40)), [sky, width, height, geom, skyH]);
-  // Taller than the band, so the sun's halo spills over the ground below instead of being cut.
-  const skyBoxH = Math.min(height, skyH + 150 * u);
-  const skyBand = useMemo(() => (skyH ? svg(width, skyBoxH, skySvg(sky, width, skyH, u)) : ''), [sky, width, skyH, skyBoxH]);
-  const clouds = useMemo(() => skyCloudsSvg(sky, width + 60, skyH, u), [sky, width, skyH]);
+  const area = { x: -EXTEND, y: -EXTEND, w: width + 2 * EXTEND, h: height + 2 * EXTEND };
+  const house = useMemo(
+    () => svg(width, height, houseSvg(sky, width, geom, u, false) + darknessSvg(geom, REACH * u, 32, area, color.ground)),
+    [sky, width, height, geom], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const fogHigh = useMemo(() => fogSvg(sky, width, height, u, 1), [sky, width, height]);
-  const starry = useMemo(() => stars(sky, width, height, u), [sky, width, height]);
   const snowy = sky.weather === 'snow';
   const areas = useMemo(() => outdoorAreas(geom, u), [geom]);
   const fxKind = kindOf(sky);
   const fx = useMemo(() => terraceFx(sky, areas, u), [fxKind, areas]); // eslint-disable-line react-hooks/exhaustive-deps
-  const puddles = useMemo(() => areas.map((a, i) => ({ box: grow(a.box, 30), body: puddlesSvg(sky, a, u, i) })).filter((p) => p.body), [sky, areas]);
+  // Puddles and the wet gloss share one layer drawn in the area's own shape, pulsing gently.
+  const puddles = useMemo(
+    () => areas.map((a, i) => ({ box: grow(a.box, 30), body: puddlesSvg(sky, a, u, i) + (sky.wet ? glossSvg(a, a.box.x + a.box.w * 0.62, u, i) : '') })).filter((p) => p.body),
+    [sky, areas],
+  );
   const mist = useMemo(() => areas.map((a, i) => ({ box: grow(a.box, 50), body: mistSvg(sky, a, u, i) })).filter((p) => p.body), [sky, areas]);
   const glitter = useMemo(() => (snowy ? geom.outdoor.map((pts) => [sparklePoints(pts, u, 0), sparklePoints(pts, u, 1)]) : []), [snowy, geom]);
 
@@ -89,7 +93,8 @@ export function OutsideBack({ sky, width, height, skyH, plan, lights, mapBox, vi
   const nightOut = sky.night > 0.6;
   const flies = useMemo(() => fireflies(sky, geom, u), [sky.weather, nightOut, geom]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The house layer moves like the map: about the map's center, twist, then pan, then zoom.
+  // The ground and the house layer move like the map: about its center, twist, then pan, then
+  // zoom. What they uncover at the screen's edges is the screen's black, like the dark beyond.
   const follow = {
     ...FILL,
     transformOrigin: `${mapBox.x + mapBox.w / 2}px ${mapBox.y + mapBox.h / 2}px 0px`,
@@ -98,10 +103,17 @@ export function OutsideBack({ sky, width, height, skyH, plan, lights, mapBox, vi
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <SvgXml xml={ground} width={width} height={height} style={StyleSheet.absoluteFill} />
+      <View style={follow}>
+        <SvgXml xml={ground} width={width} height={height} style={StyleSheet.absoluteFill} />
+      </View>
       {layers.map((l, i) => (
         <Particles key={`${kind}-${i}`} layer={l} width={width} height={height} active={active} />
       ))}
+      {fogHigh !== '' && (
+        <Drift active={active} range={-16} ms={26000} style={FILL}>
+          <SvgXml xml={svg(width, height, fogHigh)} width={width} height={height} />
+        </Drift>
+      )}
       <View style={follow}>
         <SvgXml xml={house} width={width} height={height} style={StyleSheet.absoluteFill} />
         {glitter.map(([a, b], i) => (
@@ -117,7 +129,6 @@ export function OutsideBack({ sky, width, height, skyH, plan, lights, mapBox, vi
             <SvgXml xml={svgBox(p.box, p.body)} width={p.box.w} height={p.box.h} />
           </Pulse>
         ))}
-        {sky.wet && areas.map((a, i) => <Gloss key={`g${i}`} box={a.box} active={active} />)}
         {mist.map((p, i) => (
           <Pulse key={`m${i}`} active={active} ms={9000} min={0.55} box={p.box}>
             <SvgXml xml={svgBox(p.box, p.body)} width={p.box.w} height={p.box.h} />
@@ -143,25 +154,6 @@ export function OutsideBack({ sky, width, height, skyH, plan, lights, mapBox, vi
           <Ripple key={`${kind}-${i}`} x={r.x} y={r.y} ms={r.ms} phase={r.phase} active={active} />
         ))}
       </View>
-      {skyBand !== '' && <SvgXml xml={skyBand} width={width} height={skyBoxH} style={{ position: 'absolute', left: 0, top: 0 }} />}
-      {clouds !== '' && (
-        <Drift active={active} range={18} ms={22000} style={{ left: -30, width: width + 60, height: skyH }}>
-          <SvgXml xml={svg(width + 60, skyH, clouds)} width={width + 60} height={skyH} />
-        </Drift>
-      )}
-      {fogHigh !== '' && (
-        <Drift active={active} range={-16} ms={26000} style={FILL}>
-          <SvgXml xml={svg(width, height, fogHigh)} width={width} height={height} />
-        </Drift>
-      )}
-      {starry.length > 0 && (
-        <View style={StyleSheet.absoluteFill}>
-          <Stars list={starry.filter((s) => s.group === 0)} />
-          <Twinkle active={active} ms={2600}>
-            <Stars list={starry.filter((s) => s.group === 1)} />
-          </Twinkle>
-        </View>
-      )}
       {flies.length > 0 && (
         <View style={follow}>
           {flies.map((f, i) => (
@@ -200,31 +192,6 @@ function Pulse({ active, ms, min, box, children }: { active: boolean; ms: number
     1,
   );
   return <Animated.View style={{ position: 'absolute', left: box.x, top: box.y, width: box.w, height: box.h, opacity: t }}>{children}</Animated.View>;
-}
-
-/** A slow gloss sliding across wet paving. */
-function Gloss({ box, active }: { box: AreaBox; active: boolean }) {
-  const t = useLoop(active, (v) =>
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(v, { toValue: 1, duration: 3500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(v, { toValue: 0, duration: 3500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ]),
-    ),
-  );
-  const band = Math.max(40, box.w * 0.5);
-  const xml = useMemo(
-    () =>
-      svg(band, box.h, `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="0.18"><stop offset="0" stop-color="rgb(170,196,240)" stop-opacity="0"/><stop offset="0.5" stop-color="rgb(170,196,240)" stop-opacity="0.16"/><stop offset="1" stop-color="rgb(170,196,240)" stop-opacity="0"/></linearGradient></defs><rect x="0" y="0" width="${band}" height="${box.h}" fill="url(#g)"/>`),
-    [band, box.h],
-  );
-  return (
-    <View style={{ position: 'absolute', left: box.x, top: box.y, width: box.w, height: box.h, overflow: 'hidden' }}>
-      <Animated.View style={{ width: band, height: box.h, transform: [{ translateX: t.interpolate({ inputRange: [0, 1], outputRange: [-band / 2, box.w - band / 2] }) }] }}>
-        <SvgXml xml={xml} width={band} height={box.h} />
-      </Animated.View>
-    </View>
-  );
 }
 
 /** A loop starting part-way through (`phase`), so neighbours don't move together. */
@@ -477,31 +444,6 @@ function Twinkle({ active, ms, children }: { active: boolean; ms: number; childr
     1,
   );
   return <Animated.View style={[StyleSheet.absoluteFill, { opacity: t }]}>{children}</Animated.View>;
-}
-
-function Stars({ list }: { list: ReturnType<typeof stars> }) {
-  return (
-    <>
-      {list.map((s, i) => {
-        const d = s.big ? 2.2 : 1.2;
-        return (
-          <View
-            key={i}
-            style={{
-              position: 'absolute',
-              left: s.x - d / 2,
-              top: s.y - d / 2,
-              width: d,
-              height: d,
-              borderRadius: d / 2,
-              backgroundColor: rgba([246, 240, 228], s.alpha),
-              boxShadow: s.big ? `0 0 6px 1px ${rgba([200, 210, 255], s.alpha * 0.6)}` : undefined,
-            }}
-          />
-        );
-      })}
-    </>
-  );
 }
 
 function Dots({ points }: { points: Pt[] }) {

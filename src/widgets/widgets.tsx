@@ -12,7 +12,7 @@ import { color, font } from '../ui/theme';
 // The only saturated colors are the lights. Canvas: "Widgets & tiles" page, WidgetCatalog board.
 type Hex = `#${string}`;
 type Rgba = `rgba(${number}, ${number}, ${number}, ${number})`;
-const GROUND: Hex = '#070708';
+export const GROUND: Hex = '#070708';
 const IVORY = color.ivory as Hex;
 const SECONDARY = color.secondary as Hex;
 const MUTED = color.muted as Hex;

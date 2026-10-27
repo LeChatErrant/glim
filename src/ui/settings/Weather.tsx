@@ -70,11 +70,11 @@ export function Weather() {
   return (
     <>
       <Section title="Outside">
-        <Row title="Weather on the map" sub="The sky and the weather around your home, in the app and on the map widget.">
+        <Row title="Weather on the map" sub="The weather and the light of the hour around your home, in the app and on the map widget. Off: the map on plain black.">
           <Switch on={settings.outside} onToggle={() => set({ outside: !settings.outside })} label="Weather on the map" />
         </Row>
-        <Rule />
-        {home ? (
+        {settings.outside && <Rule />}
+        {!settings.outside ? null : home ? (
           <Row
             title={live ? `${weatherLabel(live.kind, live.isDay, live.code)} · ${live.temp}°` : 'Live weather'}
             sub={live ? `At home, updated ${clock(live.at)}` : 'Fetching the weather at home…'}
@@ -89,60 +89,64 @@ export function Weather() {
             <PillButton title={locating ? 'Locating…' : 'Use this phone’s location'} icon="location" kind="primary" height={44} disabled={locating} onPress={locate} style={{ alignSelf: 'flex-start' }} />
           </View>
         )}
-        {note && <Txt size={13} tone="champagne">{note}</Txt>}
-        <Txt size={12} tone="muted">
-          Saved for this home, rounded to about 1 km. Weather data by Open-Meteo.com (CC BY 4.0).
-          {home ? ' ' : ''}
-          {home && (
-            <Text
-              onPress={async () => {
-                await forgetHomeLocation();
-                setHome(null);
-                refreshAllWidgets().catch(() => null);
-              }}
-              style={{ color: color.secondary, textDecorationLine: 'underline' }}
-            >
-              Forget location
-            </Text>
-          )}
-        </Txt>
+        {settings.outside && note && <Txt size={13} tone="champagne">{note}</Txt>}
+        {settings.outside && (
+          <Txt size={12} tone="muted">
+            Saved for this home, rounded to about 1 km. Weather data by Open-Meteo.com (CC BY 4.0).
+            {home ? ' ' : ''}
+            {home && (
+              <Text
+                onPress={async () => {
+                  await forgetHomeLocation();
+                  setHome(null);
+                  refreshAllWidgets().catch(() => null);
+                }}
+                style={{ color: color.secondary, textDecorationLine: 'underline' }}
+              >
+                Forget location
+              </Text>
+            )}
+          </Txt>
+        )}
       </Section>
 
-      <Section title="Weather control" right={forced ? <TagButton title="Back to live" icon="undo" onPress={() => set({ weather: 'live', time: 'live' })} /> : undefined}>
-        <Txt size={13} tone="muted">
-          Try any sky on the map and the widgets. Set by hand until you go back to live.
-        </Txt>
-        <Label style={{ marginTop: 6 }}>Weather</Label>
-        <Chips>
-          <Chip label="Live" on={settings.weather === 'live'} onPress={() => set({ weather: 'live' })} />
-          {WEATHER_KINDS.map((k) => (
-            <Chip key={k} label={KIND_LABEL[k]} on={settings.weather === k} onPress={() => set({ weather: k })} />
-          ))}
-        </Chips>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 10 }}>
-          <Label>Time of day</Label>
-          <Text style={{ fontFamily: font.display, fontSize: 24, color: color.ivory, fontVariant: ['tabular-nums'] }}>
-            {settings.time === 'cycle' ? 'A day a minute' : hhmm(hour)}
-          </Text>
-        </View>
-        <Chips>
-          <Chip label="Live" on={settings.time === 'live'} onPress={() => set({ time: 'live' })} />
-          <Chip label="A day in a minute" on={settings.time === 'cycle'} onPress={() => set({ time: 'cycle' })} />
-          {MOMENTS.map((m) => {
-            const h = Math.round(clockHourFor(m.design, sun) * 4) / 4;
-            return <Chip key={m.label} label={m.label} on={settings.time === h} onPress={() => set({ time: h })} />;
-          })}
-        </Chips>
-        <Slider
-          value={Math.round(hour * 4)}
-          min={0}
-          max={95}
-          tint={color.champagne}
-          ground={color.ground}
-          label="Time of day"
-          onCommit={(q) => set({ time: q / 4 })}
-        />
-      </Section>
+      {settings.outside && (
+        <Section title="Weather control" right={forced ? <TagButton title="Back to live" icon="undo" onPress={() => set({ weather: 'live', time: 'live' })} /> : undefined}>
+          <Txt size={13} tone="muted">
+            Try any sky on the map and the widgets. Set by hand until you go back to live.
+          </Txt>
+          <Label style={{ marginTop: 6 }}>Weather</Label>
+          <Chips>
+            <Chip label="Live" on={settings.weather === 'live'} onPress={() => set({ weather: 'live' })} />
+            {WEATHER_KINDS.map((k) => (
+              <Chip key={k} label={KIND_LABEL[k]} on={settings.weather === k} onPress={() => set({ weather: k })} />
+            ))}
+          </Chips>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 10 }}>
+            <Label>Time of day</Label>
+            <Text style={{ fontFamily: font.display, fontSize: 24, color: color.ivory, fontVariant: ['tabular-nums'] }}>
+              {settings.time === 'cycle' ? 'A day a minute' : hhmm(hour)}
+            </Text>
+          </View>
+          <Chips>
+            <Chip label="Live" on={settings.time === 'live'} onPress={() => set({ time: 'live' })} />
+            <Chip label="A day in a minute" on={settings.time === 'cycle'} onPress={() => set({ time: 'cycle' })} />
+            {MOMENTS.map((m) => {
+              const h = Math.round(clockHourFor(m.design, sun) * 4) / 4;
+              return <Chip key={m.label} label={m.label} on={settings.time === h} onPress={() => set({ time: h })} />;
+            })}
+          </Chips>
+          <Slider
+            value={Math.round(hour * 4)}
+            min={0}
+            max={95}
+            tint={color.champagne}
+            ground={color.ground}
+            label="Time of day"
+            onCommit={(q) => set({ time: q / 4 })}
+          />
+        </Section>
+      )}
 
     </>
   );

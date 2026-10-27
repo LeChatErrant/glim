@@ -196,6 +196,14 @@ but never in a way that would need a rewrite to sell it later (see
   widget's image (the launcher flips them; the app overrides the library's
   `rn_widget.xml`, written by `plugins/with-fast-widgets.js`), re-sent after
   every widget draw since a full redraw drops them.
+  2026-10-27, later: **we only see around the house.** The outside beyond a
+  band hugging the rooms' outlines (46 dp in the app, 24 dp on the widget) is
+  the screen's own black, as if blind past a few steps from the walls
+  (`darknessSvg`). No sky band, sun, moon or stars any more: the band carries
+  the *ambience* of the hour, not a realistic view (the sky's colors all
+  around: blue at noon, orange at golden hour, navy at night; duller under
+  clouds), and the weather happens inside it. Settings → "Weather on the map"
+  off brings back the plain black map and hides location and Weather control.
 
 ## Vocabulary
 

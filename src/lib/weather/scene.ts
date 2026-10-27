@@ -87,37 +87,35 @@ export function svg(w: number, h: number, body: string) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${n(w)}" height="${n(h)}" viewBox="0 0 ${n(w)} ${n(h)}">${body}</svg>`;
 }
 
-/** Where the sun and moon are: across the sky band from left (sunrise) to right (sunset). */
-export function lights(sky: Sky, W: number, skyH: number, u: number) {
-  const s = Math.sin(Math.PI * sky.arc);
-  return {
-    sun: { x: W * (0.12 + 0.76 * sky.arc), y: skyH ? skyH * (0.86 - 0.6 * s) : -70 * u - 50 * u * s },
-    moon: { x: W * 0.78, y: skyH ? skyH * 0.3 : -60 * u },
-  };
+/** Where the sun is, above the map: it only sets which way the house's shadow falls. */
+function sunAt(sky: Sky, W: number, u: number) {
+  return { x: W * (0.12 + 0.76 * sky.arc), y: -70 * u - 50 * u * Math.sin(Math.PI * sky.arc) };
 }
 
-/** Far ground, the ground near the house, the sun's and the moon's light. */
-export function groundSvg(sky: Sky, W: number, H: number, geom: HouseGeom, skyH: number, u: number) {
-  const { sun, moon } = lights(sky, W, skyH, u);
-  const R = Math.max(W, H) * 1.15;
-  const c = geom.box ? { x: geom.box.x + geom.box.w / 2, y: geom.box.y + geom.box.h / 2 } : { x: W / 2, y: H / 2 };
-  const nearR = geom.box ? Math.max(geom.box.w, geom.box.h) * 0.85 + 40 * u : Math.max(W, H) * 0.5;
-  const moonA = 0.18 * sky.night * (sky.weather === 'clear' ? 1 : sky.weather === 'cloudy' ? 0.2 : 0);
-  const defs =
-    radial('gn', c.x, c.y, nearR, [[0, rgba(sky.near, 1)], [0.5, rgba(sky.near, 0.7)], [1, rgba(sky.near, 0)]]) +
-    radial('gs', sun.x, sun.y, R, [[0, rgba(sky.wash, sky.washA)], [0.45, rgba(sky.wash, sky.washA * 0.3)], [1, rgba(sky.wash, 0)]]) +
-    radial('gm', moon.x, moon.y, R * 0.8, [[0, rgba([150, 170, 235], moonA)], [1, rgba([150, 170, 235], 0)]]);
+const dim = (c: RGB, k: number): RGB => [c[0] * k, c[1] * k, c[2] * k];
+
+/**
+ * The ground around the house takes the light of the hour, not a real view: the sky's color all
+ * around (blue at noon, orange at golden hour, navy at night), warmer near the walls, duller
+ * under clouds. The darkness beyond is drawn on top (darknessSvg).
+ */
+export function groundSvg(sky: Sky, W: number, H: number, geom: HouseGeom, u: number) {
+  const b = geom.box ?? { x: 0, y: 0, w: W, h: H };
+  const k = 0.72 * (1 - 0.3 * sky.cloud);
+  const near = dim(mix(sky.mid, sky.low, 0.25), k);
+  const far = dim(mix(sky.mid, sky.top, 0.45), k * 0.9);
+  const R = Math.max(b.w, b.h) * 0.6 + 45 * u;
   const all = `x="${n(-W)}" y="${n(-H)}" width="${n(W * 3)}" height="${n(H * 3)}"`;
-  return `<defs>${defs}</defs><rect ${all} fill="${rgba(sky.far)}"/><rect ${all} fill="url(#gn)"/><rect ${all} fill="url(#gs)"/><rect ${all} fill="url(#gm)"/>`;
+  return `<defs>${radial('gn', b.x + b.w / 2, b.y + b.h / 2, R, [[0, rgba(near)], [0.55, rgba(mix(near, far, 0.5))], [1, rgba(far)]])}</defs><rect ${all} fill="url(#gn)"/>`;
 }
 
 /** Around the house: its soft shadow by day, the warm light it leaks at night, a snowy rim. */
 /** `origin`: where `geom`'s (0, 0) sits on the screen the sky is laid out on (W wide). */
-export function houseSvg(sky: Sky, W: number, geom: HouseGeom, skyH: number, u: number, sparkle = true, origin: Pt = { x: 0, y: 0 }) {
+export function houseSvg(sky: Sky, W: number, geom: HouseGeom, u: number, sparkle = true, origin: Pt = { x: 0, y: 0 }) {
   const out: string[] = [];
   const box = geom.box;
   if (!box) return '';
-  const seen = lights(sky, W, skyH, u).sun;
+  const seen = sunAt(sky, W, u);
   const sun = { x: seen.x - origin.x, y: seen.y - origin.y };
   const shA = sky.day * (1 - sky.cloud * 0.85) * 0.75;
   if (shA > 0.03 && sky.alt > 1) {
@@ -125,7 +123,7 @@ export function houseSvg(sky: Sky, W: number, geom: HouseGeom, skyH: number, u: 
     const cx = box.x + box.w / 2;
     const cy = box.y + box.h / 2;
     const d = Math.hypot(cx - sun.x, cy - sun.y) || 1;
-    const sc = rgba(mix([26, 22, 58], sky.far, 0.2));
+    const sc = rgba(mix([26, 22, 58], sky.top, 0.15));
     // Copies smeared along the light, fading out: a soft shadow without blur.
     for (let i = 0; i < 9; i++) {
       const k = 0.2 + i * 0.12;
@@ -345,7 +343,7 @@ type Loop = { ms: number; phase: number };
 export type TerraceFx = {
   /** Drops landing: a bright point, then a crown opening. */
   splashes: (Pt & Loop)[];
-  /** Drops gathering at the eave, falling, each landing with a ring. */
+  /** Drops gathering at the eave, falling (along `nx`, `ny`: down the screen), each landing with a ring. */
   drips: (Pt & Loop & { nx: number; ny: number })[];
   /** Flakes slowing down, settling and melting into the snow. */
   settle: (Pt & Loop)[];
@@ -370,7 +368,10 @@ export function terraceFx(sky: Sky, areas: OutdoorArea[], u: number): TerraceFx 
         const count = Math.max(1, Math.round(len / (36 * u)));
         for (let k = 0; k < count; k++) {
           const t = (k + 0.5) / count + (r() - 0.5) * (0.3 / count);
-          fx.drips.push({ x: e.a.x + (e.b.x - e.a.x) * t + e.nx * u, y: e.a.y + (e.b.y - e.a.y) * t + e.ny * u, nx: e.nx, ny: e.ny, ms: (storm ? 1100 : 1800) + 800 * r(), phase: r() });
+          // Drops fall down the screen like the rain, whichever side of the area the eave is on:
+          // they start far enough in to land on the paving.
+          const inset = (e.ny < -0.5 ? 14 : 4) * u;
+          fx.drips.push({ x: e.a.x + (e.b.x - e.a.x) * t + e.nx * inset, y: e.a.y + (e.b.y - e.a.y) * t + e.ny * inset, nx: 0, ny: 1, ms: (storm ? 1100 : 1800) + 800 * r(), phase: r() });
         }
       }
     }
@@ -424,95 +425,26 @@ function inside(p: Pt, pts: Pt[]) {
   return c;
 }
 
-/** The far outside fades into the dark (into pale grey in fog); a band around the house stays. */
-/** Under the sky band the dark lifts and takes the horizon's color, so the sky meets lit ground. */
-/** `rings`: more steps give a smoother edge (the app can afford it; widget frames use fewer). */
-export function vignetteSvg(sky: Sky, W: number, H: number, geom: HouseGeom, skyH: number, u: number, extend = 0, rings = 18) {
-  const box = geom.box;
-  if (!box) return '';
-  const M = 44 * u;
-  const A = sky.weather === 'fog' ? 0.82 : 0.9;
-  const x0 = -extend;
-  const y0 = -extend;
-  const x1 = W + extend;
-  const y1 = H + extend;
+/**
+ * The dark all around: we only see the band near the house, as if night fell a few steps from
+ * the walls, whatever the hour. It follows the rooms' outlines (not a box), fading over `reach`
+ * px: a mask of the outlines stroked wider and wider, each stroke's opacity worked out so the
+ * dark grows smoothly with the distance. `ink` is the screen's own black.
+ */
+export function darknessSvg(geom: HouseGeom, reach: number, steps: number, area: Box, ink: string) {
+  const shapes = [...geom.indoor, ...geom.outdoor];
+  if (!shapes.length) return '';
+  const d = shapes.map(poly).join('');
+  const dark = (x: number) => clamp(x / reach, 0, 1) ** 1.25;
   const out: string[] = [];
-  for (let i = 0; i < rings; i++) {
-    // Ease the steps: dense near the house, wider further out.
-    const t = i / (rings - 1);
-    const m = M * (0.3 + 1.9 * t * t * (3 - 2 * t) * 0.5 + 0.95 * t);
-    const x = box.x - m;
-    const y = box.y - m;
-    const w = box.w + 2 * m;
-    const h = box.h + 2 * m;
-    const r = Math.min(30 * u + m * 0.6, w / 2, h / 2);
-    const hole =
-      `M${n(x + r)},${n(y)}H${n(x + w - r)}A${n(r)},${n(r)} 0 0 1 ${n(x + w)},${n(y + r)}V${n(y + h - r)}A${n(r)},${n(r)} 0 0 1 ${n(x + w - r)},${n(y + h)}` +
-      `H${n(x + r)}A${n(r)},${n(r)} 0 0 1 ${n(x)},${n(y + h - r)}V${n(y + r)}A${n(r)},${n(r)} 0 0 1 ${n(x + r)},${n(y)}Z`;
-    out.push(`<path fill-rule="evenodd" d="M${n(x0)},${n(y0)}H${n(x1)}V${n(y1)}H${n(x0)}Z${hole}" fill="${rgba(sky.vig, A / rings)}"/>`);
+  let beyond = 1;
+  for (let i = steps; i >= 1; i--) {
+    const want = dark(((i - 0.5) / steps) * reach);
+    out.push(`<g opacity="${(1 - want / beyond).toFixed(3)}"><path d="${d}" fill="#000" stroke="#000" stroke-width="${n((2 * reach * i) / steps)}" stroke-linejoin="round"/></g>`);
+    beyond = want;
   }
-  if (!skyH) return out.join('');
-  // One smooth mask over all the rings: fading each faint ring instead rounds into visible steps.
-  const lit = Math.max(sky.day, 0.8 * sky.warm * (1 - sky.night));
-  const keep = 1 - (0.92 * lit + 0.4 * (1 - lit));
-  const fade = `<linearGradient id="vf" gradientUnits="userSpaceOnUse" x1="0" y1="${n(skyH * 0.5)}" x2="0" y2="${n(skyH * 1.4 + 120 * u)}">${stops([
-    [0, `rgba(255,255,255,${keep.toFixed(3)})`],
-    [0.45, `rgba(255,255,255,${(keep + (1 - keep) * 0.25).toFixed(3)})`],
-    [1, 'rgba(255,255,255,1)'],
-  ])}</linearGradient>`;
-  const area = `x="${n(x0)}" y="${n(y0)}" width="${n(x1 - x0)}" height="${n(y1 - y0)}"`;
-  return `<defs>${fade}<mask id="vm" maskUnits="userSpaceOnUse" ${area}><rect ${area} fill="url(#vf)"/></mask></defs><g mask="url(#vm)">${out.join('')}</g>`;
-}
-
-/** The sky band at the top of the screen, the sun and the moon in it. */
-export function skySvg(sky: Sky, W: number, skyH: number, u: number) {
-  if (!skyH) return '';
-  const { sun, moon } = lights(sky, W, skyH, u);
-  const out: string[] = [
-    `<defs><linearGradient id="sb" x1="0" y1="0" x2="0" y2="1">${stops([[0, rgba(sky.top, 0.92)], [0.34, rgba(sky.mid, 0.82)], [0.62, rgba(sky.low, 0.62)], [0.8, rgba(sky.low, 0.28)], [0.9, rgba(sky.low, 0.09)], [1, rgba(sky.low, 0)]])}</linearGradient></defs>`,
-    // The horizon fades out a little below the band, so the band has no bottom edge.
-    `<rect x="0" y="0" width="${n(W)}" height="${n(skyH * 1.25)}" fill="url(#sb)"/>`,
-  ];
-  const sunO = sky.weather === 'clear' ? 1 : sky.weather === 'fog' || sky.weather === 'cloudy' || sky.weather === 'snow' ? 0.3 : 0;
-  if (sky.day > 0.05 && sunO > 0) {
-    const disc = mix([255, 246, 220], [255, 150, 92], sky.warm);
-    out.push(ellipseBlob('sh', sun.x, sun.y, 140 * u, 140 * u, sky.wash, 0.55 * sky.day * sunO));
-    out.push(
-      `<defs>${radial('sd', sun.x, sun.y, 16 * u, [[0, rgba(disc, sunO)], [0.52, rgba(disc, sunO)], [1, rgba(disc, 0)]])}</defs><circle cx="${n(sun.x)}" cy="${n(sun.y)}" r="${n(16 * u)}" fill="url(#sd)"/>`,
-    );
-  }
-  const moonA = sky.night * (sky.weather === 'clear' ? 1 : sky.weather === 'cloudy' ? 0.2 : 0);
-  if (moonA > 0.15) {
-    const r = 10 * u;
-    out.push(ellipseBlob('mh', moon.x, moon.y, 85 * u, 85 * u, [190, 200, 240], 0.3 * moonA));
-    // A crescent: the moon's disc minus a slightly smaller one, offset to the right.
-    out.push(
-      `<path d="M${n(moon.x)},${n(moon.y - r)}A${n(r)},${n(r)} 0 1 0 ${n(moon.x)},${n(moon.y + r)}A${n(r * 0.78)},${n(r)} 0 1 1 ${n(moon.x)},${n(moon.y - r)}Z" fill="${rgba([244, 238, 222], 0.95 * moonA)}"/>`,
-    );
-  }
-  // Thin clouds lit pink and gold at sunrise and sunset.
-  if (sky.weather === 'clear' && sky.warm * sky.day > 0.25) {
-    const lit = mix(mix(sky.mid, sky.low, 0.55), [255, 236, 220], 0.25);
-    [[0.08, 0.42, 110, 8], [0.48, 0.58, 130, 7], [0.22, 0.7, 90, 6]].forEach(([x, y, rx, ry], i) =>
-      out.push(ellipseBlob(`lc${i}`, W * x + rx * u, skyH * y, rx * u, ry * u, lit, 0.7 * sky.warm * sky.day)),
-    );
-  }
-  return out.join('');
-}
-
-/** Cloud banks drifting through the sky band. */
-export function skyCloudsSvg(sky: Sky, W: number, skyH: number, u: number) {
-  if (!skyH || sky.weather === 'clear' || sky.weather === 'fog') return '';
-  const r = rng(11);
-  const cc = sky.weather === 'storm' ? mix(sky.top, [40, 38, 64], 0.5) : mix(mix(sky.mid, [236, 236, 240], 0.35 * sky.day), sky.top, 0.25);
-  const ca = { cloudy: 0.62, rain: 0.66, storm: 0.85, snow: 0.55 }[sky.weather];
-  const out: string[] = [];
-  for (let i = 0; i < 7; i++) {
-    const rx = (85 + 65 * r()) * u;
-    const ry = (23 + 20 * r()) * u;
-    out.push(ellipseBlob(`sc${i}`, -40 * u + r() * (W + 80 * u), skyH * (0.04 + 0.6 * r()), rx, ry, cc, ca));
-  }
-  return out.join('');
+  const at = `x="${n(area.x)}" y="${n(area.y)}" width="${n(area.w)}" height="${n(area.h)}"`;
+  return `<defs><mask id="dk" maskUnits="userSpaceOnUse" ${at}><rect ${at} fill="#fff"/>${out.join('')}<path d="${d}" fill="#000"/></mask></defs><rect ${at} fill="${ink}" mask="url(#dk)"/>`;
 }
 
 /** Cloud shadows crossing the ground on a grey day. */
@@ -524,34 +456,7 @@ export function cloudShadowsSvg(sky: Sky, W: number, H: number, u: number) {
   return out.join('');
 }
 
-export type Star = Pt & { big: boolean; alpha: number; group: 0 | 1 };
-
-/** Stars in the dark beyond the house; group 1 twinkles. */
-export function stars(sky: Sky, W: number, H: number, u: number): Star[] {
-  const a = sky.night * (sky.weather === 'clear' ? 1 : sky.weather === 'cloudy' ? 0.15 : 0);
-  if (a < 0.02) return [];
-  const r = rng(7);
-  const count = Math.round(clamp((W * H) / (5200 * u * u), 20, 90));
-  const out: Star[] = [];
-  for (let i = 0; i < count; i++) {
-    const big = r() < 0.16;
-    out.push({ x: r() * W, y: r() * H, big, alpha: (0.35 + 0.55 * r()) * a, group: (i % 2) as 0 | 1 });
-  }
-  return out;
-}
-
-export function starsSvg(sky: Sky, W: number, H: number, u: number, group: 0 | 1) {
-  return stars(sky, W, H, u)
-    .filter((s) => s.group === group)
-    .map(
-      (s) =>
-        (s.big ? `<circle cx="${n(s.x)}" cy="${n(s.y)}" r="${n(3 * u)}" fill="${rgba([200, 210, 255], s.alpha * 0.18)}"/>` : '') +
-        `<circle cx="${n(s.x)}" cy="${n(s.y)}" r="${n((s.big ? 1.1 : 0.6) * u)}" fill="${rgba([246, 240, 228], s.alpha)}"/>`,
-    )
-    .join('');
-}
-
-/** Fog banks; `layer` 0 lies under the dark edge, 1 over it. */
+/** Fog banks drifting both ways, `layer` 0 and 1. */
 export function fogSvg(sky: Sky, W: number, H: number, u: number, layer: 0 | 1) {
   if (sky.weather !== 'fog') return '';
   const r = rng(13 + layer);
@@ -639,48 +544,45 @@ function tileSvg(l: ParticleLayer) {
     .join('');
 }
 
+/** Spots just outside the walls, `d` px out, spread along the outline (in the band we see). */
+function alongWalls(geom: HouseGeom, count: number, seed: number, d: (r: () => number) => number): Pt[] {
+  const shapes = [...geom.indoor, ...geom.outdoor];
+  const edges = shapes.flatMap((pts) => pts.map((a, i) => ({ a, b: pts[(i + 1) % pts.length] })));
+  const total = edges.reduce((sum, e) => sum + Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y), 0);
+  if (!total) return [];
+  const r = rng(seed);
+  const out: Pt[] = [];
+  for (let tries = 0; out.length < count && tries < count * 6; tries++) {
+    let at = r() * total;
+    const e = edges.find((e) => (at -= Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y)) <= 0) ?? edges[0];
+    const len = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y) || 1;
+    const t = r();
+    const off = d(r);
+    // Either side of the wall: keep the one that is outside every room.
+    for (const side of [1, -1]) {
+      const p = { x: e.a.x + (e.b.x - e.a.x) * t + ((side * (e.b.y - e.a.y)) / len) * off, y: e.a.y + (e.b.y - e.a.y) * t - ((side * (e.b.x - e.a.x)) / len) * off };
+      if (!shapes.some((s) => inside(p, s))) {
+        out.push(p);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 /** Rain rings on the ground around the house. */
 export function ripples(sky: Sky, geom: HouseGeom, u: number) {
-  if (!sky.wet || !geom.box) return [];
+  if (!sky.wet) return [];
   const r = rng(5);
-  const spots: (Pt & { phase: number; ms: number })[] = [];
   // Slow, wide rings: outdoor areas get quick splashes instead (terraceFx).
-  const add = (p: Pt) => spots.push({ ...p, phase: r(), ms: 2400 + r() * 1000 });
-  const b = geom.box;
-  const m = 18 * u;
-  for (let i = 0; i < 10; i++) {
-    const t = r();
-    const side = i % 4;
-    add(
-      side === 0
-        ? { x: b.x + t * b.w, y: b.y - m }
-        : side === 1
-          ? { x: b.x + b.w + m, y: b.y + t * b.h }
-          : side === 2
-            ? { x: b.x + t * b.w, y: b.y + b.h + m }
-            : { x: b.x - m, y: b.y + t * b.h },
-    );
-  }
-  return spots;
+  return alongWalls(geom, 10, 6, () => 16 * u).map((p) => ({ ...p, phase: r(), ms: 2400 + r() * 1000 }));
 }
 
 /** Fireflies drifting in the band around the house on a clear night. */
 export function fireflies(sky: Sky, geom: HouseGeom, u: number) {
-  if (sky.weather !== 'clear' || sky.night < 0.6 || !geom.box) return [];
-  const b = geom.box;
+  if (sky.weather !== 'clear' || sky.night < 0.6) return [];
   const r = rng(19);
-  const out: (Pt & { phase: number })[] = [];
-  for (let i = 0; i < 10; i++) {
-    const t = r();
-    const d = (8 + r() * 26) * u;
-    const side = i % 4;
-    out.push({
-      x: side === 0 ? b.x + t * b.w : side === 1 ? b.x + b.w + d : side === 2 ? b.x + t * b.w : b.x - d,
-      y: side === 0 ? b.y - d : side === 1 ? b.y + t * b.h : side === 2 ? b.y + b.h + d : b.y + t * b.h,
-      phase: r(),
-    });
-  }
-  return out;
+  return alongWalls(geom, 10, 20, (q) => (8 + q() * 20) * u).map((p) => ({ ...p, phase: r() }));
 }
 
 // ---- Widget frames ----
@@ -735,11 +637,11 @@ const WIDGET_RAIN = 0.45;
 
 /**
  * The outside for a widget, as a loop of SVG frames the launcher flips through. Everything below
- * the plan: ground, weather, outdoor areas, the dark edge, sky. The plan itself is drawn on top
- * by the widget (its floors cover the inside).
+ * the plan: ground, weather, outdoor areas, the dark all around (`reach` px from the walls). The
+ * plan itself is drawn on top by the widget (its floors cover the inside).
  */
-export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, opts: { u: number; skyH: number; radius: number }): Frames {
-  const { u, skyH, radius } = opts;
+export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, opts: { u: number; reach: number; radius: number; ink: string }): Frames {
+  const { u, reach, radius, ink } = opts;
   const layers = particleLayers(sky, u);
   const rings = ripples(sky, geom, u);
   const flies = fireflies(sky, geom, u);
@@ -747,23 +649,20 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
   const fx = terraceFx(sky, areas, u);
   const puddles = areas.map((a, i) => puddlesSvg(sky, a, u, i)).join('');
   const mist = areas.map((a, i) => mistSvg(sky, a, u, i)).join('');
-  const stars1 = starsSvg(sky, W, H, u, 1);
   const storm = sky.weather === 'storm';
-  const drifting = sky.weather === 'fog' || (skyH > 0 && sky.weather !== 'clear') || (sky.weather !== 'clear' && sky.day > 0.1) || fx.moths.length > 0;
+  const drifting = sky.weather === 'fog' || (sky.weather !== 'clear' && sky.day > 0.1) || fx.moths.length > 0;
   // The launcher flips right on time, so smoothness comes from small steps between frames:
   // 25 fps rain whose streaks are longer than a frame's step, 10 fps snow, 5 fps for slow drifts.
   let count = 1;
   let intervalMs = 1000;
   if (sky.wet) [count, intervalMs] = [32, 40];
   else if (sky.weather === 'snow') [count, intervalMs] = [30, 100];
-  else if (layers.length || flies.length || stars1 || drifting) [count, intervalMs] = [24, 200];
+  else if (layers.length || flies.length || drifting) [count, intervalMs] = [24, 200];
   const loop = count * intervalMs;
 
-  const base = groundSvg(sky, W, H, geom, skyH, u);
-  const house = houseSvg(sky, W, geom, skyH, u);
-  const vignette = vignetteSvg(sky, W, H, geom, skyH, u);
-  const skyBand = skySvg(sky, W, skyH, u);
-  const stars0 = starsSvg(sky, W, H, u, 0);
+  const base = groundSvg(sky, W, H, geom, u);
+  const house = houseSvg(sky, W, geom, u);
+  const dark = darknessSvg(geom, reach, 16, { x: -8, y: -8, w: W + 16, h: H + 16 }, ink);
   const clip = `<defs><clipPath id="wc"><rect x="0" y="0" width="${n(W)}" height="${n(H)}" rx="${n(radius)}" ry="${n(radius)}"/></clipPath></defs>`;
 
   const frames: string[] = [];
@@ -795,9 +694,8 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
       const sc = 0.2 + 1.5 * ph;
       parts.push(`<ellipse cx="${n(s.x)}" cy="${n(s.y)}" rx="${n(7 * u * sc)}" ry="${n(3.5 * u * sc)}" fill="none" stroke="rgba(206,218,240,${(0.8 * (1 - ph)).toFixed(2)})" stroke-width="${n(u)}"/>`);
     }
-    parts.push(vignette, skyBand);
-    parts.push(`<g transform="translate(${n(-14 * u * sway)} 0)">${skyCloudsSvg(sky, W, skyH, u)}${fogSvg(sky, W, H, u, 1)}</g>`);
-    parts.push(stars0, `<g opacity="${(0.65 + 0.35 * Math.cos(2 * Math.PI * t)).toFixed(2)}">${stars1}</g>`);
+    parts.push(`<g transform="translate(${n(-14 * u * sway)} 0)">${fogSvg(sky, W, H, u, 1)}</g>`);
+    parts.push(dark);
     for (const ff of flies) {
       const a = 2 * Math.PI * (t + ff.phase);
       const x = ff.x + 10 * u * Math.sin(a);
