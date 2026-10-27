@@ -359,19 +359,23 @@ Away-from-home control needs our token server (`server/`) and a Hue developer
 app. One-time setup, in this order:
 
 1. `cd server && npm install && npx eas-cli login && npx eas-cli init`, then
-   `npm run deploy` and pick the subdomain (e.g. `glim` →
-   `https://glim.expo.app`). Routes answer 503 until step 3.
+   `npm run deploy` and pick the subdomain. Live: `https://glim-server.expo.app`
+   (Expo project `@lechaterrant/glim-server`). Routes answer 503 until step 3.
+   If the production URL says "No worker deployment was found", run
+   `npx eas-cli deploy:alias --prod --id <deployment id>`.
 2. On <https://developers.meethue.com> → Remote Hue API appids → add an app
    with callback URL `https://<subdomain>.expo.app/api/hue/callback`. Note the
    ClientId and ClientSecret.
-3. `npx eas-cli env:create --environment production --name HUE_CLIENT_ID
-   --value <id> --visibility plaintext`, same for `HUE_CLIENT_SECRET` with
-   `--visibility secret`, then `npm run deploy` again.
+3. `npx eas-cli env:set production --name HUE_CLIENT_ID --visibility
+   plaintext`, same for `HUE_CLIENT_SECRET` with `--visibility sensitive`
+   (not `secret`: `eas deploy` can't read secret variables, so the server
+   would never get it), then `npm run deploy` again.
 4. Set `expo.extra.cloudServer` in `app.json` to the server URL and rebuild.
    With it empty, onboarding skips the cloud step and the connection screen
    (tap the status badge) says cloud access isn't set up.
 
-Redeploy the server with `cd server && npm run deploy` after changing it.
+Redeploy the server with `cd server && npm run deploy` after changing it. The production URL
+can keep serving the previous deployment for about a minute.
 
 ## Secrets
 

@@ -87,7 +87,7 @@
       "expo-font"
     ],
     "extra": {
-      "cloudServer": "",
+      "cloudServer": "https://glim-server.expo.app",
       "eas": {
         "projectId": "5a6debbe-68f6-4d6d-a86d-c4bff94a6165"
       }
