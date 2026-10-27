@@ -237,8 +237,9 @@ clouds), and the ground around the house in the colors of the hour (sunrise,
 noon, golden hour, sunset, blue hour, night), recolored by the weather: rain,
 storm with lightning, snow, fog, clouds. The far outside fades to dark, a
 band around the house stays in the weather: the home feels sheltered.
-Outdoor rooms (terrace) take the weather: wet floors mirror their lights,
-snow piles up. Everything moves. A pill under the headline says the weather
+Outdoor rooms (terrace) are a paved place of their own where the weather
+lands instead of passing by: splashes, eave drips and puddles in the rain,
+settling snow, low mist, leaves on grey days, moths around a lit lamp. Everything moves. A pill under the headline says the weather
 ("Rain · 10°", "Set by hand" when forced) and opens Settings.
 
 **States:** map not set up (empty state inviting to scan, with "Draw it

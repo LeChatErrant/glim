@@ -146,6 +146,7 @@ function MapScreen() {
                 width={size.w}
                 height={size.h}
                 outdoorOpen={!!outside}
+                windy={outside?.sky.weather === 'storm'}
                 selectedId={selected}
                 onLightPress={(id) => {
                   setSelected(id);

@@ -26,7 +26,7 @@ type Opts = {
   ground?: string;
   /** Bridge unreachable: draw the last known state, muted and without glows. */
   stale?: boolean;
-  /** The weather is drawn underneath: outdoor areas let it through. */
+  /** The weather is drawn underneath, outdoor floors included: leave them open. */
   outdoorOpen?: boolean;
 };
 
@@ -64,7 +64,7 @@ export function planToSvg(plan: Plan, lights: Light[], width: number, height: nu
     );
   });
 
-  for (const r of walled) body.push(`<path d="${pathOf(r.pts)}" fill="${r.outdoor ? (outdoorOpen ? 'rgba(6,6,8,0.3)' : color.floorOutdoor) : color.floor}"/>`);
+  for (const r of walled) body.push(`<path d="${pathOf(r.pts)}" fill="${r.outdoor ? (outdoorOpen ? 'none' : color.floorOutdoor) : color.floor}"/>`);
 
   lit.forEach((p, i) => {
     const clip = p.room ? ` clip-path="url(#c${walled.indexOf(p.room)})"` : '';

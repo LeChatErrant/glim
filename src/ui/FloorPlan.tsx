@@ -33,8 +33,10 @@ type Props = {
   onBackgroundPress?: () => void;
   /** Long-press on a light, or "Open" in its label: the light screen. */
   onLightOpen: (id: string) => void;
-  /** The outside is drawn behind: outdoor areas let it through. */
+  /** The outside is drawn behind, outdoor floors included (paved, in the weather): leave them open. */
   outdoorOpen?: boolean;
+  /** Storm outside: string lights swing in the wind. */
+  windy?: boolean;
 };
 
 const MARKER = 44;
@@ -45,12 +47,13 @@ const MARKER_SIZE = 22;
  * The Nocturne floor plan: rooms as free polygons with hairline walls, each light casting a glow
  * shaped by its type and clipped to its room's walls, jewel markers on top.
  */
-export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId, onLightPress, onLightDrag, onRoomPress, onBackgroundPress, onLightOpen, outdoorOpen }: Props) {
+export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId, onLightPress, onLightDrag, onRoomPress, onBackgroundPress, onLightOpen, outdoorOpen, windy = false }: Props) {
   const f = useMemo(() => fitPlan(plan, width, height, 16, view), [plan, width, height, view]);
   const walled = useMemo(() => walledRooms(plan), [plan]);
   const tween = useLightTween(lights);
   const breath = useBreath();
   const flicker = useFlicker();
+  const sway = useSway(windy);
   const placed = useMemo(() => placeLights(plan, tween.lights), [plan, tween.lights]);
   const fade = (id: string) => tween.fade.get(id) ?? 1;
   const roomName = (r: Plan['rooms'][number]) => rooms.find((x) => x.id === r.hueRoomId)?.name ?? r.name;
@@ -85,7 +88,7 @@ export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId
         </Defs>
 
         {walled.map((r) => (
-          <Path key={r.id} d={pathOf(r.pts)} fill={r.outdoor ? (outdoorOpen ? 'rgba(6,6,8,0.3)' : color.floorOutdoor) : color.floor} />
+          <Path key={r.id} d={pathOf(r.pts)} fill={r.outdoor ? (outdoorOpen ? 'none' : color.floorOutdoor) : color.floor} />
         ))}
 
         {lit.map((p, i) => (
@@ -169,11 +172,14 @@ export function FloorPlan({ plan, lights, rooms, width, height, view, selectedId
         .flatMap((p) =>
           p.beads.map((b, i) => {
             const on = p.light.on && p.light.reachable;
+            // Hung by its ends: the middle of the string swings the most.
+            const k = 0.3 + 0.7 * Math.sin((Math.PI * i) / Math.max(1, p.beads.length - 1));
             return (
-              <View
+              <Animated.View
                 key={`${p.light.id}-${i}`}
                 pointerEvents="none"
                 style={{
+                  transform: windy ? [{ translateX: sway.interpolate({ inputRange: [0, 1], outputRange: [-1.8 * k, 2.4 * k] }) }, { translateY: sway.interpolate({ inputRange: [0, 1], outputRange: [0.6 * k, 1.6 * k] }) }] : [],
                   position: 'absolute',
                   left: f.x(b.u) - 2,
                   top: f.y(b.v) - 2,
@@ -275,6 +281,23 @@ function useBreath() {
     }, [values]),
   );
   return values;
+}
+
+/** Wind in a storm: a quick, uneven back-and-forth for string lights (map only). */
+function useSway(windy: boolean) {
+  const [value] = useState(() => new Animated.Value(0.5));
+  useFocusEffect(
+    useCallback(() => {
+      if (!windy) return;
+      const steps = [1, 0.2, 0.8, 0, 0.65, 0.35, 0.9, 0.5];
+      const loop = Animated.loop(
+        Animated.sequence(steps.map((v, i) => Animated.timing(value, { toValue: v, duration: 260 + ((i * 53) % 180), easing: Easing.inOut(Easing.sin), useNativeDriver: false }))),
+      );
+      loop.start();
+      return () => loop.stop();
+    }, [value, windy]),
+  );
+  return value;
 }
 
 /** A candle-like flicker for lights running the Candle or Fireplace effect (map only). */

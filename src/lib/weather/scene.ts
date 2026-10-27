@@ -151,23 +151,100 @@ export function houseSvg(sky: Sky, W: number, geom: HouseGeom, skyH: number, u: 
   return out.join('');
 }
 
-/** Outdoor areas take the weather: wet floors that mirror their lights, snow with drifts. */
+/** An outdoor area laid out for drawing: its outline, box, the edges sheltered by the eave, its lights. */
+export type OutdoorArea = { pts: Pt[]; box: Box; eaves: { a: Pt; b: Pt; nx: number; ny: number }[]; lights: HouseGeom['outdoorLights'] };
+
+const boxOf = (pts: Pt[]): Box => {
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+};
+
+function segDist(p: Pt, a: Pt, b: Pt) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const l2 = dx * dx + dy * dy || 1;
+  const t = clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / l2, 0, 1);
+  return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
+}
+
+/** Outdoor areas with the edges that run along the house (under the eave), normals pointing in. */
+export function outdoorAreas(geom: HouseGeom, u: number): OutdoorArea[] {
+  return geom.outdoor.map((pts) => {
+    const eaves: OutdoorArea['eaves'] = [];
+    pts.forEach((a, i) => {
+      const b = pts[(i + 1) % pts.length];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len < 8 * u) return;
+      const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      if (!geom.indoor.some((r) => r.some((q, j) => segDist(m, q, r[(j + 1) % r.length]) < 3 * u))) return;
+      let nx = -(b.y - a.y) / len;
+      let ny = (b.x - a.x) / len;
+      if (!inside({ x: m.x + nx * 4 * u, y: m.y + ny * 4 * u }, pts)) [nx, ny] = [-nx, -ny];
+      eaves.push({ a, b, nx, ny });
+    });
+    return { pts, box: boxOf(pts), eaves, lights: geom.outdoorLights.filter((l) => inside(l, pts)) };
+  });
+}
+
+/** Far enough from the eave to be out in the weather. */
+const exposed = (p: Pt, area: OutdoorArea, u: number) => area.eaves.every((e) => segDist(p, e.a, e.b) > 12 * u);
+
+function pointsIn(area: OutdoorArea, count: number, seed: number, u: number, open = true) {
+  const r = rng(seed);
+  const out: Pt[] = [];
+  for (let tries = 0; out.length < count && tries < count * 20; tries++) {
+    const p = { x: area.box.x + r() * area.box.w, y: area.box.y + r() * area.box.h };
+    if (inside(p, area.pts) && (!open || exposed(p, area, u))) out.push(p);
+  }
+  return out;
+}
+
+/** The paving's color: lighter than the grass, darker when wet. */
+const pavingColor = (sky: Sky): RGB => {
+  const c = mix([30, 28, 30], [132, 122, 110], sky.day * (1 - sky.cloud * 0.45));
+  return sky.wet ? [c[0] * 0.62, c[1] * 0.62, c[2] * 0.62] : c;
+};
+
+/**
+ * Outdoor areas are a place of their own, not more garden: a smooth paved floor, sheltered along
+ * the wall by the eave, where the weather lands (wet paving, snow cover, railing light).
+ */
 function outdoorSvg(sky: Sky, geom: HouseGeom, u: number, sparkle: boolean) {
   const out: string[] = [];
-  geom.outdoor.forEach((pts, i) => {
-    const ys = pts.map((p) => p.y);
-    const top = Math.min(...ys);
-    const bottom = Math.max(...ys);
-    const grad = (id: string, list: [number, string][]) =>
-      `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="0" y1="${n(top)}" x2="0" y2="${n(bottom)}">${stops(list)}</linearGradient>`;
-    if (sky.wet) {
-      out.push(`<defs>${grad(`ow${i}`, [[0, 'rgba(150,175,220,0.18)'], [1, 'rgba(150,175,220,0.06)']])}</defs><path d="${poly(pts)}" fill="url(#ow${i})"/>`);
-    }
+  outdoorAreas(geom, u).forEach((area, i) => {
+    const { pts, box } = area;
+    const d = poly(pts);
+    const clip = `url(#oc${i})`;
+    const paving = pavingColor(sky);
+    const cx = box.x + box.w / 2;
+    const cy = box.y + box.h / 2;
+    out.push(`<defs><clipPath id="oc${i}"><path d="${d}"/></clipPath>${radial(`ol${i}`, cx, cy, Math.max(box.w, box.h) * 0.6, [[0, rgba(mix(paving, [255, 250, 240], 0.08), 0.6)], [1, rgba(paving, 0)]])}</defs>`);
+    out.push(`<path d="${d}" fill="${rgba(paving, 0.96)}"/><path d="${d}" fill="url(#ol${i})"/>`);
+    out.push(`<g clip-path="${clip}"><path d="${d}" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="${n(14 * u)}"/></g>`);
+    const eaveStrip = (k: number, c: RGB, a: number) =>
+      area.eaves
+        .map((e, j) => {
+          const depth = 18 * u;
+          const m = { x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 };
+          const id = `oe${i}-${j}-${k}`;
+          const g = `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${n(m.x)}" y1="${n(m.y)}" x2="${n(m.x + e.nx * depth)}" y2="${n(m.y + e.ny * depth)}">${stops([[0, rgba(c, a)], [0.55, rgba(c, a * 0.4)], [1, rgba(c, 0)]])}</linearGradient>`;
+          const q = [e.a, e.b, { x: e.b.x + e.nx * depth, y: e.b.y + e.ny * depth }, { x: e.a.x + e.nx * depth, y: e.a.y + e.ny * depth }];
+          return `<defs>${g}</defs><path d="${poly(q)}" fill="url(#${id})" clip-path="${clip}"/>`;
+        })
+        .join('');
+    out.push(eaveStrip(0, [0, 0, 0], 0.45));
+    if (sky.wet) out.push(`<path d="${d}" fill="rgba(150,175,220,0.08)"/>`);
     if (sky.weather === 'snow') {
+      const cover = mix([150, 165, 205], [236, 241, 252], sky.day);
       out.push(
-        `<defs>${grad(`os${i}`, [[0, 'rgba(234,240,252,0.5)'], [0.38, 'rgba(226,234,250,0.22)'], [0.7, 'rgba(226,234,250,0.18)'], [1, 'rgba(234,240,252,0.34)']])}</defs>` +
-          `<path d="${poly(pts)}" fill="url(#os${i})"/>`,
+        `<defs><linearGradient id="os${i}" gradientUnits="userSpaceOnUse" x1="0" y1="${n(box.y)}" x2="0" y2="${n(box.y + box.h)}">${stops([[0, rgba(cover, 0.8)], [0.3, rgba(cover, 0.62)], [0.7, rgba(cover, 0.56)], [1, rgba(cover, 0.74)]])}</linearGradient></defs>` +
+          `<path d="${d}" fill="url(#os${i})"/>`,
       );
+      // Less snow under the eave.
+      out.push(eaveStrip(1, mix(paving, [0, 0, 0], 0.2), 0.7));
       // Drifts piled along the edges and in the corners.
       pts.forEach((a, j) => {
         const b = pts[(j + 1) % pts.length];
@@ -177,12 +254,33 @@ function outdoorSvg(sky: Sky, geom: HouseGeom, u: number, sparkle: boolean) {
           const t = k / along;
           const corner = k === 0;
           const horizontal = Math.abs(b.x - a.x) > Math.abs(b.y - a.y);
-          const rx = (corner ? 20 : horizontal ? 34 : 12) * u;
-          const ry = (corner ? 16 : horizontal ? 9 : 30) * u;
-          out.push(ellipseBlob(`od${i}-${j}-${k}`, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, rx, ry, [250, 252, 255], 0.55));
+          out.push(ellipseBlob(`od${i}-${j}-${k}`, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, (corner ? 20 : horizontal ? 34 : 12) * u, (corner ? 16 : horizontal ? 9 : 30) * u, cover, 0.7));
         }
       });
+      // Footprints from the house out to a light.
+      const e = area.eaves[0];
+      const to = area.lights[0] ?? { x: cx, y: cy };
+      if (e) {
+        const from = { x: (e.a.x + e.b.x) / 2 + e.nx * 14 * u, y: (e.a.y + e.b.y) / 2 + e.ny * 14 * u };
+        const ang = Math.atan2(to.y - from.y, to.x - from.x);
+        for (let k = 0; k < 9; k++) {
+          const t = k / 9;
+          const side = (k % 2 ? 3 : -3) * u;
+          const x = from.x + (to.x - from.x) * t * 0.85 - Math.sin(ang) * side;
+          const y = from.y + (to.y - from.y) * t * 0.85 + Math.cos(ang) * side;
+          out.push(`<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(2.6 * u)}" ry="${n(1.5 * u)}" transform="rotate(${n((ang * 180) / Math.PI)} ${n(x)} ${n(y)})" fill="rgba(96,110,156,0.5)"/>`);
+        }
+      }
       if (sparkle) out.push(sparklesSvg(pts, u, 0));
+    }
+    // Golden hour: low sun through the railing, light and shade across the floor.
+    if (sky.weather === 'clear' && sky.warm * sky.day > 0.3) {
+      const lines: string[] = [];
+      const step = 17 * u;
+      for (let x = box.x - box.h; x < box.x + box.w + box.h; x += step) {
+        lines.push(`<path d="M${n(x)},${n(box.y + box.h)}L${n(x + box.h * 0.47)},${n(box.y)}" stroke="${rgba([255, 186, 120], 0.18 * sky.warm)}" stroke-width="${n(7 * u)}"/>`);
+      }
+      out.push(`<g clip-path="${clip}">${lines.join('')}</g>`);
     }
   });
   // Lights mirrored in the wet floor.
@@ -202,6 +300,96 @@ function outdoorSvg(sky: Sky, geom: HouseGeom, u: number, sparkle: boolean) {
     geom.outdoorLights.forEach((l, i) => out.push(ellipseBlob(`sl${i}`, l.x, l.y, l.r * 1.6, l.r * 1.15, hexRgb(l.color), 0.36)));
   }
   return out.join('');
+}
+
+/** An SVG showing only `box` of a drawing laid out in screen coordinates. */
+export function svgBox(box: Box, body: string) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${n(box.w)}" height="${n(box.h)}" viewBox="${n(box.x)} ${n(box.y)} ${n(box.w)} ${n(box.h)}">${body}</svg>`;
+}
+
+/** Shallow puddles on wet paving, holding the area's lights (they tremble in the app). */
+export function puddlesSvg(sky: Sky, area: OutdoorArea, u: number, i: number) {
+  if (!sky.wet) return '';
+  const lit = area.lights[0];
+  const c: RGB = lit ? hexRgb(lit.color) : [170, 196, 240];
+  const count = clamp(Math.round((area.box.w * area.box.h) / (4000 * u * u)), 2, 6);
+  const r = rng(53 + i);
+  return pointsIn(area, count, 51 + i, u)
+    .map((p, k) => ellipseBlob(`pd${i}-${k}`, p.x, p.y, (15 + 9 * r()) * u, (3.5 + 1.5 * r()) * u, c, lit ? 0.4 : 0.3))
+    .join('');
+}
+
+/** Fog lying low on an outdoor area, warm around its lights. */
+export function mistSvg(sky: Sky, area: OutdoorArea, u: number, i: number) {
+  if (sky.weather !== 'fog') return '';
+  const { box } = area;
+  return (
+    ellipseBlob(`ms${i}`, box.x + box.w / 2, box.y + box.h * 0.6, box.w * 0.62, box.h * 0.42, sky.fog, 0.42) +
+    area.lights.map((l, k) => ellipseBlob(`ml${i}-${k}`, l.x, l.y, 40 * u, 24 * u, hexRgb(l.color), 0.5)).join('')
+  );
+}
+
+/** A gloss band for wet paving, centered at `x`. */
+export function glossSvg(area: OutdoorArea, x: number, u: number, i: number) {
+  const { box } = area;
+  const w = box.w * 0.5;
+  return (
+    `<defs><linearGradient id="gl${i}" gradientUnits="userSpaceOnUse" x1="${n(x - w / 2)}" y1="0" x2="${n(x + w / 2)}" y2="${n(w * 0.18)}">${stops([[0, 'rgba(170,196,240,0)'], [0.5, 'rgba(170,196,240,0.16)'], [1, 'rgba(170,196,240,0)']])}</linearGradient></defs>` +
+    `<path d="${poly(area.pts)}" fill="url(#gl${i})"/>`
+  );
+}
+
+type Loop = { ms: number; phase: number };
+
+/** What moves on outdoor areas, apart from the garden's weather. */
+export type TerraceFx = {
+  /** Drops landing: a bright point, then a crown opening. */
+  splashes: (Pt & Loop)[];
+  /** Drops gathering at the eave, falling, each landing with a ring. */
+  drips: (Pt & Loop & { nx: number; ny: number })[];
+  /** Flakes slowing down, settling and melting into the snow. */
+  settle: (Pt & Loop)[];
+  /** Autumn leaves skittering across. */
+  leaves: (Pt & Loop & { span: number; color: string })[];
+  /** Moths circling a lit lamp. */
+  moths: (Pt & Loop & { r: number; dir: 1 | -1 })[];
+};
+
+export function terraceFx(sky: Sky, areas: OutdoorArea[], u: number): TerraceFx {
+  const fx: TerraceFx = { splashes: [], drips: [], settle: [], leaves: [], moths: [] };
+  const storm = sky.weather === 'storm';
+  areas.forEach((area, i) => {
+    const r = rng(61 + i);
+    const size = (area.box.w * area.box.h) / (u * u);
+    if (sky.wet) {
+      for (const p of pointsIn(area, clamp(Math.round((size / 1500) * (storm ? 1.6 : 1)), 6, 30), 43 + i, u)) {
+        fx.splashes.push({ ...p, ms: (storm ? 700 : 1000) + 500 * r(), phase: r() });
+      }
+      for (const e of area.eaves) {
+        const len = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y);
+        const count = Math.max(1, Math.round(len / (36 * u)));
+        for (let k = 0; k < count; k++) {
+          const t = (k + 0.5) / count + (r() - 0.5) * (0.3 / count);
+          fx.drips.push({ x: e.a.x + (e.b.x - e.a.x) * t + e.nx * u, y: e.a.y + (e.b.y - e.a.y) * t + e.ny * u, nx: e.nx, ny: e.ny, ms: (storm ? 1100 : 1800) + 800 * r(), phase: r() });
+        }
+      }
+    }
+    if (sky.weather === 'snow') {
+      for (const p of pointsIn(area, clamp(Math.round(size / 2500), 6, 20), 67 + i, u)) fx.settle.push({ ...p, ms: 4000 + 2500 * r(), phase: r() });
+    }
+    if (sky.weather === 'cloudy') {
+      ['#B8643A', '#C98A3E', '#8E5A34', '#A8703A'].forEach((color, k) => {
+        fx.leaves.push({ x: area.box.x, y: area.box.y + area.box.h * (0.2 + 0.2 * k), span: area.box.w, color, ms: 9000 + 5000 * r(), phase: r() });
+      });
+    }
+    if (sky.weather === 'clear' && sky.night > 0.6) {
+      for (const l of area.lights) {
+        if (l.beads.length) continue;
+        [12, 18, 24].forEach((rad, k) => fx.moths.push({ x: l.x, y: l.y, r: rad * u, ms: [1600, 2300, 3100][k], dir: k % 2 ? -1 : 1, phase: r() }));
+      }
+    }
+  });
+  return fx;
 }
 
 /** Glitter on snow-covered outdoor areas; `group` 0/1 twinkle in turn. */
@@ -451,28 +639,13 @@ function tileSvg(l: ParticleLayer) {
     .join('');
 }
 
-/** Rain rings: on outdoor floors and on the ground around the house. */
+/** Rain rings on the ground around the house. */
 export function ripples(sky: Sky, geom: HouseGeom, u: number) {
   if (!sky.wet || !geom.box) return [];
   const r = rng(5);
   const spots: (Pt & { phase: number; ms: number })[] = [];
-  const add = (p: Pt) => spots.push({ ...p, phase: r(), ms: 1600 + r() * 1000 });
-  for (const pts of geom.outdoor) {
-    const xs = pts.map((p) => p.x);
-    const ys = pts.map((p) => p.y);
-    const x0 = Math.min(...xs);
-    const y0 = Math.min(...ys);
-    const w = Math.max(...xs) - x0;
-    const h = Math.max(...ys) - y0;
-    const count = clamp(Math.round((w * h) / (2400 * u * u)), 3, 12);
-    for (let i = 0, tries = 0; i < count && tries < 60; tries++) {
-      const p = { x: x0 + r() * w, y: y0 + r() * h };
-      if (inside(p, pts)) {
-        add(p);
-        i++;
-      }
-    }
-  }
+  // Slow, wide rings: outdoor areas get quick splashes instead (terraceFx).
+  const add = (p: Pt) => spots.push({ ...p, phase: r(), ms: 2400 + r() * 1000 });
   const b = geom.box;
   const m = 18 * u;
   for (let i = 0; i < 10; i++) {
@@ -514,6 +687,49 @@ export function fireflies(sky: Sky, geom: HouseGeom, u: number) {
 
 export type Frames = { frames: string[]; intervalMs: number };
 
+/** One frame of what moves on outdoor areas, `t` in [0, 1) of a `loop` ms loop. */
+function terraceFrame(sky: Sky, areas: OutdoorArea[], fx: TerraceFx, still: { puddles: string; mist: string }, t: number, loop: number, u: number) {
+  // Each item repeats a whole number of times per loop, so the last frame meets the first.
+  const at = (l: Loop) => (t * Math.max(1, Math.round(loop / l.ms)) + l.phase) % 1;
+  const out: string[] = [];
+  const wave = 0.5 + 0.5 * Math.sin(2 * Math.PI * t);
+  if (still.puddles) out.push(`<g opacity="${(0.7 + 0.3 * wave).toFixed(2)}">${still.puddles}</g>`);
+  if (sky.wet) areas.forEach((a, i) => out.push(glossSvg(a, a.box.x + a.box.w * (0.5 + 0.35 * Math.sin(2 * Math.PI * t)), u, i)));
+  if (still.mist) out.push(`<g opacity="${(0.6 + 0.4 * wave).toFixed(2)}">${still.mist}</g>`);
+  const ring = (x: number, y: number, p: number, a: number) =>
+    `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(6 * u * (0.15 + 1.45 * p))}" ry="${n(3 * u * (0.15 + 1.45 * p))}" fill="none" stroke="rgba(214,228,248,${(a * (1 - p)).toFixed(2)})" stroke-width="${n(u)}"/>`;
+  for (const s of fx.splashes) {
+    const p = at(s);
+    out.push(ring(s.x, s.y, p, 0.85));
+    if (p < 0.2) out.push(`<circle cx="${n(s.x)}" cy="${n(s.y)}" r="${n(1.2 * u * (1 - p * 3))}" fill="rgba(236,244,255,0.95)"/>`);
+  }
+  for (const d of fx.drips) {
+    const p = at(d);
+    if (p < 0.64) {
+      const fall = p < 0.55 ? 0 : ((p - 0.55) / 0.09) * 9 * u;
+      out.push(`<circle cx="${n(d.x + d.nx * fall)}" cy="${n(d.y + d.ny * fall)}" r="${n(1.4 * u * (p < 0.55 ? 0.4 + p : 1))}" fill="rgba(214,230,250,0.95)"/>`);
+    } else out.push(ring(d.x + d.nx * 9 * u, d.y + d.ny * 9 * u, (p - 0.64) / 0.36, 0.8));
+  }
+  for (const f of fx.settle) {
+    const p = at(f);
+    const down = Math.min(1, p / 0.62);
+    const a = p < 0.15 ? p / 0.15 : p > 0.62 ? (1 - p) / 0.38 : 1;
+    out.push(`<circle cx="${n(f.x + 5 * u * (1 - down))}" cy="${n(f.y - 30 * u * (1 - down))}" r="${n(1.3 * u)}" fill="rgba(250,250,255,${(0.95 * a).toFixed(2)})"/>`);
+  }
+  for (const l of fx.leaves) {
+    const p = at(l);
+    const a = p < 0.08 ? p / 0.08 : p > 0.92 ? (1 - p) / 0.08 : 1;
+    const x = l.x + l.span * p;
+    const y = l.y - 6 * u * Math.sin(Math.PI * 2 * p);
+    out.push(`<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(3.5 * u)}" ry="${n(2 * u)}" transform="rotate(${Math.round(420 * p)} ${n(x)} ${n(y)})" fill="${l.color}" opacity="${(0.95 * a).toFixed(2)}"/>`);
+  }
+  for (const m of fx.moths) {
+    const ang = m.dir * 2 * Math.PI * at(m);
+    out.push(`<circle cx="${n(m.x + m.r * Math.cos(ang))}" cy="${n(m.y + m.r * Math.sin(ang))}" r="${n(1.2 * u)}" fill="rgba(250,240,220,0.9)"/>`);
+  }
+  return out.join('');
+}
+
 /** Rain speed on widgets, against the app's. */
 const WIDGET_RAIN = 0.45;
 
@@ -527,9 +743,13 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
   const layers = particleLayers(sky, u);
   const rings = ripples(sky, geom, u);
   const flies = fireflies(sky, geom, u);
+  const areas = outdoorAreas(geom, u);
+  const fx = terraceFx(sky, areas, u);
+  const puddles = areas.map((a, i) => puddlesSvg(sky, a, u, i)).join('');
+  const mist = areas.map((a, i) => mistSvg(sky, a, u, i)).join('');
   const stars1 = starsSvg(sky, W, H, u, 1);
   const storm = sky.weather === 'storm';
-  const drifting = sky.weather === 'fog' || (skyH > 0 && sky.weather !== 'clear') || (sky.weather !== 'clear' && sky.day > 0.1);
+  const drifting = sky.weather === 'fog' || (skyH > 0 && sky.weather !== 'clear') || (sky.weather !== 'clear' && sky.day > 0.1) || fx.moths.length > 0;
   // The launcher flips right on time, so smoothness comes from small steps between frames:
   // 25 fps rain whose streaks are longer than a frame's step, 10 fps snow, 5 fps for slow drifts.
   let count = 1;
@@ -552,7 +772,6 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
     const sway = Math.sin(2 * Math.PI * t);
     const parts: string[] = [base];
     parts.push(`<g transform="translate(${n(12 * u * sway)} 0)">${cloudShadowsSvg(sky, W, H, u)}${fogSvg(sky, W, H, u, 0)}</g>`);
-    parts.push(house);
     layers.forEach((l, i) => {
       // A whole number of tiles per frame loop, so the last frame meets the first; rain falls
       // slower than in the app so each step stays shorter than a streak. A layer that moves less
@@ -568,6 +787,9 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
           `<rect x="0" y="0" width="${n(W)}" height="${n(H)}" fill="url(#p${i})"/>`,
       );
     });
+    // Above the falling weather: the paving is where it lands, not a window onto it.
+    parts.push(house);
+    parts.push(terraceFrame(sky, areas, fx, { puddles, mist }, t, loop, u));
     for (const s of rings) {
       const ph = (t * (loop / s.ms) + s.phase) % 1;
       const sc = 0.2 + 1.5 * ph;

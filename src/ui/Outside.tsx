@@ -11,14 +11,20 @@ import {
   groundSvg,
   houseGeom,
   houseSvg,
+  mistSvg,
+  outdoorAreas,
   particleLayers,
+  puddlesSvg,
   ripples,
   skyCloudsSvg,
   skySvg,
   sparklePoints,
   stars,
   svg,
+  svgBox,
+  terraceFx,
   vignetteSvg,
+  type Box as AreaBox,
   type HouseGeom,
   type ParticleLayer,
   type Pt,
@@ -69,6 +75,11 @@ export function OutsideBack({ sky, width, height, skyH, plan, lights, mapBox, vi
   const fogHigh = useMemo(() => fogSvg(sky, width, height, u, 1), [sky, width, height]);
   const starry = useMemo(() => stars(sky, width, height, u), [sky, width, height]);
   const snowy = sky.weather === 'snow';
+  const areas = useMemo(() => outdoorAreas(geom, u), [geom]);
+  const fxKind = kindOf(sky);
+  const fx = useMemo(() => terraceFx(sky, areas, u), [fxKind, areas]); // eslint-disable-line react-hooks/exhaustive-deps
+  const puddles = useMemo(() => areas.map((a, i) => ({ box: grow(a.box, 30), body: puddlesSvg(sky, a, u, i) })).filter((p) => p.body), [sky, areas]);
+  const mist = useMemo(() => areas.map((a, i) => ({ box: grow(a.box, 50), body: mistSvg(sky, a, u, i) })).filter((p) => p.body), [sky, areas]);
   const glitter = useMemo(() => (snowy ? geom.outdoor.map((pts) => [sparklePoints(pts, u, 0), sparklePoints(pts, u, 1)]) : []), [snowy, geom]);
 
   // Particles and rings depend on the weather only, so the clock doesn't restart them.
@@ -100,6 +111,32 @@ export function OutsideBack({ sky, width, height, skyH, plan, lights, mapBox, vi
               <Dots points={b} />
             </Twinkle>
           </View>
+        ))}
+        {puddles.map((p, i) => (
+          <Pulse key={`p${i}`} active={active} ms={2200} min={0.65} box={p.box}>
+            <SvgXml xml={svgBox(p.box, p.body)} width={p.box.w} height={p.box.h} />
+          </Pulse>
+        ))}
+        {sky.wet && areas.map((a, i) => <Gloss key={`g${i}`} box={a.box} active={active} />)}
+        {mist.map((p, i) => (
+          <Pulse key={`m${i}`} active={active} ms={9000} min={0.55} box={p.box}>
+            <SvgXml xml={svgBox(p.box, p.body)} width={p.box.w} height={p.box.h} />
+          </Pulse>
+        ))}
+        {fx.splashes.map((d, i) => (
+          <Splash key={`s${i}`} x={d.x} y={d.y} ms={d.ms} phase={d.phase} active={active} />
+        ))}
+        {fx.drips.map((d, i) => (
+          <Drip key={`d${i}`} x={d.x} y={d.y} nx={d.nx} ny={d.ny} ms={d.ms} phase={d.phase} active={active} />
+        ))}
+        {fx.settle.map((d, i) => (
+          <Settle key={`f${i}`} x={d.x} y={d.y} ms={d.ms} phase={d.phase} active={active} />
+        ))}
+        {fx.leaves.map((d, i) => (
+          <Leaf key={`l${i}`} x={d.x} y={d.y} span={d.span} color={d.color} ms={d.ms} phase={d.phase} active={active} />
+        ))}
+        {fx.moths.map((d, i) => (
+          <Moth key={`o${i}`} x={d.x} y={d.y} r={d.r} dir={d.dir} ms={d.ms} phase={d.phase} active={active} />
         ))}
         {sky.wet && geom.outdoorLights.map((l, i) => <Glints key={i} x={l.x} y={l.y} r={l.r} color={l.color} storm={sky.weather === 'storm'} active={active} />)}
         {rings.map((r, i) => (
@@ -143,6 +180,195 @@ export function OutsideFront({ sky, active }: { sky: Sky; active: boolean }) {
       {sky.weather === 'fog' && <View style={[StyleSheet.absoluteFill, { backgroundColor: rgba(sky.fog, 0.1) }]} />}
       {sky.weather === 'storm' && <Lightning active={active} />}
     </View>
+  );
+}
+
+const kindOf = (sky: Sky) => `${sky.weather}-${sky.night > 0.6 ? 'night' : 'day'}`;
+const grow = (b: AreaBox, m: number): AreaBox => ({ x: b.x - m, y: b.y - m, w: b.w + 2 * m, h: b.h + 2 * m });
+
+/** Gently pulsing opacity (puddles holding the lights, mist breathing), placed at `box`. */
+function Pulse({ active, ms, min, box, children }: { active: boolean; ms: number; min: number; box: AreaBox; children: ReactNode }) {
+  const t = useLoop(
+    active,
+    (v) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(v, { toValue: min, duration: ms / 2, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(v, { toValue: 1, duration: ms / 2, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        ]),
+      ),
+    1,
+  );
+  return <Animated.View style={{ position: 'absolute', left: box.x, top: box.y, width: box.w, height: box.h, opacity: t }}>{children}</Animated.View>;
+}
+
+/** A slow gloss sliding across wet paving. */
+function Gloss({ box, active }: { box: AreaBox; active: boolean }) {
+  const t = useLoop(active, (v) =>
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(v, { toValue: 1, duration: 3500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(v, { toValue: 0, duration: 3500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ]),
+    ),
+  );
+  const band = Math.max(40, box.w * 0.5);
+  const xml = useMemo(
+    () =>
+      svg(band, box.h, `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="0.18"><stop offset="0" stop-color="rgb(170,196,240)" stop-opacity="0"/><stop offset="0.5" stop-color="rgb(170,196,240)" stop-opacity="0.16"/><stop offset="1" stop-color="rgb(170,196,240)" stop-opacity="0"/></linearGradient></defs><rect x="0" y="0" width="${band}" height="${box.h}" fill="url(#g)"/>`),
+    [band, box.h],
+  );
+  return (
+    <View style={{ position: 'absolute', left: box.x, top: box.y, width: box.w, height: box.h, overflow: 'hidden' }}>
+      <Animated.View style={{ width: band, height: box.h, transform: [{ translateX: t.interpolate({ inputRange: [0, 1], outputRange: [-band / 2, box.w - band / 2] }) }] }}>
+        <SvgXml xml={xml} width={band} height={box.h} />
+      </Animated.View>
+    </View>
+  );
+}
+
+/** A loop starting part-way through (`phase`), so neighbours don't move together. */
+function usePhasedLoop(active: boolean, ms: number, phase: number, easing = Easing.linear) {
+  return useLoop(active, (v) => Animated.sequence([Animated.delay(phase * ms), Animated.loop(Animated.timing(v, { toValue: 1, duration: ms, easing, useNativeDriver: true }))]));
+}
+
+/** A drop landing on the paving: a bright point, then a crown opening. */
+function Splash({ x, y, ms, phase, active }: { x: number; y: number; ms: number; phase: number; active: boolean }) {
+  const t = usePhasedLoop(active, ms, phase);
+  return (
+    <>
+      <Animated.View
+        style={{
+          position: 'absolute',
+          left: x - 6,
+          top: y - 3,
+          width: 12,
+          height: 6,
+          borderRadius: 6,
+          borderWidth: 1,
+          borderColor: 'rgba(214,228,248,0.85)',
+          opacity: t.interpolate({ inputRange: [0, 0.1, 1], outputRange: [0, 1, 0] }),
+          transform: [{ scale: t.interpolate({ inputRange: [0, 1], outputRange: [0.15, 1.6] }) }],
+        }}
+      />
+      <Animated.View
+        style={{
+          position: 'absolute',
+          left: x - 1,
+          top: y - 1,
+          width: 2,
+          height: 2,
+          borderRadius: 1,
+          backgroundColor: 'rgba(236,244,255,0.95)',
+          opacity: t.interpolate({ inputRange: [0, 0.22, 1], outputRange: [1, 0, 0] }),
+        }}
+      />
+    </>
+  );
+}
+
+/** A drop gathering at the eave, falling, and landing with a ring. */
+function Drip({ x, y, nx, ny, ms, phase, active }: { x: number; y: number; nx: number; ny: number; ms: number; phase: number; active: boolean }) {
+  const t = usePhasedLoop(active, ms, phase, Easing.in(Easing.quad));
+  const fall = (k: number) => t.interpolate({ inputRange: [0, 0.55, 0.64, 1], outputRange: [0, 0, 9 * k, 9 * k] });
+  return (
+    <>
+      <Animated.View
+        style={{
+          position: 'absolute',
+          left: x - 1.2,
+          top: y - 1.6,
+          width: 2.4,
+          height: 3.2,
+          borderRadius: 1.2,
+          backgroundColor: 'rgba(214,230,250,0.95)',
+          boxShadow: '0 0 3px 1px rgba(180,205,240,0.4)',
+          opacity: t.interpolate({ inputRange: [0, 0.55, 0.64, 0.66, 1], outputRange: [0.3, 1, 1, 0, 0] }),
+          transform: [{ translateX: fall(nx) }, { translateY: fall(ny) }, { scale: t.interpolate({ inputRange: [0, 0.55, 1], outputRange: [0.4, 1, 0.9] }) }],
+        }}
+      />
+      <Animated.View
+        style={{
+          position: 'absolute',
+          left: x + 9 * nx - 6,
+          top: y + 9 * ny - 3,
+          width: 12,
+          height: 6,
+          borderRadius: 6,
+          borderWidth: 1,
+          borderColor: 'rgba(214,228,248,0.8)',
+          opacity: t.interpolate({ inputRange: [0, 0.63, 0.66, 1], outputRange: [0, 0, 1, 0] }),
+          transform: [{ scale: t.interpolate({ inputRange: [0, 0.63, 0.66, 1], outputRange: [0.1, 0.1, 0.3, 1.5] }) }],
+        }}
+      />
+    </>
+  );
+}
+
+/** A flake reaching the snow-covered paving: it slows down, settles and melts in. */
+function Settle({ x, y, ms, phase, active }: { x: number; y: number; ms: number; phase: number; active: boolean }) {
+  const t = usePhasedLoop(active, ms, phase);
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        left: x - 1.3,
+        top: y - 1.3,
+        width: 2.6,
+        height: 2.6,
+        borderRadius: 1.3,
+        backgroundColor: 'rgba(250,250,255,0.95)',
+        opacity: t.interpolate({ inputRange: [0, 0.15, 0.62, 1], outputRange: [0, 0.95, 0.95, 0] }),
+        transform: [
+          { translateX: t.interpolate({ inputRange: [0, 0.62, 1], outputRange: [5, 0, 0], easing: Easing.out(Easing.quad) }) },
+          { translateY: t.interpolate({ inputRange: [0, 0.62, 1], outputRange: [-30, 0, 0], easing: Easing.out(Easing.quad) }) },
+        ],
+      }}
+    />
+  );
+}
+
+/** An autumn leaf skittering across, tumbling as it goes. */
+function Leaf({ x, y, span, color, ms, phase, active }: { x: number; y: number; span: number; color: string; ms: number; phase: number; active: boolean }) {
+  const t = usePhasedLoop(active, ms, phase);
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        left: x - 3.5,
+        top: y - 2,
+        width: 7,
+        height: 4,
+        borderTopLeftRadius: 5,
+        borderBottomRightRadius: 5,
+        backgroundColor: color,
+        opacity: t.interpolate({ inputRange: [0, 0.08, 0.92, 1], outputRange: [0, 0.95, 0.95, 0] }),
+        transform: [
+          { translateX: t.interpolate({ inputRange: [0, 0.45, 0.55, 1], outputRange: [0, span * 0.46, span * 0.54, span] }) },
+          { translateY: t.interpolate({ inputRange: [0, 0.45, 0.55, 1], outputRange: [0, -7, -5, 5] }) },
+          { rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '420deg'] }) },
+        ],
+      }}
+    />
+  );
+}
+
+/** A moth circling a lit lamp. */
+function Moth({ x, y, r, dir, ms, phase, active }: { x: number; y: number; r: number; dir: 1 | -1; ms: number; phase: number; active: boolean }) {
+  const t = usePhasedLoop(active, ms, phase);
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        left: x - r,
+        top: y - r,
+        width: 2 * r,
+        height: 2 * r,
+        transform: [{ rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['0deg', `${dir * 360}deg`] }) }],
+      }}
+    >
+      <View style={{ position: 'absolute', left: 2 * r - 1.2, top: r - 1.2, width: 2.4, height: 2.4, borderRadius: 1.2, backgroundColor: 'rgba(250,240,220,0.9)', boxShadow: '0 0 4px 1px rgba(255,220,170,0.6)' }} />
+    </Animated.View>
   );
 }
 
