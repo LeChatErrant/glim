@@ -55,7 +55,7 @@ type Props = {
 const PAD = 16;
 const u = 1;
 /** How far from the walls we still see, in dp. */
-const REACH = 46;
+const REACH = 62;
 /** Past the screen's edges, so panning and turning the map don't uncover it. */
 const EXTEND = 200;
 const FILL = { position: 'absolute' as const, left: 0, top: 0, right: 0, bottom: 0 };

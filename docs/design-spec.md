@@ -237,8 +237,9 @@ band carries the ambience of the hour rather than a realistic view (no sky,
 sun or moon): the sky's colors all around the house (peach at sunrise, blue
 at noon, orange at golden hour, navy at night), recolored by the weather:
 rain, storm with lightning, snow, fog, clouds. The home feels sheltered.
-Outdoor rooms (terrace) are a paved place of their own where the weather
-lands instead of passing by: splashes, eave drips and puddles in the rain,
+Outdoor rooms (terrace) stay rooms of the plan (dark outdoor floor, no
+paving or planks), tinted by the light of the hour; the weather lands there
+instead of passing by: splashes, eave drips and puddles in the rain,
 settling snow, low mist, leaves on grey days, moths around a lit lamp. Everything moves. A pill under the headline says the weather
 ("Rain · 10°", "Set by hand" when forced) and opens Settings.
 

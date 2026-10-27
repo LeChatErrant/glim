@@ -1,7 +1,7 @@
 import type { Light } from '../hue/client';
 import { placeLights, walledRooms } from '../map/glow';
 import type { Plan } from '../map/map';
-import { clamp, mix, rgba, rng, type RGB, type Sky } from './sky';
+import { clamp, mix, rgba, rng, smooth, type RGB, type Sky } from './sky';
 
 // The outside drawn as SVG pieces. The app shows the static pieces with SvgXml and moves the
 // particle layers with Animated (Outside.tsx); the map widget bakes everything into a loop of
@@ -94,6 +94,15 @@ function sunAt(sky: Sky, W: number, u: number) {
 
 const dim = (c: RGB, k: number): RGB => [c[0] * k, c[1] * k, c[2] * k];
 
+/** The light of the hour around the house: near the walls, and further out. */
+function ambience(sky: Sky) {
+  const k = 0.72 * (1 - 0.3 * sky.cloud);
+  return { near: dim(mix(sky.mid, sky.low, 0.25), k), far: dim(mix(sky.mid, sky.top, 0.45), k * 0.9) };
+}
+
+/** An outdoor room's floor on the plan (theme `floorOutdoor`). */
+const OUTDOOR_FLOOR: RGB = [7, 7, 8];
+
 /**
  * The ground around the house takes the light of the hour, not a real view: the sky's color all
  * around (blue at noon, orange at golden hour, navy at night), warmer near the walls, duller
@@ -101,9 +110,7 @@ const dim = (c: RGB, k: number): RGB => [c[0] * k, c[1] * k, c[2] * k];
  */
 export function groundSvg(sky: Sky, W: number, H: number, geom: HouseGeom, u: number) {
   const b = geom.box ?? { x: 0, y: 0, w: W, h: H };
-  const k = 0.72 * (1 - 0.3 * sky.cloud);
-  const near = dim(mix(sky.mid, sky.low, 0.25), k);
-  const far = dim(mix(sky.mid, sky.top, 0.45), k * 0.9);
+  const { near, far } = ambience(sky);
   const R = Math.max(b.w, b.h) * 0.6 + 45 * u;
   const all = `x="${n(-W)}" y="${n(-H)}" width="${n(W * 3)}" height="${n(H * 3)}"`;
   return `<defs>${radial('gn', b.x + b.w / 2, b.y + b.h / 2, R, [[0, rgba(near)], [0.55, rgba(mix(near, far, 0.5))], [1, rgba(far)]])}</defs><rect ${all} fill="url(#gn)"/>`;
@@ -200,40 +207,21 @@ function pointsIn(area: OutdoorArea, count: number, seed: number, u: number, ope
   return out;
 }
 
-/** The paving's color: lighter than the grass, darker when wet. */
-const pavingColor = (sky: Sky): RGB => {
-  const c = mix([30, 28, 30], [132, 122, 110], sky.day * (1 - sky.cloud * 0.45));
-  return sky.wet ? [c[0] * 0.62, c[1] * 0.62, c[2] * 0.62] : c;
-};
-
 /**
- * Outdoor areas are a place of their own, not more garden: a smooth paved floor, sheltered along
- * the wall by the eave, where the weather lands (wet paving, snow cover, railing light).
+ * Outdoor areas stay rooms of the plan (the dark outdoor floor, no paving or planks), touched by
+ * the light of the hour, and the weather lands on them: wet sheen, snow cover, reflections.
  */
 function outdoorSvg(sky: Sky, geom: HouseGeom, u: number, sparkle: boolean) {
   const out: string[] = [];
+  const { near } = ambience(sky);
   outdoorAreas(geom, u).forEach((area, i) => {
     const { pts, box } = area;
     const d = poly(pts);
-    const clip = `url(#oc${i})`;
-    const paving = pavingColor(sky);
     const cx = box.x + box.w / 2;
     const cy = box.y + box.h / 2;
-    out.push(`<defs><clipPath id="oc${i}"><path d="${d}"/></clipPath>${radial(`ol${i}`, cx, cy, Math.max(box.w, box.h) * 0.6, [[0, rgba(mix(paving, [255, 250, 240], 0.08), 0.6)], [1, rgba(paving, 0)]])}</defs>`);
-    out.push(`<path d="${d}" fill="${rgba(paving, 0.96)}"/><path d="${d}" fill="url(#ol${i})"/>`);
-    out.push(`<g clip-path="${clip}"><path d="${d}" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="${n(14 * u)}"/></g>`);
-    const eaveStrip = (k: number, c: RGB, a: number) =>
-      area.eaves
-        .map((e, j) => {
-          const depth = 18 * u;
-          const m = { x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 };
-          const id = `oe${i}-${j}-${k}`;
-          const g = `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${n(m.x)}" y1="${n(m.y)}" x2="${n(m.x + e.nx * depth)}" y2="${n(m.y + e.ny * depth)}">${stops([[0, rgba(c, a)], [0.55, rgba(c, a * 0.4)], [1, rgba(c, 0)]])}</linearGradient>`;
-          const q = [e.a, e.b, { x: e.b.x + e.nx * depth, y: e.b.y + e.ny * depth }, { x: e.a.x + e.nx * depth, y: e.a.y + e.ny * depth }];
-          return `<defs>${g}</defs><path d="${poly(q)}" fill="url(#${id})" clip-path="${clip}"/>`;
-        })
-        .join('');
-    out.push(eaveStrip(0, [0, 0, 0], 0.45));
+    const floor = mix(OUTDOOR_FLOOR, near, 0.14);
+    out.push(`<defs>${radial(`ol${i}`, cx, cy, Math.max(box.w, box.h) * 0.7, [[0, rgba(near, 0.16)], [1, rgba(near, 0.03)]])}</defs>`);
+    out.push(`<path d="${d}" fill="${rgba(floor, 0.94)}"/><path d="${d}" fill="url(#ol${i})"/>`);
     if (sky.wet) out.push(`<path d="${d}" fill="rgba(150,175,220,0.08)"/>`);
     if (sky.weather === 'snow') {
       const cover = mix([150, 165, 205], [236, 241, 252], sky.day);
@@ -241,8 +229,6 @@ function outdoorSvg(sky: Sky, geom: HouseGeom, u: number, sparkle: boolean) {
         `<defs><linearGradient id="os${i}" gradientUnits="userSpaceOnUse" x1="0" y1="${n(box.y)}" x2="0" y2="${n(box.y + box.h)}">${stops([[0, rgba(cover, 0.8)], [0.3, rgba(cover, 0.62)], [0.7, rgba(cover, 0.56)], [1, rgba(cover, 0.74)]])}</linearGradient></defs>` +
           `<path d="${d}" fill="url(#os${i})"/>`,
       );
-      // Less snow under the eave.
-      out.push(eaveStrip(1, mix(paving, [0, 0, 0], 0.2), 0.7));
       // Drifts piled along the edges and in the corners.
       pts.forEach((a, j) => {
         const b = pts[(j + 1) % pts.length];
@@ -255,30 +241,7 @@ function outdoorSvg(sky: Sky, geom: HouseGeom, u: number, sparkle: boolean) {
           out.push(ellipseBlob(`od${i}-${j}-${k}`, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, (corner ? 20 : horizontal ? 34 : 12) * u, (corner ? 16 : horizontal ? 9 : 30) * u, cover, 0.7));
         }
       });
-      // Footprints from the house out to a light.
-      const e = area.eaves[0];
-      const to = area.lights[0] ?? { x: cx, y: cy };
-      if (e) {
-        const from = { x: (e.a.x + e.b.x) / 2 + e.nx * 14 * u, y: (e.a.y + e.b.y) / 2 + e.ny * 14 * u };
-        const ang = Math.atan2(to.y - from.y, to.x - from.x);
-        for (let k = 0; k < 9; k++) {
-          const t = k / 9;
-          const side = (k % 2 ? 3 : -3) * u;
-          const x = from.x + (to.x - from.x) * t * 0.85 - Math.sin(ang) * side;
-          const y = from.y + (to.y - from.y) * t * 0.85 + Math.cos(ang) * side;
-          out.push(`<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(2.6 * u)}" ry="${n(1.5 * u)}" transform="rotate(${n((ang * 180) / Math.PI)} ${n(x)} ${n(y)})" fill="rgba(96,110,156,0.5)"/>`);
-        }
-      }
       if (sparkle) out.push(sparklesSvg(pts, u, 0));
-    }
-    // Golden hour: low sun through the railing, light and shade across the floor.
-    if (sky.weather === 'clear' && sky.warm * sky.day > 0.3) {
-      const lines: string[] = [];
-      const step = 17 * u;
-      for (let x = box.x - box.h; x < box.x + box.w + box.h; x += step) {
-        lines.push(`<path d="M${n(x)},${n(box.y + box.h)}L${n(x + box.h * 0.47)},${n(box.y)}" stroke="${rgba([255, 186, 120], 0.18 * sky.warm)}" stroke-width="${n(7 * u)}"/>`);
-      }
-      out.push(`<g clip-path="${clip}">${lines.join('')}</g>`);
     }
   });
   // Lights mirrored in the wet floor.
@@ -305,7 +268,7 @@ export function svgBox(box: Box, body: string) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${n(box.w)}" height="${n(box.h)}" viewBox="${n(box.x)} ${n(box.y)} ${n(box.w)} ${n(box.h)}">${body}</svg>`;
 }
 
-/** Shallow puddles on wet paving, holding the area's lights (they tremble in the app). */
+/** Shallow puddles on a wet outdoor floor, holding the area's lights (they tremble in the app). */
 export function puddlesSvg(sky: Sky, area: OutdoorArea, u: number, i: number) {
   if (!sky.wet) return '';
   const lit = area.lights[0];
@@ -327,7 +290,7 @@ export function mistSvg(sky: Sky, area: OutdoorArea, u: number, i: number) {
   );
 }
 
-/** A gloss band for wet paving, centered at `x`. */
+/** A gloss band for a wet outdoor floor, centered at `x`. */
 export function glossSvg(area: OutdoorArea, x: number, u: number, i: number) {
   const { box } = area;
   const w = box.w * 0.5;
@@ -369,7 +332,7 @@ export function terraceFx(sky: Sky, areas: OutdoorArea[], u: number): TerraceFx 
         for (let k = 0; k < count; k++) {
           const t = (k + 0.5) / count + (r() - 0.5) * (0.3 / count);
           // Drops fall down the screen like the rain, whichever side of the area the eave is on:
-          // they start far enough in to land on the paving.
+          // they start far enough in to land on the floor.
           const inset = (e.ny < -0.5 ? 14 : 4) * u;
           fx.drips.push({ x: e.a.x + (e.b.x - e.a.x) * t + e.nx * inset, y: e.a.y + (e.b.y - e.a.y) * t + e.ny * inset, nx: 0, ny: 1, ms: (storm ? 1100 : 1800) + 800 * r(), phase: r() });
         }
@@ -427,15 +390,16 @@ function inside(p: Pt, pts: Pt[]) {
 
 /**
  * The dark all around: we only see the band near the house, as if night fell a few steps from
- * the walls, whatever the hour. It follows the rooms' outlines (not a box), fading over `reach`
- * px: a mask of the outlines stroked wider and wider, each stroke's opacity worked out so the
- * dark grows smoothly with the distance. `ink` is the screen's own black.
+ * the walls, whatever the hour. It stays clear by the walls, then fades softly over `reach` px,
+ * rounding off corners and filling small notches on the way. Drawn as a mask of the rooms'
+ * outlines stroked wider and wider, each stroke's opacity worked out so the dark grows smoothly
+ * with the distance. `ink` is the screen's own black.
  */
 export function darknessSvg(geom: HouseGeom, reach: number, steps: number, area: Box, ink: string) {
   const shapes = [...geom.indoor, ...geom.outdoor];
   if (!shapes.length) return '';
   const d = shapes.map(poly).join('');
-  const dark = (x: number) => clamp(x / reach, 0, 1) ** 1.25;
+  const dark = (x: number) => Math.max(1e-4, smooth(0.04 * reach, reach, x));
   const out: string[] = [];
   let beyond = 1;
   for (let i = steps; i >= 1; i--) {

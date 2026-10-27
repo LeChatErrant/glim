@@ -177,14 +177,14 @@ but never in a way that would need a rewrite to sell it later (see
   night), on a clock stretched to today's real sunrise and sunset; the
   weather recolors them (grey, rain-teal, storm-violet, snow-blue, fog-pale).
   The far outside fades to dark (pale grey in fog), a band around the house
-  stays, so the home feels sheltered. Outdoor rooms are a place of their own,
-  not more garden: a plain paved floor (no planks), lighter than the grass,
-  with a sheltered strip along the house (the eave). The weather *lands* there
+  stays, so the home feels sheltered. Outdoor rooms stay rooms of the plan:
+  the dark outdoor floor, no paving, planks or bricks (they matched nothing
+  real), tinted by the light of the hour. The weather *lands* there
   while it passes by in the garden, each effect with its own twin: garden
   streaks and slow rings vs quick splash crowns, eave drips, puddles holding
-  the lights and a gloss on wet paving; falling flakes vs flakes settling into
-  the cover (drifts, glitter, footprints); fog banks vs low lamp-lit mist;
-  cloud shadows vs autumn leaves; golden dust vs railing stripes; fireflies vs
+  the lights and a gloss on the wet floor; falling flakes vs flakes settling
+  into the cover (drifts, glitter); fog banks vs low lamp-lit mist;
+  cloud shadows vs autumn leaves; fireflies vs
   moths circling a lit lamp; string lights sway in a storm. Everything moves (rain, snow, fog, clouds, ripples, fireflies,
   golden dust, lightning). Live weather: Open-Meteo (no key, CC BY 4.0,
   credited in Settings) at the home's location, taken once with coarse
@@ -197,7 +197,8 @@ but never in a way that would need a rewrite to sell it later (see
   `rn_widget.xml`, written by `plugins/with-fast-widgets.js`), re-sent after
   every widget draw since a full redraw drops them.
   2026-10-27, later: **we only see around the house.** The outside beyond a
-  band hugging the rooms' outlines (46 dp in the app, 24 dp on the widget) is
+  band around the rooms (clear by the walls, then a soft fade over 62 dp in
+  the app, 32 dp on the widget, rounding corners and filling notches) is
   the screen's own black, as if blind past a few steps from the walls
   (`darknessSvg`). No sky band, sun, moon or stars any more: the band carries
   the *ambience* of the hour, not a realistic view (the sky's colors all

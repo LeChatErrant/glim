@@ -16,7 +16,7 @@ import { GROUND, mapWidgetBox } from './widgets';
 const BUDGET = 10_000_000;
 
 /** How far from the walls the widget still shows the outside, in dp: close, the widget is small. */
-const REACH = 24;
+const REACH = 32;
 
 /**
  * Animates a map widget's outside: the frames go to native code, which renders them and puts
