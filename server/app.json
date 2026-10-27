@@ -3,7 +3,29 @@
     "name": "glim-server",
     "slug": "glim-server",
     "scheme": "glimserver",
-    "web": { "output": "server", "bundler": "metro" },
-    "plugins": [["expo-router", { "root": "./src/app" }]]
+    "web": {
+      "output": "server",
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "root": "./src/app"
+        }
+      ]
+    ],
+    "extra": {
+      "router": {
+        "root": "./src/app",
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "265be1f5-e364-4cbe-8703-1e01989a29d2"
+      }
+    },
+    "owner": "lechaterrant"
   }
 }
