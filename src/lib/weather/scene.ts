@@ -650,12 +650,12 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
   const storm = sky.weather === 'storm';
   const drifting = sky.weather === 'fog' || (sky.weather !== 'clear' && sky.day > 0.1) || fx.moths.length > 0;
   // The launcher flips right on time, so smoothness comes from small steps between frames:
-  // 25 fps rain whose streaks are longer than a frame's step, 10 fps snow, 5 fps for slow drifts.
+  // 25 fps rain whose streaks are longer than a frame's step, 20 fps for everything else (5 and
+  // 10 fps looked choppy). Slow drifts get a shorter loop and smaller swings to stay as slow.
   let count = 1;
   let intervalMs = 1000;
   if (sky.wet) [count, intervalMs] = [32, 40];
-  else if (sky.weather === 'snow') [count, intervalMs] = [30, 100];
-  else if (layers.length || flies.length || drifting) [count, intervalMs] = [24, 200];
+  else if (sky.weather === 'snow' || layers.length || flies.length || drifting) [count, intervalMs] = [48, 50];
   const loop = count * intervalMs;
 
   const base = groundSvg(sky, W, H, geom, u);
@@ -668,17 +668,18 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
     const t = (f * intervalMs) / loop;
     const sway = Math.sin(2 * Math.PI * t);
     const parts: string[] = [base];
-    parts.push(`<g transform="translate(${n(12 * u * sway)} 0)">${cloudShadowsSvg(sky, W, H, u)}${fogSvg(sky, W, H, u, 0)}</g>`);
+    parts.push(`<g transform="translate(${n(6 * u * sway)} 0)">${cloudShadowsSvg(sky, W, H, u)}${fogSvg(sky, W, H, u, 0)}</g>`);
     layers.forEach((l, i) => {
       // A whole number of tiles per frame loop, so the last frame meets the first; rain falls
       // slower than in the app so each step stays shorter than a streak. A layer that moves less
-      // than a tile per loop (golden dust) bobs in place instead.
+      // than half a tile per loop (golden dust) bobs in place instead.
       const tiles = (Math.abs(l.tilesPerLoop) * loop) / l.loopMs;
+      const bob = tiles < 0.5;
       const shift =
-        tiles < 1
-          ? 6 * u * Math.sin(2 * Math.PI * t) * Math.sign(l.tilesPerLoop)
+        bob
+          ? 3 * u * Math.sin(2 * Math.PI * t) * Math.sign(l.tilesPerLoop)
           : l.tileH * Math.sign(l.tilesPerLoop) * Math.max(1, Math.round(tiles * (sky.wet ? WIDGET_RAIN : 1))) * t;
-      const sideways = tiles < 1 ? 4 * u * Math.cos(2 * Math.PI * t) : 0;
+      const sideways = bob ? 2 * u * Math.cos(2 * Math.PI * t) : 0;
       parts.push(
         `<defs><pattern id="p${i}" patternUnits="userSpaceOnUse" width="${n(l.tileW)}" height="${n(l.tileH)}" patternTransform="rotate(${l.angle}) translate(${n(sideways)} ${n(shift)})">${tileSvg(l)}</pattern></defs>` +
           `<rect x="0" y="0" width="${n(W)}" height="${n(H)}" fill="url(#p${i})"/>`,
@@ -692,12 +693,12 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
       const sc = 0.2 + 1.5 * ph;
       parts.push(`<ellipse cx="${n(s.x)}" cy="${n(s.y)}" rx="${n(7 * u * sc)}" ry="${n(3.5 * u * sc)}" fill="none" stroke="rgba(206,218,240,${(0.8 * (1 - ph)).toFixed(2)})" stroke-width="${n(u)}"/>`);
     }
-    parts.push(`<g transform="translate(${n(-14 * u * sway)} 0)">${fogSvg(sky, W, H, u, 1)}</g>`);
+    parts.push(`<g transform="translate(${n(-7 * u * sway)} 0)">${fogSvg(sky, W, H, u, 1)}</g>`);
     parts.push(dark);
     for (const ff of flies) {
       const a = 2 * Math.PI * (t + ff.phase);
-      const x = ff.x + 10 * u * Math.sin(a);
-      const y = ff.y + 8 * u * Math.sin(2 * a);
+      const x = ff.x + 6 * u * Math.sin(a);
+      const y = ff.y + 5 * u * Math.sin(2 * a);
       const o = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(2 * a + 1));
       parts.push(`<circle cx="${n(x)}" cy="${n(y)}" r="${n(5 * u)}" fill="rgba(226,240,140,${(0.25 * o).toFixed(2)})"/><circle cx="${n(x)}" cy="${n(y)}" r="${n(1.5 * u)}" fill="rgba(240,248,170,${(0.95 * o).toFixed(2)})"/>`);
     }

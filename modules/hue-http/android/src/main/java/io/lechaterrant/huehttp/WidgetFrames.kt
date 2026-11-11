@@ -35,6 +35,9 @@ object WidgetFrames {
   private val AFTER_DRAW_MS = longArrayOf(1200L, 3500L)
   private val executor = Executors.newSingleThreadScheduledExecutor()
   private val generation = ConcurrentHashMap<Int, Int>()
+  /** The last frames rendered per widget, so a redraw with the same loop (a tap's second draw,
+   * live sync) skips the second or so of rendering. */
+  private val rendered = ConcurrentHashMap<Int, Pair<Int, List<String>>>()
   private val random = SecureRandom()
   private const val COLLECTION = 9
 
@@ -47,8 +50,12 @@ object WidgetFrames {
       // A newer set of frames for this widget is on its way: skip this one.
       if (generation[widgetId] != gen) return@execute
       try {
-        val names = render(app, widgetId, frames, widthDp, heightDp, scale, gen) ?: return@execute
-        Log.i(TAG, "widget $widgetId: ${names.size} frames in ${System.currentTimeMillis() - start} ms")
+        val key = listOf(frames, intervalMs, widthDp, heightDp, scale).hashCode()
+        val folder = File(app.filesDir, "widget_images")
+        val cached = rendered[widgetId]?.takeIf { (k, names) -> k == key && names.all { File(folder, it).exists() } }?.second
+        val names = cached ?: render(app, widgetId, frames, widthDp, heightDp, scale, gen) ?: return@execute
+        rendered[widgetId] = key to names
+        Log.i(TAG, "widget $widgetId: ${names.size} frames in ${System.currentTimeMillis() - start} ms${if (cached != null) " (same as last)" else ""}")
         for (delay in AFTER_DRAW_MS) {
           val wait = maxOf(0L, start + delay - System.currentTimeMillis())
           executor.schedule({ if (generation[widgetId] == gen) send(app, widgetId, names, intervalMs) }, wait, TimeUnit.MILLISECONDS)

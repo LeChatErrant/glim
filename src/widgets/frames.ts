@@ -10,10 +10,10 @@ import { GROUND, mapWidgetBox } from './widgets';
 
 /**
  * Bitmap memory for one widget's frames, held by the launcher. Kept under what Android lets one
- * widget send inline (1.5 screens of pixels, ~15 MB on a phone), and big enough for 32 rain
- * frames near 1 px per dp.
+ * widget send inline (1.5 screens of pixels, ~15 MB on a phone): about 0.9 px per dp for 32 rain
+ * frames, 0.75 for 48 snow or drift frames (soft shapes, under the sharp plan).
  */
-const BUDGET = 10_000_000;
+const BUDGET = 12_000_000;
 
 /**
  * Animates a map widget's outside: the frames go to native code, which renders them and puts
