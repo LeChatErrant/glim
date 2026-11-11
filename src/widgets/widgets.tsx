@@ -269,11 +269,12 @@ export function MapWidget({
         svg={planToSvg(plan, lights, box.width, box.height, { padding: pad, ground: GROUND, stale, outdoorOpen: outside })}
         style={{ width: box.width, height: box.height, marginLeft: box.left, marginTop: box.top }}
       />
+      {/* The widget library can't take a null child: skipped items return [] through flatMap. */}
       {showLabels &&
-        outlines.map((r) => {
+        outlines.flatMap((r) => {
           const xs = r.pts.map((p) => X(p.u));
           const w = Math.max(...xs) - Math.min(...xs);
-          if (w < 56) return null;
+          if (w < 56) return [];
           const zone = !walled.includes(r);
           const name = (snapshot.rooms.find((x) => x.id === r.hueRoomId)?.name ?? r.name).toUpperCase();
           const size = zone || !r.hueRoomId ? 8 : 9;
@@ -293,9 +294,9 @@ export function MapWidget({
         })}
       {outlines
         .filter((r) => r.hueRoomId)
-        .map((r) => {
+        .flatMap((r) => {
           const room = snapshot.rooms.find((x) => x.id === r.hueRoomId);
-          if (!room?.groupedLightId) return null;
+          if (!room?.groupedLightId) return [];
           const xs = r.pts.map((p) => X(p.u));
           const ys = r.pts.map((p) => Y(p.v));
           const left = Math.min(...xs);
@@ -311,9 +312,9 @@ export function MapWidget({
             />
           );
         })}
-      {plan.lights.map((pl) => {
+      {plan.lights.flatMap((pl) => {
         const l = lights.find((x) => x.id === pl.lightId);
-        if (!l) return null;
+        if (!l) return [];
         return (
           <FlexWidget
             key={pl.lightId}
