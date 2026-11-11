@@ -222,13 +222,17 @@ function AllButton({ snapshot, pill }: { snapshot: Snapshot; pill: boolean }) {
  * The floor plan with live light pools. Tap a light to toggle it, tap elsewhere in a room to
  * toggle the room. Wide sizes (4×2) get a side panel, taller ones a bar below the plan.
  */
-/** Where the plan sits in a map widget: left half when wide (4×2), above a bar otherwise. */
-export function mapWidgetBox(width: number, height: number) {
+/**
+ * Where the plan sits in a map widget: left half when wide (4×2), above a bar otherwise. With
+ * the outside drawn (`outside`), the plan sits further in, so the clear zone around the house
+ * and its fade have room.
+ */
+export function mapWidgetBox(width: number, height: number, outside = false) {
   const wide = width / height >= 1.6;
   const box = wide
     ? { left: 9, top: 8, width: Math.round(width * 0.52), height: height - 16 }
     : { left: 12, top: 10, width: width - 24, height: height - 10 - 58 };
-  return { wide, box, pad: 6, radius: 24 };
+  return { wide, box, pad: outside ? (wide ? 22 : 30) : 6, radius: 24 };
 }
 
 export function MapWidget({
@@ -249,7 +253,7 @@ export function MapWidget({
   if (!snapshot) return <NotPaired />;
   if (!plan) return <SetupCard title="Tap to set up" hint="Map · scan or draw your home" />;
   const lights = snapshot.lights;
-  const { wide, box, pad } = mapWidgetBox(width, height);
+  const { wide, box, pad } = mapWidgetBox(width, height, outside);
   const f = fitPlan(plan, box.width, box.height, pad);
   const X = (u: number) => box.left + f.x(u);
   const Y = (v: number) => box.top + f.y(v);

@@ -22,6 +22,8 @@ export type HouseGeom = {
   outdoorLights: { x: number; y: number; color: string; r: number; beads: Pt[] }[];
   /** Anything lit indoors (the house leaks a warm halo at night). */
   indoorLit: boolean;
+  /** Every lit lamp (string lights aside), with its pool's radius: it spills into the garden. */
+  lamps: { x: number; y: number; color: string; r: number }[];
 };
 
 type Fit = { scale: number; x: (u: number) => number; y: (v: number) => number };
@@ -49,6 +51,9 @@ export function houseGeom(plan: Plan, f: Fit, lights: Light[]): HouseGeom {
     outdoor,
     box,
     indoorLit: lit.some((p) => !p.room?.outdoor),
+    lamps: lit
+      .filter((p) => !p.beads.length && p.pools[0])
+      .map((p) => ({ x: f.x(p.u), y: f.y(p.v), color: p.light.color, r: Math.max(p.pools[0].rx, p.pools[0].ry) * f.scale })),
     outdoorLights: lit
       .filter((p) => p.room?.outdoor)
       .map((p) => ({
@@ -389,26 +394,55 @@ function inside(p: Pt, pts: Pt[]) {
 }
 
 /**
- * The dark all around: we only see the band near the house, as if night fell a few steps from
- * the walls, whatever the hour. It stays clear by the walls, then fades softly over `reach` px,
- * rounding off corners and filling small notches on the way. Drawn as a mask of the rooms'
- * outlines stroked wider and wider, each stroke's opacity worked out so the dark grows smoothly
- * with the distance. `ink` is the screen's own black.
+ * How far we see past the walls, in dp, from the home's size: a clear zone (`clear`), then the
+ * dark comes in over `fade`. The house is the light we see by; the garden is only around it.
  */
-export function darknessSvg(geom: HouseGeom, reach: number, steps: number, area: Box, ink: string) {
+export function darkReach(geom: HouseGeom) {
+  const side = geom.box ? Math.min(geom.box.w, geom.box.h) : 200;
+  return { clear: clamp(0.22 * side, 16, 80), fade: clamp(0.5 * side, 40, 150) };
+}
+
+/**
+ * The dark all around: whatever the hour, we see a clear zone around the house, then the
+ * outside dies away in a long soft fade (gentle at first, a long tail), rounding off corners and
+ * filling small notches on the way. Drawn as a mask of the rooms' outlines stroked wider and
+ * wider, each stroke's opacity worked out so the dark grows smoothly with the distance; many
+ * steps, so daylight shows no bands. `ink` is the screen's own black.
+ */
+export function darknessSvg(geom: HouseGeom, steps: number, area: Box, ink: string) {
   const shapes = [...geom.indoor, ...geom.outdoor];
   if (!shapes.length) return '';
   const d = shapes.map(poly).join('');
-  const dark = (x: number) => Math.max(1e-4, smooth(0.04 * reach, reach, x));
+  const { clear, fade } = darkReach(geom);
+  const reach = clear + fade;
+  const dark = (x: number) => {
+    const t = Math.max(0, x - clear) / fade;
+    return Math.max(1e-4, 1 - Math.exp(-2.4 * Math.pow(t, 1.3)) * (1 - smooth(0.7, 1, t)));
+  };
   const out: string[] = [];
   let beyond = 1;
   for (let i = steps; i >= 1; i--) {
     const want = dark(((i - 0.5) / steps) * reach);
-    out.push(`<g opacity="${(1 - want / beyond).toFixed(3)}"><path d="${d}" fill="#000" stroke="#000" stroke-width="${n((2 * reach * i) / steps)}" stroke-linejoin="round"/></g>`);
+    if (want / beyond < 0.9995) out.push(`<g opacity="${(1 - want / beyond).toFixed(3)}"><path d="${d}" fill="#000" stroke="#000" stroke-width="${n((2 * reach * i) / steps)}" stroke-linejoin="round"/></g>`);
     beyond = want;
   }
   const at = `x="${n(area.x)}" y="${n(area.y)}" width="${n(area.w)}" height="${n(area.h)}"`;
   return `<defs><mask id="dk" maskUnits="userSpaceOnUse" ${at}><rect ${at} fill="#fff"/>${out.join('')}<path d="${d}" fill="#000"/></mask></defs><rect ${at} fill="${ink}" mask="url(#dk)"/>`;
+}
+
+/**
+ * Each lit lamp spills its own color past the walls, over the dark: the garden is lit from the
+ * house. Stronger at night. The rooms' floors cover it indoors.
+ */
+export function spillSvg(sky: Sky, geom: HouseGeom, u: number) {
+  const a = 0.32 * (0.35 + 0.65 * sky.night);
+  return geom.lamps
+    .map((l, i) => {
+      const c = hexRgb(l.color);
+      const r = clamp(l.r * 2.6, 30 * u, 220 * u);
+      return `<defs>${radial(`sp${i}`, l.x, l.y, r, [[0, rgba(c, a)], [0.45, rgba(c, a * 0.35)], [1, rgba(c, 0)]])}</defs><circle cx="${n(l.x)}" cy="${n(l.y)}" r="${n(r)}" fill="url(#sp${i})"/>`;
+    })
+    .join('');
 }
 
 /** Cloud shadows crossing the ground on a grey day. */
@@ -604,8 +638,8 @@ const WIDGET_RAIN = 0.45;
  * the plan: ground, weather, outdoor areas, the dark all around (`reach` px from the walls). The
  * plan itself is drawn on top by the widget (its floors cover the inside).
  */
-export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, opts: { u: number; reach: number; radius: number; ink: string }): Frames {
-  const { u, reach, radius, ink } = opts;
+export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, opts: { u: number; radius: number; ink: string }): Frames {
+  const { u, radius, ink } = opts;
   const layers = particleLayers(sky, u);
   const rings = ripples(sky, geom, u);
   const flies = fireflies(sky, geom, u);
@@ -626,7 +660,7 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
 
   const base = groundSvg(sky, W, H, geom, u);
   const house = houseSvg(sky, W, geom, u);
-  const dark = darknessSvg(geom, reach, 16, { x: -8, y: -8, w: W + 16, h: H + 16 }, ink);
+  const dark = darknessSvg(geom, 40, { x: -8, y: -8, w: W + 16, h: H + 16 }, ink) + spillSvg(sky, geom, u);
   const clip = `<defs><clipPath id="wc"><rect x="0" y="0" width="${n(W)}" height="${n(H)}" rx="${n(radius)}" ry="${n(radius)}"/></clipPath></defs>`;
 
   const frames: string[] = [];

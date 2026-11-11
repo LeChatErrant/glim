@@ -19,6 +19,7 @@ import {
   puddlesSvg,
   ripples,
   sparklePoints,
+  spillSvg,
   svg,
   svgBox,
   terraceFx,
@@ -54,8 +55,6 @@ type Props = {
 
 const PAD = 16;
 const u = 1;
-/** How far from the walls we still see, in dp. */
-const REACH = 62;
 /** Past the screen's edges, so panning and turning the map don't uncover it. */
 const EXTEND = 200;
 const FILL = { position: 'absolute' as const, left: 0, top: 0, right: 0, bottom: 0 };
@@ -70,7 +69,7 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
   );
   const area = { x: -EXTEND, y: -EXTEND, w: width + 2 * EXTEND, h: height + 2 * EXTEND };
   const house = useMemo(
-    () => svg(width, height, houseSvg(sky, width, geom, u, false) + darknessSvg(geom, REACH * u, 32, area, color.ground)),
+    () => svg(width, height, houseSvg(sky, width, geom, u, false) + darknessSvg(geom, 64, area, color.ground) + spillSvg(sky, geom, u)),
     [sky, width, height, geom], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const fogHigh = useMemo(() => fogSvg(sky, width, height, u, 1), [sky, width, height]);
