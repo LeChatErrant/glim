@@ -231,8 +231,8 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   the ground's colors are written per hour in `sky.ts` and always saturated
   (a greyish hour reads as fog): rose sunrise, periwinkle, aqua morning,
   cerulean noon, violet, coral golden hour. Cloudy is a **pearl sky**:
-  silvery, tinted by the hour, thin light wisps (leaves: replaced by seeds,
-  see below). Fog is a
+  silvery, tinted by the hour, with the same calm life as a clear day (see
+  the rollback below). Fog is a
   **milky veil**: past the band the world dissolves into the fog's color
   instead of black, long banks roll by, lamps glow out into the mist.
 - 2026-11-12: **Map widget: weather corner and background.** Top left, the
@@ -246,16 +246,18 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   widget; text gets a soft shadow on See-through. Lamps spill only a little
   light past the walls (small pools sharing one budget, faded with the
   band; a fainter house halo): at night the garden stays night.
-- 2026-11-12: **Weather looks, round 2 and 3** (picked from
-  <https://claude.ai/artifact/R5mTAmHer3T6xpayqURJZb> and
-  <https://claude.ai/artifact/SRoDdzNe9UNqw3oJNxDZHH>, checked on real renders:
-  <https://claude.ai/artifact/4PhaMEeUGXqee1d75NQ2Fv>). Snow: a **snow cover**
-  that takes the hour's light (rose, white, gold, a blue glow at night)
-  instead of grey. Rain: **ink blue** at every hour, a touch of the hour's
-  color (golden hour was muddy). Fog and cloudy at low sun keep the hour's
-  **rose and lilac** (were dusty mauve); unchanged by day. Cloudy: the
-  leaves are gone, **dandelion seeds** drift across the garden instead.
-  Every visual change now comes with a before/after of real renders.
+- 2026-11-12: **Weather looks, round 2 and 3: tried, then rolled back.**
+  A snow cover in the hour's light, ink blue rain, rose and lilac fog and
+  cloudy at low sun, and dandelion seeds on cloudy days (options:
+  <https://claude.ai/artifact/R5mTAmHer3T6xpayqURJZb>,
+  <https://claude.ai/artifact/SRoDdzNe9UNqw3oJNxDZHH>) all shipped, then the
+  maintainer disliked every one on real renders
+  (<https://claude.ai/artifact/4PhaMEeUGXqee1d75NQ2Fv>). Snow, rain and fog
+  are back to the earlier look. Cloudy keeps its pearl colors and now has
+  **the same animations as clear** (golden dust, fireflies, moths): no
+  leaves, seeds or wisps (rollback check:
+  <https://claude.ai/artifact/KyANrWN4djtdYr1qdM4nJa>). Every visual change
+  now comes with a before/after of real renders.
 
 ## Vocabulary
 

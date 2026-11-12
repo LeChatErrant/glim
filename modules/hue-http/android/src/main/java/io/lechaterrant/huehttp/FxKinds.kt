@@ -50,7 +50,6 @@ internal object FxKinds {
     "settle_6" to (R.layout.glim_fx_settle_6 to false),
     "settle_7" to (R.layout.glim_fx_settle_7 to false),
     "settle_8" to (R.layout.glim_fx_settle_8 to false),
-    "seeds" to (R.layout.glim_fx_seeds to true),
     "moth_1" to (R.layout.glim_fx_moth_1 to false),
     "moth_2" to (R.layout.glim_fx_moth_2 to false),
     "moth_3" to (R.layout.glim_fx_moth_3 to false),

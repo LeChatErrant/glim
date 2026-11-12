@@ -8,6 +8,9 @@ import { clamp, mix, rgba, rng, smooth, type RGB, type Sky } from './sky';
 // vectors the launcher plays (widgetOutside). Sizes are in px, `u` scales them
 // (1 on a phone-size map).
 
+/** Clear or cloudy: no weather falls, the garden has what a calm evening has (fireflies, moths, golden dust). */
+const calm = (sky: Sky) => sky.weather === 'clear' || sky.weather === 'cloudy';
+
 export type Pt = { x: number; y: number };
 export type Box = { x: number; y: number; w: number; h: number };
 
@@ -320,7 +323,7 @@ export function terraceFx(sky: Sky, areas: OutdoorArea[], u: number): TerraceFx 
     if (sky.weather === 'snow') {
       for (const p of pointsIn(area, clamp(Math.round(size / 2500), 6, 20), 67 + i, u)) fx.settle.push({ ...p, ms: 8000 + 4000 * r(), phase: r() });
     }
-    if (sky.weather === 'clear' && sky.night > 0.6) {
+    if (calm(sky) && sky.night > 0.6) {
       for (const l of area.lights) {
         if (l.beads.length) continue;
         [12, 18, 24].forEach((rad, k) => fx.moths.push({ x: l.x, y: l.y, r: rad * u, ms: [5000, 6500, 8000][k], dir: k % 2 ? -1 : 1, phase: r() }));
@@ -444,10 +447,9 @@ export function cloudShadowsSvg(sky: Sky, W: number, H: number, u: number) {
   return out.join('');
 }
 
-/** How visible the drifting wisps are: thick banks of fog, thin wisps under a pearl sky. */
+/** How visible the drifting fog banks are (fog only). */
 export function wispAlpha(sky: Sky) {
   if (sky.weather === 'fog') return 0.34 + 0.16 * sky.day;
-  if (sky.weather === 'cloudy') return 0.06 + 0.08 * sky.day;
   return 0;
 }
 
@@ -464,13 +466,6 @@ export function fogSvg(sky: Sky, W: number, H: number, u: number, layer: 0 | 1) 
     out.push(ellipseBlob(`fb${layer}-${i}`, -40 * u + r() * (W + 80 * u), y, (150 + 90 * r()) * u, (24 + 20 * r()) * u, c, a));
   }
   return out.join('');
-}
-
-/** Dandelion seeds drifting across the garden on a cloudy day: start rows, periods and phases. */
-export function gardenSeeds(sky: Sky, H: number) {
-  if (sky.weather !== 'cloudy') return [];
-  const r = rng(31);
-  return Array.from({ length: 6 }, (_, k) => ({ y: H * (0.15 + 0.7 * ((k + 0.5 * r()) / 6)), ms: 34000 + 16000 * r(), phase: k / 6 + 0.1 * r() }));
 }
 
 /** A streak (w×h, drawn vertical) or a dot (w = h) in a particle tile; `glow` adds a soft halo. */
@@ -524,7 +519,7 @@ export function particleLayers(sky: Sky, u: number): ParticleLayer[] {
       return { tileW: t, tileH: t, angle: 0, particles, tilesPerLoop: 1, loopMs: 7000 };
     });
   }
-  if (sky.weather === 'clear' && sky.warm * sky.day > 0.3) {
+  if (calm(sky) && sky.warm * sky.day > 0.3) {
     const t = 260 * u;
     const r = rng(29);
     const c = rgba(mix(sky.wash, [255, 255, 255], 0.4), 0.9);
@@ -571,7 +566,7 @@ export function ripples(sky: Sky, geom: HouseGeom, u: number) {
 
 /** Fireflies drifting in the band around the house on a clear night. */
 export function fireflies(sky: Sky, geom: HouseGeom, u: number) {
-  if (sky.weather !== 'clear' || sky.night < 0.6) return [];
+  if (!calm(sky) || sky.night < 0.6) return [];
   const r = rng(19);
   return alongWalls(geom, 10, 20, (q) => (8 + q() * 20) * u).map((p) => ({ ...p, phase: r() }));
 }
@@ -625,11 +620,10 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
   const low: WidgetFx[] = [];
   if (sky.day >= 0.1 && sky.weather === 'snow') low.push({ kind: 'clouds', tint: argb([22, 20, 46], 0.38 * sky.day) });
   if (wispAlpha(sky)) low.push({ kind: 'fog', tint: argb(mix(sky.fog, [255, 255, 255], 0.3), wispAlpha(sky)) });
-  if (sky.weather === 'cloudy') low.push({ kind: 'seeds' });
   // A storm's rain carries its lightning (one vector each: cheaper for the launcher to redraw).
   if (sky.wet) low.push({ kind: sky.weather === 'storm' ? 'storm' : 'rain' });
   else if (sky.weather === 'snow') low.push({ kind: 'snow' });
-  else if (sky.weather === 'clear' && sky.warm * sky.day > 0.3) low.push({ kind: 'dust', tint: argb(mix(sky.wash, [255, 255, 255], 0.4)) });
+  else if (calm(sky) && sky.warm * sky.day > 0.3) low.push({ kind: 'dust', tint: argb(mix(sky.wash, [255, 255, 255], 0.4)) });
   // Placed kinds come in variants (own period and phase), picked natively by their place in
   // the layer: neighbors never move in step.
   ripples(sky, geom, u).forEach((p) => low.push({ kind: 'ripple', x: p.x, y: p.y, w: 24 * u, h: 12 * u }));

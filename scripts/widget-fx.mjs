@@ -325,42 +325,6 @@ placed('settle', 8, (i, name) => {
   });
 });
 
-// Dandelion seeds drifting across the garden on a cloudy day: a tuft of fine rays around a dot,
-// in a faint halo, rising and dipping on the breeze, each on its own period.
-{
-  const r = rng(31);
-  let body = '';
-  const targets = {};
-  const rays = Array.from({ length: 6 }, (_, j) => {
-    const a = (j / 6) * Math.PI * 2;
-    return `M0,0L${f(2.3 * Math.cos(a))},${f(2.3 * Math.sin(a))}`;
-  }).join('');
-  for (let k = 0; k < 6; k++) {
-    const y = F * (0.15 + 0.7 * ((k + 0.5 * r()) / 6));
-    const ms = 34000 + 16000 * r();
-    const ph = k / 6 + 0.1 * r();
-    const bob = 1 + Math.floor(2 * r());
-    const turns = r() < 0.5 ? -1 : 1;
-    body +=
-      `<group android:translateY="${f(y)}"><group android:name="m${k}"><group android:name="s${k}">` +
-      `<path android:name="h${k}" android:pathData="${circle(0, 0, 4.2)}">${radialFill(4.2, [[0, '#55FFFFFF'], [1, '#00FFFFFF']])}</path>` +
-      `<path android:name="r${k}" android:pathData="${rays}" android:strokeColor="#E6FFFFFF" android:strokeWidth="0.32" android:strokeLineCap="round"/>` +
-      `<path android:name="d${k}" android:fillColor="#F2FFFFFF" android:pathData="${circle(0, 0, 0.55)}"/></group></group></group>`;
-    const fade = (t) => Math.min(1, t * 10, (1 - t) * 10);
-    targets[`m${k}`] = [
-      keys(ms, [
-        ['translateX', cycle((t) => -8 + (F + 16) * t, ph, 64)],
-        ['translateY', cycle((t) => 8 * Math.sin(2 * Math.PI * bob * t) - 24 * t, ph, 64)],
-      ]),
-    ];
-    targets[`s${k}`] = [keys(ms, [['rotation', cycle((t) => 360 * 2 * turns * t, ph, 64)]])];
-    targets[`h${k}`] = [keys(ms, [['fillAlpha', cycle(fade, ph)]])];
-    targets[`r${k}`] = [keys(ms, [['strokeAlpha', cycle(fade, ph)]])];
-    targets[`d${k}`] = [keys(ms, [['fillAlpha', cycle(fade, ph)]])];
-  }
-  write('seeds', true, F, F, body, targets);
-}
-
 // A moth circling a lit lamp, fluttering a little.
 variants.moth = 3;
 [

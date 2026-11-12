@@ -131,38 +131,28 @@ export function skyAt(weather: WeatherKind, clockHour: number, sun: SunTimes = D
   // Fog and overcast take the hour's light: milky white by day, peach in a low sun, blue-grey
   // at night (lit by the lamps).
   const fog = weather === 'cloudy' ? mix([50, 56, 80], mix([196, 206, 220], [216, 182, 170], warm), day) : mix([84, 90, 112], mix([224, 223, 220], [240, 204, 178], warm), day);
-  // Storm-violet: recolor the sky's light (the ground is it, dimmed by `k`), then dim again,
-  // darker under a thick sky.
-  const recolor = (c: RGB, k: number): RGB => dim(mul(desat(dim(c, 1 / k), 0.6), [0.62, 0.6, 0.84]), k * (1 - 0.3 * cloud));
-  // In a low sun, fog and a pearl sky keep the hour's rose and lilac instead of greying it.
-  const glow = mix(mix(near, [255, 255, 255], 0.45), [230, 170, 200], 0.3);
-  const veil = mix(fog, glow, warm);
+  // Rain-teal, storm-violet, snow-blue: recolor the sky's light (the ground is it, dimmed by
+  // `k`), then dim again, darker under a thick sky.
+  const snow = mix([54, 66, 108], [198, 206, 224], day);
+  const recolor = (c: RGB, k: number): RGB => {
+    const sky = dim(c, 1 / k);
+    const wet =
+      weather === 'rain' ? mul(desat(sky, 0.5), [0.72, 0.86, 1.02]) : weather === 'storm' ? mul(desat(sky, 0.6), [0.62, 0.6, 0.84]) : weather === 'snow' ? mix(desat(sky, 0.45), snow, 0.55) : sky;
+    return dim(wet, k * (1 - 0.3 * cloud));
+  };
   let ground: [RGB, RGB];
   switch (weather) {
     case 'clear':
       ground = [near, far];
       break;
-    // A pearl sky: bright and silvery, still tinted by the hour; rosy in a low sun.
+    // A pearl sky: bright and silvery, still tinted by the hour.
     case 'cloudy':
-      ground = [dim(mix(near, veil, 0.55 - 0.1 * warm), 0.84 + 0.06 * warm), dim(mix(far, veil, 0.55 - 0.1 * warm), 0.6 + 0.06 * warm)];
+      ground = [dim(mix(near, fog, 0.55), 0.84), dim(mix(far, fog, 0.55), 0.6)];
       break;
-    // A milky veil: the world past the house dissolves into it; pink at sunrise, violet at sunset.
+    // A milky veil: the world past the house dissolves into it.
     case 'fog':
-      ground = [dim(mix(near, veil, 0.5 - 0.12 * warm), 0.8 + 0.1 * warm), dim(mix(far, veil, 0.72 - 0.07 * warm), 0.82 + 0.04 * warm)];
+      ground = [dim(mix(near, fog, 0.5), 0.8), dim(mix(far, fog, 0.72), 0.82)];
       break;
-    // A snow cover that takes the hour's light: rose at sunrise, white at noon, gold at golden
-    // hour, a blue glow at night.
-    case 'snow': {
-      const cover = mix([62, 78, 128], mix([236, 240, 248], [250, 214, 182], warm), day);
-      ground = [dim(mix(cover, near, 0.22), 0.92), dim(mix(cover, far, 0.4), 0.62)];
-      break;
-    }
-    // Ink blue rain: a deep blue-teal at every hour, with a touch of the hour's color.
-    case 'rain': {
-      const ink = mix([16, 26, 50], [36, 86, 116], day);
-      ground = [mix(ink, near, 0.3), dim(mix(ink, far, 0.3), 0.6)];
-      break;
-    }
     default:
       ground = [recolor(near, 0.72), recolor(far, 0.648)];
   }
@@ -180,8 +170,8 @@ export function skyAt(weather: WeatherKind, clockHour: number, sun: SunTimes = D
     far: ground[1],
     wash: key('wash'),
     washA: (a.washA + (b.washA - a.washA) * t) * (1 - cloud * 0.85),
-    fog: weather === 'fog' || weather === 'cloudy' ? veil : fog,
-    beyond: weather === 'fog' ? dim(veil, 0.8) : null,
+    fog,
+    beyond: weather === 'fog' ? dim(fog, 0.8) : null,
   };
 }
 
