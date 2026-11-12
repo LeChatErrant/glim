@@ -75,7 +75,8 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   needs a Bridge Pro, works per room, and only supports some presets. Glim's
   take: whole-home map, map widget, user-editable map-aware moods, any bridge.
   2026-11-12: **Glim won't be sold.** The repo is public, with a README for
-  visitors; no store release planned.
+  visitors; no store release planned. No license on purpose (all rights
+  reserved): don't add one.
 - 2026-10-22: Setup must work from a fresh, unconfigured bridge; scans can span
   several sessions; a manual 2D editor is required (AR isn't always available,
   and scans need fine-tuning).
