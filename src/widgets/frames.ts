@@ -11,7 +11,7 @@ import { GROUND, mapWidgetBox } from './widgets';
 /**
  * Bitmap memory for one widget's frames, held by the launcher. Kept under what Android lets one
  * widget send inline (1.5 screens of pixels, ~15 MB on a phone): about 0.9 px per dp for 32 rain
- * frames, 0.75 for 48 snow or drift frames (soft shapes, under the sharp plan).
+ * frames, 0.65 for 60 snow or drift frames (soft shapes, under the sharp plan).
  */
 const BUDGET = 12_000_000;
 
@@ -29,7 +29,7 @@ export async function sendMapFrames(info: WidgetInfo, plan: Plan | null, lights:
   const f = { scale: fit.scale, x: (u: number) => box.left + fit.x(u), y: (v: number) => box.top + fit.y(v) };
   const geom = houseGeom(plan, f, lights);
   const u = clamp(fit.scale / 30, 0.45, 1);
-  const { frames, intervalMs } = widgetFrames(outside.sky, info.width, info.height, geom, { u, radius, ink: GROUND });
+  const { frames, intervalMs, flash } = widgetFrames(outside.sky, info.width, info.height, geom, { u, radius, ink: GROUND });
   const scale = clamp(Math.sqrt(BUDGET / (frames.length * info.width * info.height * 4)), 0.5, 1.5);
-  return HueHttp.setWidgetFrames({ ...base, frames, intervalMs, scale });
+  return HueHttp.setWidgetFrames({ ...base, frames, intervalMs, scale, flash: flash?.svg, flashSteps: flash?.steps, flashMs: flash?.stepMs });
 }

@@ -38,6 +38,10 @@ class WidgetFramesRecord : Record {
   @Field val width: Double = 0.0
   @Field val height: Double = 0.0
   @Field val scale: Double = 1.0
+  /** Lightning: an SVG shown at `flashSteps[i]` opacity for `flashMs` each (none if null). */
+  @Field val flash: String? = null
+  @Field val flashSteps: List<Double> = emptyList()
+  @Field val flashMs: Int = 200
 }
 
 class HueHttpModule : Module() {
@@ -70,7 +74,7 @@ class HueHttpModule : Module() {
     // Live sync of widgets with the bridge (foreground service). Started at app start, while it's allowed.
     AsyncFunction("setWidgetFrames") { r: WidgetFramesRecord ->
       val context = appContext.reactContext ?: return@AsyncFunction
-      WidgetFrames.set(context, r.widgetId, r.frames, r.intervalMs, r.width, r.height, r.scale)
+      WidgetFrames.set(context, r.widgetId, r.frames, r.intervalMs, r.width, r.height, r.scale, r.flash, r.flashSteps, r.flashMs)
     }
 
     AsyncFunction("startLive") {

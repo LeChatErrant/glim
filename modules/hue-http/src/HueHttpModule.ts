@@ -27,7 +27,18 @@ declare class HueHttpModule extends NativeModule<Events> {
    * Plays SVG frames (one loop, `intervalMs` apart) under a widget's image: rendered natively at
    * `scale` px per dp, flipped by the launcher. Empty frames clear them. Missing in older builds.
    */
-  setWidgetFrames?(options: { widgetId: number; frames: string[]; intervalMs: number; width: number; height: number; scale: number }): Promise<void>;
+  setWidgetFrames?(options: {
+    widgetId: number;
+    frames: string[];
+    intervalMs: number;
+    width: number;
+    height: number;
+    scale: number;
+    /** Lightning: an SVG shown at `flashSteps[i]` opacity for `flashMs` each, on its own strip. */
+    flash?: string;
+    flashSteps?: number[];
+    flashMs?: number;
+  }): Promise<void>;
   /** Starts live sync (widgets follow the bridge's event stream) if enabled and paired. */
   startLive(): Promise<void>;
   setLiveEnabled(on: boolean): Promise<void>;

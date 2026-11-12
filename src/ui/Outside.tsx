@@ -118,13 +118,13 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
         {glitter.map(([a, b], i) => (
           <View key={i} style={StyleSheet.absoluteFill}>
             <Dots points={a} />
-            <Twinkle active={active} ms={1800}>
+            <Twinkle active={active} ms={4500}>
               <Dots points={b} />
             </Twinkle>
           </View>
         ))}
         {puddles.map((p, i) => (
-          <Pulse key={`p${i}`} active={active} ms={2200} min={0.65} box={p.box}>
+          <Pulse key={`p${i}`} active={active} ms={4500} min={0.65} box={p.box}>
             <SvgXml xml={svgBox(p.box, p.body)} width={p.box.w} height={p.box.h} />
           </Pulse>
         ))}
@@ -506,7 +506,7 @@ function Glints({ x, y, r, color, storm, active }: { x: number; y: number; r: nu
 
 /** A firefly wandering on a small loop, glowing on and off. */
 function Firefly({ x, y, phase, active }: { x: number; y: number; phase: number; active: boolean }) {
-  const ms = 5000 + phase * 3000;
+  const ms = 12000 + phase * 6000;
   const t = useLoop(active, (v) =>
     Animated.sequence([Animated.delay(phase * ms), Animated.loop(Animated.timing(v, { toValue: 1, duration: ms, easing: Easing.linear, useNativeDriver: true }))]),
   );
@@ -533,18 +533,30 @@ function Firefly({ x, y, phase, active }: { x: number; y: number; phase: number;
   );
 }
 
-/** A double lightning flash every few seconds. */
+/** Lightning now and then: 10 to 30 s apart, some strikes near (a double flash), some far and faint. */
 function Lightning({ active }: { active: boolean }) {
-  const t = useLoop(active, (v) =>
-    Animated.loop(
-      Animated.sequence([
-        Animated.delay(5600),
-        Animated.timing(v, { toValue: 1, duration: 60, useNativeDriver: true }),
-        Animated.timing(v, { toValue: 0.2, duration: 90, useNativeDriver: true }),
-        Animated.timing(v, { toValue: 0.85, duration: 90, useNativeDriver: true }),
-        Animated.timing(v, { toValue: 0, duration: 260, useNativeDriver: true }),
-      ]),
-    ),
-  );
-  return <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(214,222,255,0.42)', opacity: t }]} />;
+  const [v] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    if (!active) return;
+    let timer: ReturnType<typeof setTimeout>;
+    let strike: Animated.CompositeAnimation | null = null;
+    const next = () => {
+      timer = setTimeout(() => {
+        const near = Math.random() < 0.6;
+        const flash = (to: number, ms: number) => Animated.timing(v, { toValue: to, duration: ms, useNativeDriver: true });
+        strike = near
+          ? Animated.sequence([flash(1, 70), flash(0.2, 110), flash(0.8, 100), flash(0, 600)])
+          : Animated.sequence([flash(0.35, 120), flash(0, 700)]);
+        // Stopped (screen left): don't schedule another.
+        strike.start(({ finished }) => finished && next());
+      }, 10000 + Math.random() * 20000);
+    };
+    next();
+    return () => {
+      clearTimeout(timer);
+      strike?.stop();
+      v.setValue(0);
+    };
+  }, [active, v]);
+  return <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(214,222,255,0.42)', opacity: v }]} />;
 }

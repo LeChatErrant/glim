@@ -234,7 +234,9 @@ function outdoorSvg(sky: Sky, geom: HouseGeom, u: number, sparkle: boolean) {
         `<defs><linearGradient id="os${i}" gradientUnits="userSpaceOnUse" x1="0" y1="${n(box.y)}" x2="0" y2="${n(box.y + box.h)}">${stops([[0, rgba(cover, 0.8)], [0.3, rgba(cover, 0.62)], [0.7, rgba(cover, 0.56)], [1, rgba(cover, 0.74)]])}</linearGradient></defs>` +
           `<path d="${d}" fill="url(#os${i})"/>`,
       );
-      // Drifts piled along the edges and in the corners.
+      // Drifts piled along the edges and in the corners, kept on the area (centered on its
+      // outline, unclipped they spilled into the garden as pale blobs), with the lamps' glow.
+      const drifts: string[] = [];
       pts.forEach((a, j) => {
         const b = pts[(j + 1) % pts.length];
         const len = Math.hypot(b.x - a.x, b.y - a.y);
@@ -243,9 +245,11 @@ function outdoorSvg(sky: Sky, geom: HouseGeom, u: number, sparkle: boolean) {
           const t = k / along;
           const corner = k === 0;
           const horizontal = Math.abs(b.x - a.x) > Math.abs(b.y - a.y);
-          out.push(ellipseBlob(`od${i}-${j}-${k}`, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, (corner ? 20 : horizontal ? 34 : 12) * u, (corner ? 16 : horizontal ? 9 : 30) * u, cover, 0.7));
+          drifts.push(ellipseBlob(`od${i}-${j}-${k}`, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, (corner ? 20 : horizontal ? 34 : 12) * u, (corner ? 16 : horizontal ? 9 : 30) * u, cover, 0.7));
         }
       });
+      area.lights.forEach((l, k) => drifts.push(ellipseBlob(`sl${i}-${k}`, l.x, l.y, l.r * 1.6, l.r * 1.15, hexRgb(l.color), 0.36)));
+      out.push(`<defs><clipPath id="oc${i}"><path d="${d}"/></clipPath></defs><g clip-path="url(#oc${i})">${drifts.join('')}</g>`);
       if (sparkle) out.push(sparklesSvg(pts, u, 0));
     }
   });
@@ -261,9 +265,6 @@ function outdoorSvg(sky: Sky, geom: HouseGeom, u: number, sparkle: boolean) {
       }
       if (!l.beads.length) out.push(ellipseBlob(`rl${i}`, l.x, l.y + 26 * u, 7 * u, 20 * u, c, 0.5));
     });
-  }
-  if (sky.weather === 'snow') {
-    geom.outdoorLights.forEach((l, i) => out.push(ellipseBlob(`sl${i}`, l.x, l.y, l.r * 1.6, l.r * 1.15, hexRgb(l.color), 0.36)));
   }
   return out.join('');
 }
@@ -344,17 +345,17 @@ export function terraceFx(sky: Sky, areas: OutdoorArea[], u: number): TerraceFx 
       }
     }
     if (sky.weather === 'snow') {
-      for (const p of pointsIn(area, clamp(Math.round(size / 2500), 6, 20), 67 + i, u)) fx.settle.push({ ...p, ms: 4000 + 2500 * r(), phase: r() });
+      for (const p of pointsIn(area, clamp(Math.round(size / 2500), 6, 20), 67 + i, u)) fx.settle.push({ ...p, ms: 8000 + 4000 * r(), phase: r() });
     }
     if (sky.weather === 'cloudy') {
       ['#B8643A', '#C98A3E', '#8E5A34', '#A8703A'].forEach((color, k) => {
-        fx.leaves.push({ x: area.box.x, y: area.box.y + area.box.h * (0.2 + 0.2 * k), span: area.box.w, color, ms: 9000 + 5000 * r(), phase: r() });
+        fx.leaves.push({ x: area.box.x, y: area.box.y + area.box.h * (0.2 + 0.2 * k), span: area.box.w, color, ms: 18000 + 8000 * r(), phase: r() });
       });
     }
     if (sky.weather === 'clear' && sky.night > 0.6) {
       for (const l of area.lights) {
         if (l.beads.length) continue;
-        [12, 18, 24].forEach((rad, k) => fx.moths.push({ x: l.x, y: l.y, r: rad * u, ms: [1600, 2300, 3100][k], dir: k % 2 ? -1 : 1, phase: r() }));
+        [12, 18, 24].forEach((rad, k) => fx.moths.push({ x: l.x, y: l.y, r: rad * u, ms: [5000, 6500, 8000][k], dir: k % 2 ? -1 : 1, phase: r() }));
       }
     }
   });
@@ -498,7 +499,7 @@ export function particleLayers(sky: Sky, u: number): ParticleLayer[] {
       for (let j = 0; j < s.n; j++) {
         particles.push({ x: 2 * u + r() * (w - 4 * u), y: 2 * u + r() * (h - (s.len + 4) * u), w: s.width * u, h: s.len * u, color: `rgba(206,220,240,${s.a})` });
       }
-      return { tileW: w, tileH: h, angle: storm ? 22 : 14, particles, tilesPerLoop: s.tiles, loopMs: storm ? 600 : 800 };
+      return { tileW: w, tileH: h, angle: storm ? 22 : 14, particles, tilesPerLoop: s.tiles, loopMs: storm ? 800 : 1100 };
     });
   }
   if (sky.weather === 'snow') {
@@ -514,7 +515,7 @@ export function particleLayers(sky: Sky, u: number): ParticleLayer[] {
         const d = (s.d + r()) * u;
         particles.push({ x: 4 * u + r() * (t - 8 * u), y: 4 * u + r() * (t - 8 * u), w: d, h: d, color: `rgba(248,248,252,${s.a})` });
       }
-      return { tileW: t, tileH: t, angle: 0, particles, tilesPerLoop: 1, loopMs: 3000 };
+      return { tileW: t, tileH: t, angle: 0, particles, tilesPerLoop: 1, loopMs: 7000 };
     });
   }
   if (sky.weather === 'clear' && sky.warm * sky.day > 0.3) {
@@ -523,7 +524,7 @@ export function particleLayers(sky: Sky, u: number): ParticleLayer[] {
     const c = rgba(mix(sky.wash, [255, 255, 255], 0.4), 0.9);
     const particles: Particle[] = [];
     for (let j = 0; j < 7; j++) particles.push({ x: 8 * u + r() * (t - 16 * u), y: 8 * u + r() * (t - 16 * u), w: 2.2 * u, h: 2.2 * u, color: c, glow: rgba(sky.wash, 0.25) });
-    return [{ tileW: t, tileH: t, angle: 0, particles, tilesPerLoop: -1, loopMs: 6000 }];
+    return [{ tileW: t, tileH: t, angle: 0, particles, tilesPerLoop: -1, loopMs: 20000 }];
   }
   return [];
 }
@@ -585,7 +586,19 @@ export function fireflies(sky: Sky, geom: HouseGeom, u: number) {
 
 // ---- Widget frames ----
 
-export type Frames = { frames: string[]; intervalMs: number };
+/**
+ * A widget's weather loop, plus lightning on its own slow strip (a storm's loop is too short to
+ * hold rare strikes): `flash` is drawn once, shown at `steps[i]` opacity for `stepMs` each.
+ */
+export type Frames = { frames: string[]; intervalMs: number; flash?: { svg: string; steps: number[]; stepMs: number } };
+
+/** Two strikes per 24 s, unevenly spaced: a near double flash, then a faint far one. */
+function lightningSteps() {
+  const steps: number[] = new Array(120).fill(0);
+  steps.splice(18, 4, 0.42, 0.1, 0.3, 0.06);
+  steps.splice(76, 2, 0.16, 0.05);
+  return steps;
+}
 
 /** One frame of what moves on outdoor areas, `t` in [0, 1) of a `loop` ms loop. */
 function terraceFrame(sky: Sky, areas: OutdoorArea[], fx: TerraceFx, still: { puddles: string; mist: string }, t: number, loop: number, u: number) {
@@ -650,12 +663,12 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
   const storm = sky.weather === 'storm';
   const drifting = sky.weather === 'fog' || (sky.weather !== 'clear' && sky.day > 0.1) || fx.moths.length > 0;
   // The launcher flips right on time, so smoothness comes from small steps between frames:
-  // 25 fps rain whose streaks are longer than a frame's step, 20 fps for everything else (5 and
-  // 10 fps looked choppy). Slow drifts get a shorter loop and smaller swings to stay as slow.
+  // 25 fps rain whose streaks are longer than a frame's step; everything else is slow and calm,
+  // so 10 fps over a long 6 s loop keeps each step under a pixel or two.
   let count = 1;
   let intervalMs = 1000;
   if (sky.wet) [count, intervalMs] = [32, 40];
-  else if (sky.weather === 'snow' || layers.length || flies.length || drifting) [count, intervalMs] = [48, 50];
+  else if (sky.weather === 'snow' || layers.length || flies.length || drifting) [count, intervalMs] = [60, 100];
   const loop = count * intervalMs;
 
   const base = groundSvg(sky, W, H, geom, u);
@@ -702,10 +715,8 @@ export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, op
       const o = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(2 * a + 1));
       parts.push(`<circle cx="${n(x)}" cy="${n(y)}" r="${n(5 * u)}" fill="rgba(226,240,140,${(0.25 * o).toFixed(2)})"/><circle cx="${n(x)}" cy="${n(y)}" r="${n(1.5 * u)}" fill="rgba(240,248,170,${(0.95 * o).toFixed(2)})"/>`);
     }
-    // A double flash, each lasting two frames.
-    const flash = storm ? { [count - 6]: 0.4, [count - 5]: 0.3, [count - 3]: 0.28, [count - 2]: 0.16 }[f] : undefined;
-    if (flash) parts.push(`<rect x="0" y="0" width="${n(W)}" height="${n(H)}" fill="rgba(214,222,255,${flash})"/>`);
     frames.push(svg(W, H, `${clip}<g clip-path="url(#wc)">${parts.join('')}</g>`));
   }
-  return { frames, intervalMs };
+  const flash = storm ? { svg: svg(W, H, `${clip}<rect x="0" y="0" width="${n(W)}" height="${n(H)}" clip-path="url(#wc)" fill="rgb(214,222,255)"/>`), steps: lightningSteps(), stepMs: 200 } : undefined;
+  return { frames, intervalMs, flash };
 }
