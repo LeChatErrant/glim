@@ -559,8 +559,6 @@ export type WidgetFx = { kind: string; x?: number; y?: number; w?: number; h?: n
 export type WidgetOutside = { ground: string; over: string; low: WidgetFx[]; high: WidgetFx[] };
 
 const argb = (c: RGB, a = 1) => `#${[Math.round(clamp(a, 0, 1) * 255), ...c].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`;
-/** Placed kinds come in variants (own period and phase), so neighbors never move in step. */
-const variant = (kind: string, i: number, count = 4) => `${kind}_${(i % count) + 1}`;
 
 /**
  * The outside for a widget. Still: the ground; then `over` everything that falls in the garden,
@@ -582,7 +580,9 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
   if (sky.wet) low.push({ kind: sky.weather === 'storm' ? 'storm' : 'rain' });
   else if (sky.weather === 'snow') low.push({ kind: 'snow' });
   else if (sky.weather === 'clear' && sky.warm * sky.day > 0.3) low.push({ kind: 'dust', tint: argb(mix(sky.wash, [255, 255, 255], 0.4)) });
-  ripples(sky, geom, u).forEach((p, i) => low.push({ kind: variant('ripple', i), x: p.x, y: p.y, w: 24 * u, h: 12 * u }));
+  // Placed kinds come in variants (own period and phase), picked natively by their place in
+  // the layer: neighbors never move in step.
+  ripples(sky, geom, u).forEach((p) => low.push({ kind: 'ripple', x: p.x, y: p.y, w: 24 * u, h: 12 * u }));
 
   const puddles = areas.map((a, i) => puddlesSvg(sky, a, u, i)).join('');
   const mist = areas.map((a, i) => mistSvg(sky, a, u, i)).join('');
@@ -595,12 +595,12 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
     spillSvg(sky, geom, u);
 
   const high: WidgetFx[] = [];
-  fx.splashes.forEach((p, i) => high.push({ kind: variant('splash', i), x: p.x, y: p.y, w: 20 * u, h: 10 * u }));
-  fx.drips.forEach((p, i) => high.push({ kind: variant('drip', i), x: p.x, y: p.y + 9 * u, w: 14 * u, h: 26 * u }));
-  fx.settle.forEach((p, i) => high.push({ kind: variant('settle', i), x: p.x + 2 * u, y: p.y - 16 * u, w: 12 * u, h: 40 * u }));
-  fx.leaves.forEach((l, i) => high.push({ kind: variant('leaf', i, 3), x: l.x + l.span / 2, y: l.y, w: l.span, h: 16 * u, tint: argb(hexRgb(l.color)) }));
-  fx.moths.forEach((m, i) => high.push({ kind: variant('moth', i, 3), x: m.x, y: m.y, w: m.r / 0.46, h: m.r / 0.46 }));
-  fireflies(sky, geom, u).forEach((p, i) => high.push({ kind: variant('firefly', i), x: p.x, y: p.y, w: 40 * u, h: 40 * u }));
+  fx.splashes.forEach((p) => high.push({ kind: 'splash', x: p.x, y: p.y, w: 20 * u, h: 10 * u }));
+  fx.drips.forEach((p) => high.push({ kind: 'drip', x: p.x, y: p.y + 9 * u, w: 14 * u, h: 26 * u }));
+  fx.settle.forEach((p) => high.push({ kind: 'settle', x: p.x + 2 * u, y: p.y - 16 * u, w: 12 * u, h: 40 * u }));
+  fx.leaves.forEach((l) => high.push({ kind: 'leaf', x: l.x + l.span / 2, y: l.y, w: l.span, h: 16 * u, tint: argb(hexRgb(l.color)) }));
+  fx.moths.forEach((m) => high.push({ kind: 'moth', x: m.x, y: m.y, w: m.r / 0.46, h: m.r / 0.46 }));
+  fireflies(sky, geom, u).forEach((p) => high.push({ kind: 'firefly', x: p.x, y: p.y, w: 40 * u, h: 40 * u }));
 
   return { ground: still(groundSvg(sky, W, H, geom, u)), over: still(over), low, high };
 }

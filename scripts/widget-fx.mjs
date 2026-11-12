@@ -171,9 +171,10 @@ const rainLayers = (specs, angle) =>
   const { body, targets } = layered(
     rainLayers(
       [
-        [31, 85, 6, 0.65, 0.26, 4900],
-        [32, 85, 9, 0.75, 0.42, 3600],
-        [33, 65, 13, 1, 0.6, 2000],
+        // About twice the rain: denser, longer, brighter, quicker streaks.
+        [31, 160, 8, 0.7, 0.3, 3700],
+        [32, 150, 12, 0.85, 0.48, 2600],
+        [33, 115, 17, 1.1, 0.68, 1450],
       ],
       22,
     ),
@@ -237,39 +238,49 @@ blobs('clouds', [{ seed: 12, n: 3, rx: [115, 125], ry: [68, 75], a: 1, drift: 14
 
 // ---- Placed kinds (variants) ----
 
-const V = 4;
-const clamp01 = (v) => Math.max(0, Math.min(1, v));
+/**
+ * Variant `i` of `count`: its phase and how far its period stretches (0 to 1), spread unevenly
+ * (golden ratio steps) so no two neighbors start or end together.
+ */
+const spread = (i, offset = 0) => ({ ph: (i * 0.618034 + offset) % 1, k: (i * 0.381966 + 0.13 + offset) % 1 });
+const variants = {}; // base kind → count
+const placed = (base, count, make) => {
+  variants[base] = count;
+  for (let i = 0; i < count; i++) make(i, `${base}_${i + 1}`);
+};
 
 // A rain ring opening on the ground around the house.
-for (let i = 0; i < V; i++) {
+placed('ripple', 12, (i, name) => {
+  const { ph, k } = spread(i);
+  const ms = 2300 + 1300 * k;
   const s = (t) => 0.2 + 1.5 * t;
   const body = `<group android:translateX="12" android:translateY="6"><group android:name="ring"><path android:name="p" android:strokeColor="#CEDAF0" android:strokeWidth="1" android:pathData="${ellipse(0, 0, 7, 3.5)}"/></group></group>`;
-  write(`ripple_${i + 1}`, false, 24, 12, body, {
-    ring: [keys(2400 + 330 * i, [['scaleX', cycle(s, i / V)], ['scaleY', cycle(s, i / V)]])],
-    p: [keys(2400 + 330 * i, [['strokeAlpha', cycle((t) => 0.8 * (1 - t), i / V)], ['strokeWidth', cycle((t) => 1 / s(t), i / V)]])],
+  write(name, false, 24, 12, body, {
+    ring: [keys(ms, [['scaleX', cycle(s, ph)], ['scaleY', cycle(s, ph)]])],
+    p: [keys(ms, [['strokeAlpha', cycle((t) => 0.8 * (1 - t), ph)], ['strokeWidth', cycle((t) => 1 / s(t), ph)]])],
   });
-}
+});
 
 // A drop landing on an outdoor floor: a bright point, then a crown opening.
-for (let i = 0; i < V; i++) {
-  const ms = 1000 + 150 * i;
+placed('splash', 12, (i, name) => {
+  const { ph, k } = spread(i, 0.37);
+  const ms = 950 + 700 * k;
   const s = (t) => 0.15 + 1.45 * t;
-  const ph = (i + 0.5) / V;
   const body =
     `<group android:translateX="10" android:translateY="5"><group android:name="ring"><path android:name="p" android:strokeColor="#D6E4F8" android:strokeWidth="1" android:pathData="${ellipse(0, 0, 6, 3)}"/></group>` +
     `<group android:name="dot"><path android:name="d" android:fillColor="#ECF4FF" android:pathData="${circle(0, 0, 1.2)}"/></group></group>`;
-  write(`splash_${i + 1}`, false, 20, 10, body, {
+  write(name, false, 20, 10, body, {
     ring: [keys(ms, [['scaleX', cycle(s, ph)], ['scaleY', cycle(s, ph)]])],
     p: [keys(ms, [['strokeAlpha', cycle((t) => 0.85 * (1 - t), ph)], ['strokeWidth', cycle((t) => 1 / s(t), ph)]])],
     dot: [keys(ms, [['scaleX', cycle((t) => Math.max(0.01, 1 - 3 * t), ph)], ['scaleY', cycle((t) => Math.max(0.01, 1 - 3 * t), ph)]])],
     d: [keys(ms, [['fillAlpha', cycle((t) => (t < 0.2 ? 0.95 : 0), ph, 40)]])],
   });
-}
+});
 
 // A drop gathering at the eave, falling, landing with a ring.
-for (let i = 0; i < V; i++) {
-  const ms = 1900 + 260 * i;
-  const ph = (i + 0.25) / V;
+placed('drip', 8, (i, name) => {
+  const { ph, k } = spread(i, 0.21);
+  const ms = 1800 + 1100 * k;
   const fall = (t) => (t < 0.55 ? 0 : t < 0.64 ? 14 * ((t - 0.55) / 0.09) ** 2 : 14);
   const grow = (t) => (t < 0.55 ? 0.4 + t : 1);
   const ringP = (t) => (t < 0.64 ? 0 : (t - 0.64) / 0.36);
@@ -277,27 +288,28 @@ for (let i = 0; i < V; i++) {
   const body =
     `<group android:translateX="7" android:translateY="4"><group android:name="drop"><path android:name="d" android:fillColor="#D6E6FA" android:pathData="${circle(0, 0, 1.4)}"/></group></group>` +
     `<group android:translateX="7" android:translateY="18"><group android:name="ring"><path android:name="p" android:strokeColor="#D6E4F8" android:strokeWidth="1" android:pathData="${ellipse(0, 0, 6, 3)}"/></group></group>`;
-  write(`drip_${i + 1}`, false, 14, 26, body, {
+  write(name, false, 14, 26, body, {
     drop: [keys(ms, [['translateY', cycle(fall, ph, 48)], ['scaleX', cycle(grow, ph, 48)], ['scaleY', cycle(grow, ph, 48)]])],
     d: [keys(ms, [['fillAlpha', cycle((t) => (t < 0.64 ? 0.95 : 0), ph, 48)]])],
     ring: [keys(ms, [['scaleX', cycle(rs, ph, 48)], ['scaleY', cycle(rs, ph, 48)]])],
     p: [keys(ms, [['strokeAlpha', cycle((t) => (t < 0.64 ? 0 : 0.8 * (1 - ringP(t))), ph, 48)], ['strokeWidth', cycle((t) => 1 / rs(t), ph, 48)]])],
   });
-}
+});
 
 // A flake reaching the snow-covered floor: it slows down, settles and melts in.
-for (let i = 0; i < V; i++) {
-  const ms = 8000 + 1200 * i;
-  const ph = (i + 0.6) / V;
-  const k = (t) => 1 - (1 - Math.min(1, t / 0.62)) ** 2;
+placed('settle', 8, (i, name) => {
+  const { ph, k } = spread(i, 0.55);
+  const ms = 8000 + 4500 * k;
+  const ease = (t) => 1 - (1 - Math.min(1, t / 0.62)) ** 2;
   const body = `<group android:translateX="4" android:translateY="36"><group android:name="flake"><path android:name="d" android:fillColor="#FAFAFF" android:pathData="${circle(0, 0, 1.3)}"/></group></group>`;
-  write(`settle_${i + 1}`, false, 12, 40, body, {
-    flake: [keys(ms, [['translateX', cycle((t) => 5 * (1 - k(t)), ph)], ['translateY', cycle((t) => -30 * (1 - k(t)), ph)]])],
+  write(name, false, 12, 40, body, {
+    flake: [keys(ms, [['translateX', cycle((t) => 5 * (1 - ease(t)), ph)], ['translateY', cycle((t) => -30 * (1 - ease(t)), ph)]])],
     d: [keys(ms, [['fillAlpha', cycle((t) => (t < 0.15 ? t / 0.15 : t > 0.62 ? (1 - t) / 0.38 : 1) * 0.95, ph)]])],
   });
-}
+});
 
 // An autumn leaf skittering across an outdoor area, tumbling (white: tinted from JS).
+variants.leaf = 3;
 for (let i = 0; i < 3; i++) {
   const ms = [19000, 23000, 27000][i];
   const ph = [0.1, 0.45, 0.8][i];
@@ -315,6 +327,7 @@ for (let i = 0; i < 3; i++) {
 }
 
 // A moth circling a lit lamp, fluttering a little.
+variants.moth = 3;
 [
   [5600, 1],
   [7200, -1],
@@ -325,6 +338,7 @@ for (let i = 0; i < 3; i++) {
 });
 
 // A firefly wandering slowly (two drifts on unrelated periods), glowing on and off.
+variants.firefly = 4;
 [
   [11300, 7300, 2900],
   [13700, 9100, 3700],
@@ -354,6 +368,11 @@ package io.lechaterrant.huehttp
 internal object FxKinds {
   val all: Map<String, Pair<Int, Boolean>> = mapOf(
 ${kinds.map(([n, full]) => `    "${n}" to (R.layout.glim_fx_${n} to ${full}),`).join('\n')}
+  )
+
+  /** Placed kinds: how many variants (\`<kind>_1\`...), each with its own period and phase. */
+  val variants: Map<String, Int> = mapOf(
+${Object.entries(variants).map(([n, c]) => `    "${n}" to ${c},`).join('\n')}
   )
 }
 `,

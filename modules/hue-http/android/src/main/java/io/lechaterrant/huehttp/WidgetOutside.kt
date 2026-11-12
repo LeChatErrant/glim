@@ -102,9 +102,9 @@ object WidgetOutside {
       }
     }
     ground?.let { add(image(it), 1) }
-    low.forEachIndexed { i, fx -> fxView(pkg, fx, widthDp, heightDp, stable)?.let { add(it, 1000 + i) } }
+    low.forEachIndexed { i, fx -> fxView(pkg, fx, i, widthDp, heightDp, stable)?.let { add(it, 1000 + i) } }
     over?.let { add(image(it), 2) }
-    high.forEachIndexed { i, fx -> fxView(pkg, fx, widthDp, heightDp, stable)?.let { add(it, 2000 + i) } }
+    high.forEachIndexed { i, fx -> fxView(pkg, fx, i, widthDp, heightDp, stable)?.let { add(it, 2000 + i) } }
     AppWidgetManager.getInstance(context).partiallyUpdateAppWidget(widgetId, views)
   }
 
@@ -116,8 +116,10 @@ object WidgetOutside {
     ((updated / 1000) % 200_000).toInt()
   }.getOrDefault(0).also { installId = it }
 
-  private fun fxView(pkg: String, fx: Fx, widthDp: Double, heightDp: Double, sized: Boolean): RemoteViews? {
-    val (layout, full) = FxKinds.all[fx.kind] ?: return null
+  /** `index`: the animation's place in its layer, which picks a placed kind's variant. */
+  private fun fxView(pkg: String, fx: Fx, index: Int, widthDp: Double, heightDp: Double, sized: Boolean): RemoteViews? {
+    val kind = FxKinds.variants[fx.kind]?.let { "${fx.kind}_${index % it + 1}" } ?: fx.kind
+    val (layout, full) = FxKinds.all[kind] ?: return null
     // Placing and sizing views needs Android 12; before that only full fields are shown.
     if (!full && !sized) return null
     val v = RemoteViews(pkg, layout)
