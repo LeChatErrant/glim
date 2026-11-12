@@ -242,8 +242,8 @@ dissolves into it, lamps glow out into the mist). The home feels sheltered.
 Outdoor rooms (terrace) stay rooms of the plan (dark outdoor floor, no
 paving or planks), tinted by the light of the hour; the weather lands there
 instead of passing by: splashes, eave drips and puddles in the rain,
-settling snow, low mist, moths around a lit lamp; on grey days, leaves blow
-across the garden. Everything moves. A pill under the headline says the weather
+settling snow, low mist, moths around a lit lamp; on grey days, dandelion seeds
+drift across the garden. Everything moves. A pill under the headline says the weather
 ("Rain · 10°", "Set by hand" when forced) and opens Settings.
 
 **States:** map not set up (empty state inviting to scan, with "Draw it

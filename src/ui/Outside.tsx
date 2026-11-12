@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
-import { SvgXml } from 'react-native-svg';
+import Svg, { Circle, Path, SvgXml } from 'react-native-svg';
 
 import type { Light } from '../lib/hue/client';
 import { fitPlan, type Plan, type PlanView } from '../lib/map/map';
@@ -9,8 +9,8 @@ import {
   cloudShadowsSvg,
   darknessSvg,
   fireflies,
+  gardenSeeds,
   fogSvg,
-  gardenLeaves,
   groundSvg,
   houseGeom,
   glossSvg,
@@ -106,7 +106,6 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
   const fogW = width + 2 * FOG_MARGIN;
   const fogLow = useMemo(() => fogSvg(sky, fogW, height, u, 0), [sky, fogW, height]);
   const fogHigh = useMemo(() => fogSvg(sky, fogW, height, u, 1), [sky, fogW, height]);
-  const leaves = useMemo(() => gardenLeaves(sky, height), [sky.weather, height]); // eslint-disable-line react-hooks/exhaustive-deps
   const snowy = sky.weather === 'snow';
   const areas = useMemo(() => outdoorAreas(geom, u), [geom]);
   const fxKind = kindOf(sky);
@@ -125,6 +124,7 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
   const rings = useMemo(() => ripples(sky, geom, u), [sky.wet, geom]); // eslint-disable-line react-hooks/exhaustive-deps
   const nightOut = sky.night > 0.6;
   const flies = useMemo(() => fireflies(sky, geom, u), [sky.weather, nightOut, geom]); // eslint-disable-line react-hooks/exhaustive-deps
+  const seeds = useMemo(() => gardenSeeds(sky, height), [sky.weather, height]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The ground and the house layer move like the map: about its center, twist, then pan, then
   // zoom. What they uncover at the screen's edges is the screen's black, like the dark beyond.
@@ -152,8 +152,8 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
           <SvgXml xml={svg(fogW, height, fogHigh)} width={fogW} height={height} style={{ marginLeft: -FOG_MARGIN }} />
         </Drift>
       )}
-      {leaves.map((d, i) => (
-        <Leaf key={`l${i}`} x={-12} y={d.y} span={width + 24} color={d.color} ms={d.ms} phase={d.phase} active={active} />
+      {seeds.map((d, i) => (
+        <Seed key={`s${i}`} y={d.y} span={width + 16} ms={d.ms} phase={d.phase} active={active} />
       ))}
       <View style={follow}>
         <SvgXml xml={house} width={width} height={height} style={StyleSheet.absoluteFill} />
@@ -334,31 +334,35 @@ function Settle({ x, y, ms, phase, active }: { x: number; y: number; ms: number;
   );
 }
 
-/** An autumn leaf blowing across the garden, tumbling as it goes. */
-function Leaf({ x, y, span, color, ms, phase, active }: { x: number; y: number; span: number; color: string; ms: number; phase: number; active: boolean }) {
+/** A dandelion seed drifting across the garden on the breeze: fine rays around a dot, in a faint halo. */
+function Seed({ y, span, ms, phase, active }: { y: number; span: number; ms: number; phase: number; active: boolean }) {
   const t = usePhasedLoop(active, ms, phase);
   return (
     <Animated.View
       style={{
         position: 'absolute',
-        left: x - 3.5,
-        top: y - 2,
-        width: 7,
-        height: 4,
-        borderTopLeftRadius: 5,
-        borderBottomRightRadius: 5,
-        backgroundColor: color,
-        opacity: t.interpolate({ inputRange: [0, 0.08, 0.92, 1], outputRange: [0, 0.95, 0.95, 0] }),
+        left: -8 - 6,
+        top: y - 6,
+        width: 12,
+        height: 12,
+        opacity: t.interpolate({ inputRange: [0, 0.1, 0.9, 1], outputRange: [0, 1, 1, 0] }),
         transform: [
-          { translateX: t.interpolate({ inputRange: [0, 0.45, 0.55, 1], outputRange: [0, span * 0.46, span * 0.54, span] }) },
-          { translateY: t.interpolate({ inputRange: [0, 0.2, 0.4, 0.6, 0.8, 1], outputRange: [0, -9, 6, -4, 12, 22] }) },
-          { rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '1080deg'] }) },
-          { scaleY: t.interpolate({ inputRange: [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1], outputRange: [1, 0.25, 1, 0.25, 1, 0.25, 1, 0.25, 1] }) },
+          { translateX: t.interpolate({ inputRange: [0, 1], outputRange: [0, span] }) },
+          { translateY: t.interpolate({ inputRange: [0, 0.25, 0.5, 0.75, 1], outputRange: [0, -14, -12, -26, -24] }) },
+          { rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '720deg'] }) },
         ],
       }}
-    />
+    >
+      <Svg width={12} height={12} viewBox="-6 -6 12 12">
+        <Circle r={5} fill="rgba(255,255,255,0.12)" />
+        <Path d={SEED_RAYS} stroke="rgba(255,255,255,0.85)" strokeWidth={0.5} strokeLinecap="round" />
+        <Circle r={0.8} fill="rgba(255,255,255,0.95)" />
+      </Svg>
+    </Animated.View>
   );
 }
+
+const SEED_RAYS = Array.from({ length: 6 }, (_, j) => `M0,0L${(3.4 * Math.cos((j / 6) * Math.PI * 2)).toFixed(2)},${(3.4 * Math.sin((j / 6) * Math.PI * 2)).toFixed(2)}`).join('');
 
 /** A moth circling a lit lamp. */
 function Moth({ x, y, r, dir, ms, phase, active }: { x: number; y: number; r: number; dir: 1 | -1; ms: number; phase: number; active: boolean }) {

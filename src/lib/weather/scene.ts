@@ -466,16 +466,11 @@ export function fogSvg(sky: Sky, W: number, H: number, u: number, layer: 0 | 1) 
   return out.join('');
 }
 
-/** Autumn leaves blowing across the garden on a grey day: start rows, periods and colors. */
-export function gardenLeaves(sky: Sky, H: number) {
+/** Dandelion seeds drifting across the garden on a cloudy day: start rows, periods and phases. */
+export function gardenSeeds(sky: Sky, H: number) {
   if (sky.weather !== 'cloudy') return [];
-  const r = rng(29);
-  return ['#C4703A', '#AA542E', '#D0964A', '#8C783C', '#B8643A', '#C98A3E', '#9A5A30'].map((color, k) => ({
-    y: H * (0.1 + 0.8 * ((k + 0.5 * r()) / 7)),
-    color,
-    ms: 26000 + 16000 * r(),
-    phase: k / 7 + 0.1 * r(),
-  }));
+  const r = rng(31);
+  return Array.from({ length: 6 }, (_, k) => ({ y: H * (0.15 + 0.7 * ((k + 0.5 * r()) / 6)), ms: 34000 + 16000 * r(), phase: k / 6 + 0.1 * r() }));
 }
 
 /** A streak (w×h, drawn vertical) or a dot (w = h) in a particle tile; `glow` adds a soft halo. */
@@ -630,7 +625,7 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
   const low: WidgetFx[] = [];
   if (sky.day >= 0.1 && sky.weather === 'snow') low.push({ kind: 'clouds', tint: argb([22, 20, 46], 0.38 * sky.day) });
   if (wispAlpha(sky)) low.push({ kind: 'fog', tint: argb(mix(sky.fog, [255, 255, 255], 0.3), wispAlpha(sky)) });
-  if (sky.weather === 'cloudy') low.push({ kind: 'leaves' });
+  if (sky.weather === 'cloudy') low.push({ kind: 'seeds' });
   // A storm's rain carries its lightning (one vector each: cheaper for the launcher to redraw).
   if (sky.wet) low.push({ kind: sky.weather === 'storm' ? 'storm' : 'rain' });
   else if (sky.weather === 'snow') low.push({ kind: 'snow' });
