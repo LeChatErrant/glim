@@ -191,11 +191,7 @@ but never in a way that would need a rewrite to sell it later (see
   location only, rounded to ~1 km, per bridge. Settings → Weather control
   forces a weather and/or a time of day (moments, a slider, "a day in a
   minute") for testing and demos; the Map tab's weather pill says when it's
-  set by hand. Widgets animate too: JS builds a loop of SVG frames,
-  `WidgetFrames.kt` renders them and puts them in a ViewFlipper under the
-  widget's image (the launcher flips them; the app overrides the library's
-  `rn_widget.xml`, written by `plugins/with-fast-widgets.js`), re-sent after
-  every widget draw since a full redraw drops them.
+  set by hand. Widgets animate too (see 2026-11-12).
   2026-10-27, later: **we only see around the house.** The outside beyond a
   band around the rooms (clear by the walls, then a soft fade over 62 dp in
   the app, 32 dp on the widget, rounding corners and filling notches) is
@@ -205,6 +201,21 @@ but never in a way that would need a rewrite to sell it later (see
   around: blue at noon, orange at golden hour, navy at night; duller under
   clouds), and the weather happens inside it. Settings → "Weather on the map"
   off brings back the plain black map and hides location and Weather control.
+- 2026-11-12: **The outside is calm, and the widget plays it smoothly.**
+  Everything moves slowly (snow, fireflies, moths, leaves); lightning is rare
+  and uneven (app: 10 to 30 s apart, near or far). The Map widget no longer
+  flips a loop of frames (choppy at 5 to 10 fps, and the loop showed): two
+  still images (ground; outdoor floors, rim and the dark) with animated
+  vectors between and over them, played by the launcher at the screen's rate.
+  Each animation is a ProgressBar layout written by `scripts/widget-fx.mjs`
+  (run it, then rebuild): full fields (one vector per weather: one big vector
+  is cheaper to redraw than three) and placed ones (fireflies, moths, rings,
+  drips, settling flakes, leaves) in variants with their own period and
+  phase, so nothing moves in step and the scene never visibly loops.
+  `WidgetOutside.kt` adds them as stable views in `glim_fx` (in the app's
+  override of the library's `rn_widget.xml`, written by
+  `plugins/with-fast-widgets.js`): a redraw keeps them running. Placing them
+  needs Android 12 (older: full fields only).
 
 ## Vocabulary
 
@@ -288,7 +299,7 @@ point.**
   archetypes, labels, headline mood. `src/widgets/`: home-screen widgets and
   their task handler (registered in `index.ts`), plus the Map widget's
   configuration screen (`MapWidgetConfig.tsx`, per-widget `settings.ts`) and
-  its weather frames (`frames.ts`).
+  its outside (`outside.ts`).
 - `src/lib/weather/`: the outside. `sky.ts` (colors of the hour, recolored by
   the weather; pure), `scene.ts` (SVG pieces shared by the app and the
   widget, seamless particle tiles, widget frame loops), `source.ts` (Open-Meteo,

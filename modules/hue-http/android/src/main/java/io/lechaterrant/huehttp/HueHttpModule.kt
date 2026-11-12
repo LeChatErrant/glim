@@ -31,17 +31,24 @@ class CloudConfigRecord : Record {
   @Field val preferCloud: Boolean = false
 }
 
-class WidgetFramesRecord : Record {
+class FxRecord : Record {
+  @Field val kind: String = ""
+  @Field val x: Double = 0.0
+  @Field val y: Double = 0.0
+  @Field val w: Double = 0.0
+  @Field val h: Double = 0.0
+  @Field val tint: String? = null
+}
+
+class WidgetOutsideRecord : Record {
   @Field val widgetId: Int = 0
-  @Field val frames: List<String> = emptyList()
-  @Field val intervalMs: Int = 100
   @Field val width: Double = 0.0
   @Field val height: Double = 0.0
   @Field val scale: Double = 1.0
-  /** Lightning: an SVG shown at `flashSteps[i]` opacity for `flashMs` each (none if null). */
-  @Field val flash: String? = null
-  @Field val flashSteps: List<Double> = emptyList()
-  @Field val flashMs: Int = 200
+  @Field val ground: String? = null
+  @Field val over: String? = null
+  @Field val low: List<FxRecord> = emptyList()
+  @Field val high: List<FxRecord> = emptyList()
 }
 
 class HueHttpModule : Module() {
@@ -72,9 +79,10 @@ class HueHttpModule : Module() {
     }
 
     // Live sync of widgets with the bridge (foreground service). Started at app start, while it's allowed.
-    AsyncFunction("setWidgetFrames") { r: WidgetFramesRecord ->
+    AsyncFunction("setWidgetOutside") { r: WidgetOutsideRecord ->
       val context = appContext.reactContext ?: return@AsyncFunction
-      WidgetFrames.set(context, r.widgetId, r.frames, r.intervalMs, r.width, r.height, r.scale, r.flash, r.flashSteps, r.flashMs)
+      val fx = { l: List<FxRecord> -> l.map { WidgetOutside.Fx(it.kind, it.x, it.y, it.w, it.h, it.tint) } }
+      WidgetOutside.set(context, r.widgetId, r.ground, r.over, fx(r.low), fx(r.high), r.width, r.height, r.scale)
     }
 
     AsyncFunction("startLive") {

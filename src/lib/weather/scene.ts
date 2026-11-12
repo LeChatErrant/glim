@@ -529,20 +529,6 @@ export function particleLayers(sky: Sky, u: number): ParticleLayer[] {
   return [];
 }
 
-/** A layer's tile as SVG, for patterns. */
-function tileSvg(l: ParticleLayer) {
-  return l.particles
-    .map((p) => {
-      if (p.w === p.h) {
-        const c = `cx="${n(p.x + p.w / 2)}" cy="${n(p.y + p.h / 2)}"`;
-        const halo = p.glow ? `<circle ${c} r="${n(p.w * 1.8)}" fill="${p.glow}"/>` : '';
-        return `${halo}<circle ${c} r="${n(p.w / 2)}" fill="${p.color}"/>`;
-      }
-      return `<rect x="${n(p.x)}" y="${n(p.y)}" width="${n(p.w)}" height="${n(p.h)}" rx="${n(p.w / 2)}" fill="${p.color}"/>`;
-    })
-    .join('');
-}
-
 /** Spots just outside the walls, `d` px out, spread along the outline (in the band we see). */
 function alongWalls(geom: HouseGeom, count: number, seed: number, d: (r: () => number) => number): Pt[] {
   const shapes = [...geom.indoor, ...geom.outdoor];
@@ -584,139 +570,60 @@ export function fireflies(sky: Sky, geom: HouseGeom, u: number) {
   return alongWalls(geom, 10, 20, (q) => (8 + q() * 20) * u).map((p) => ({ ...p, phase: r() }));
 }
 
-// ---- Widget frames ----
+// ---- Widget ----
 
 /**
- * A widget's weather loop, plus lightning on its own slow strip (a storm's loop is too short to
- * hold rare strikes): `flash` is drawn once, shown at `steps[i]` opacity for `stepMs` each.
+ * One widget animation (scripts/widget-fx.mjs writes them, the launcher plays them): a full
+ * field (`kind` only) or one placed at `x`, `y` (its center), `w` × `h` dp; `tint` (#AARRGGBB).
  */
-export type Frames = { frames: string[]; intervalMs: number; flash?: { svg: string; steps: number[]; stepMs: number } };
+export type WidgetFx = { kind: string; x?: number; y?: number; w?: number; h?: number; tint?: string };
 
-/** Two strikes per 24 s, unevenly spaced: a near double flash, then a faint far one. */
-function lightningSteps() {
-  const steps: number[] = new Array(120).fill(0);
-  steps.splice(18, 4, 0.42, 0.1, 0.3, 0.06);
-  steps.splice(76, 2, 0.16, 0.05);
-  return steps;
-}
+/** The widget's outside: two still SVGs, animations between them (`low`) and above (`high`). */
+export type WidgetOutside = { ground: string; over: string; low: WidgetFx[]; high: WidgetFx[] };
 
-/** One frame of what moves on outdoor areas, `t` in [0, 1) of a `loop` ms loop. */
-function terraceFrame(sky: Sky, areas: OutdoorArea[], fx: TerraceFx, still: { puddles: string; mist: string }, t: number, loop: number, u: number) {
-  // Each item repeats a whole number of times per loop, so the last frame meets the first.
-  const at = (l: Loop) => (t * Math.max(1, Math.round(loop / l.ms)) + l.phase) % 1;
-  const out: string[] = [];
-  const wave = 0.5 + 0.5 * Math.sin(2 * Math.PI * t);
-  if (still.puddles) out.push(`<g opacity="${(0.7 + 0.3 * wave).toFixed(2)}">${still.puddles}</g>`);
-  if (sky.wet) areas.forEach((a, i) => out.push(glossSvg(a, a.box.x + a.box.w * (0.5 + 0.35 * Math.sin(2 * Math.PI * t)), u, i)));
-  if (still.mist) out.push(`<g opacity="${(0.6 + 0.4 * wave).toFixed(2)}">${still.mist}</g>`);
-  const ring = (x: number, y: number, p: number, a: number) =>
-    `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(6 * u * (0.15 + 1.45 * p))}" ry="${n(3 * u * (0.15 + 1.45 * p))}" fill="none" stroke="rgba(214,228,248,${(a * (1 - p)).toFixed(2)})" stroke-width="${n(u)}"/>`;
-  for (const s of fx.splashes) {
-    const p = at(s);
-    out.push(ring(s.x, s.y, p, 0.85));
-    if (p < 0.2) out.push(`<circle cx="${n(s.x)}" cy="${n(s.y)}" r="${n(1.2 * u * (1 - p * 3))}" fill="rgba(236,244,255,0.95)"/>`);
-  }
-  for (const d of fx.drips) {
-    const p = at(d);
-    if (p < 0.64) {
-      const fall = p < 0.55 ? 0 : ((p - 0.55) / 0.09) * 9 * u;
-      out.push(`<circle cx="${n(d.x + d.nx * fall)}" cy="${n(d.y + d.ny * fall)}" r="${n(1.4 * u * (p < 0.55 ? 0.4 + p : 1))}" fill="rgba(214,230,250,0.95)"/>`);
-    } else out.push(ring(d.x + d.nx * 9 * u, d.y + d.ny * 9 * u, (p - 0.64) / 0.36, 0.8));
-  }
-  for (const f of fx.settle) {
-    const p = at(f);
-    const down = Math.min(1, p / 0.62);
-    const a = p < 0.15 ? p / 0.15 : p > 0.62 ? (1 - p) / 0.38 : 1;
-    out.push(`<circle cx="${n(f.x + 5 * u * (1 - down))}" cy="${n(f.y - 30 * u * (1 - down))}" r="${n(1.3 * u)}" fill="rgba(250,250,255,${(0.95 * a).toFixed(2)})"/>`);
-  }
-  for (const l of fx.leaves) {
-    const p = at(l);
-    const a = p < 0.08 ? p / 0.08 : p > 0.92 ? (1 - p) / 0.08 : 1;
-    const x = l.x + l.span * p;
-    const y = l.y - 6 * u * Math.sin(Math.PI * 2 * p);
-    out.push(`<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(3.5 * u)}" ry="${n(2 * u)}" transform="rotate(${Math.round(420 * p)} ${n(x)} ${n(y)})" fill="${l.color}" opacity="${(0.95 * a).toFixed(2)}"/>`);
-  }
-  for (const m of fx.moths) {
-    const ang = m.dir * 2 * Math.PI * at(m);
-    out.push(`<circle cx="${n(m.x + m.r * Math.cos(ang))}" cy="${n(m.y + m.r * Math.sin(ang))}" r="${n(1.2 * u)}" fill="rgba(250,240,220,0.9)"/>`);
-  }
-  return out.join('');
-}
-
-/** Rain speed on widgets, against the app's. */
-const WIDGET_RAIN = 0.45;
+const argb = (c: RGB, a = 1) => `#${[Math.round(clamp(a, 0, 1) * 255), ...c].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`;
+/** Placed kinds come in variants (own period and phase), so neighbors never move in step. */
+const variant = (kind: string, i: number, count = 4) => `${kind}_${(i % count) + 1}`;
 
 /**
- * The outside for a widget, as a loop of SVG frames the launcher flips through. Everything below
- * the plan: ground, weather, outdoor areas, the dark all around (`reach` px from the walls). The
- * plan itself is drawn on top by the widget (its floors cover the inside).
+ * The outside for a widget. Still: the ground; then `over` everything that falls in the garden,
+ * the outdoor floors, the house's rim and the dark all around (`reach` px from the walls). The
+ * plan itself is drawn on top by the widget (its floors cover the inside). What moves is
+ * smooth vector animations the launcher plays on its own, each on its own period.
  */
-export function widgetFrames(sky: Sky, W: number, H: number, geom: HouseGeom, opts: { u: number; radius: number; ink: string }): Frames {
+export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, opts: { u: number; radius: number; ink: string }): WidgetOutside {
   const { u, radius, ink } = opts;
-  const layers = particleLayers(sky, u);
-  const rings = ripples(sky, geom, u);
-  const flies = fireflies(sky, geom, u);
   const areas = outdoorAreas(geom, u);
   const fx = terraceFx(sky, areas, u);
+  const clip = `<defs><clipPath id="wc"><rect x="0" y="0" width="${n(W)}" height="${n(H)}" rx="${n(radius)}" ry="${n(radius)}"/></clipPath></defs>`;
+  const still = (body: string) => svg(W, H, `${clip}<g clip-path="url(#wc)">${body}</g>`);
+
+  const low: WidgetFx[] = [];
+  if (sky.day >= 0.1 && (sky.weather === 'cloudy' || sky.weather === 'snow')) low.push({ kind: 'clouds', tint: argb([22, 20, 46], 0.38 * sky.day) });
+  if (sky.weather === 'fog') low.push({ kind: 'fog', tint: argb(sky.fog) });
+  // A storm's rain carries its lightning (one vector each: cheaper for the launcher to redraw).
+  if (sky.wet) low.push({ kind: sky.weather === 'storm' ? 'storm' : 'rain' });
+  else if (sky.weather === 'snow') low.push({ kind: 'snow' });
+  else if (sky.weather === 'clear' && sky.warm * sky.day > 0.3) low.push({ kind: 'dust', tint: argb(mix(sky.wash, [255, 255, 255], 0.4)) });
+  ripples(sky, geom, u).forEach((p, i) => low.push({ kind: variant('ripple', i), x: p.x, y: p.y, w: 24 * u, h: 12 * u }));
+
   const puddles = areas.map((a, i) => puddlesSvg(sky, a, u, i)).join('');
   const mist = areas.map((a, i) => mistSvg(sky, a, u, i)).join('');
-  const storm = sky.weather === 'storm';
-  const drifting = sky.weather === 'fog' || (sky.weather !== 'clear' && sky.day > 0.1) || fx.moths.length > 0;
-  // The launcher flips right on time, so smoothness comes from small steps between frames:
-  // 25 fps rain whose streaks are longer than a frame's step; everything else is slow and calm,
-  // so 10 fps over a long 6 s loop keeps each step under a pixel or two.
-  let count = 1;
-  let intervalMs = 1000;
-  if (sky.wet) [count, intervalMs] = [32, 40];
-  else if (sky.weather === 'snow' || layers.length || flies.length || drifting) [count, intervalMs] = [60, 100];
-  const loop = count * intervalMs;
+  const over =
+    houseSvg(sky, W, geom, u) +
+    (puddles && `<g opacity="0.85">${puddles}</g>`) +
+    (sky.wet ? areas.map((a, i) => glossSvg(a, a.box.x + a.box.w / 2, u, i)).join('') : '') +
+    (mist && `<g opacity="0.8">${mist}</g>`) +
+    darknessSvg(geom, 40, { x: -8, y: -8, w: W + 16, h: H + 16 }, ink) +
+    spillSvg(sky, geom, u);
 
-  const base = groundSvg(sky, W, H, geom, u);
-  const house = houseSvg(sky, W, geom, u);
-  const dark = darknessSvg(geom, 40, { x: -8, y: -8, w: W + 16, h: H + 16 }, ink) + spillSvg(sky, geom, u);
-  const clip = `<defs><clipPath id="wc"><rect x="0" y="0" width="${n(W)}" height="${n(H)}" rx="${n(radius)}" ry="${n(radius)}"/></clipPath></defs>`;
+  const high: WidgetFx[] = [];
+  fx.splashes.forEach((p, i) => high.push({ kind: variant('splash', i), x: p.x, y: p.y, w: 20 * u, h: 10 * u }));
+  fx.drips.forEach((p, i) => high.push({ kind: variant('drip', i), x: p.x, y: p.y + 9 * u, w: 14 * u, h: 26 * u }));
+  fx.settle.forEach((p, i) => high.push({ kind: variant('settle', i), x: p.x + 2 * u, y: p.y - 16 * u, w: 12 * u, h: 40 * u }));
+  fx.leaves.forEach((l, i) => high.push({ kind: variant('leaf', i, 3), x: l.x + l.span / 2, y: l.y, w: l.span, h: 16 * u, tint: argb(hexRgb(l.color)) }));
+  fx.moths.forEach((m, i) => high.push({ kind: variant('moth', i, 3), x: m.x, y: m.y, w: m.r / 0.46, h: m.r / 0.46 }));
+  fireflies(sky, geom, u).forEach((p, i) => high.push({ kind: variant('firefly', i), x: p.x, y: p.y, w: 40 * u, h: 40 * u }));
 
-  const frames: string[] = [];
-  for (let f = 0; f < count; f++) {
-    const t = (f * intervalMs) / loop;
-    const sway = Math.sin(2 * Math.PI * t);
-    const parts: string[] = [base];
-    parts.push(`<g transform="translate(${n(6 * u * sway)} 0)">${cloudShadowsSvg(sky, W, H, u)}${fogSvg(sky, W, H, u, 0)}</g>`);
-    layers.forEach((l, i) => {
-      // A whole number of tiles per frame loop, so the last frame meets the first; rain falls
-      // slower than in the app so each step stays shorter than a streak. A layer that moves less
-      // than half a tile per loop (golden dust) bobs in place instead.
-      const tiles = (Math.abs(l.tilesPerLoop) * loop) / l.loopMs;
-      const bob = tiles < 0.5;
-      const shift =
-        bob
-          ? 3 * u * Math.sin(2 * Math.PI * t) * Math.sign(l.tilesPerLoop)
-          : l.tileH * Math.sign(l.tilesPerLoop) * Math.max(1, Math.round(tiles * (sky.wet ? WIDGET_RAIN : 1))) * t;
-      const sideways = bob ? 2 * u * Math.cos(2 * Math.PI * t) : 0;
-      parts.push(
-        `<defs><pattern id="p${i}" patternUnits="userSpaceOnUse" width="${n(l.tileW)}" height="${n(l.tileH)}" patternTransform="rotate(${l.angle}) translate(${n(sideways)} ${n(shift)})">${tileSvg(l)}</pattern></defs>` +
-          `<rect x="0" y="0" width="${n(W)}" height="${n(H)}" fill="url(#p${i})"/>`,
-      );
-    });
-    // Above the falling weather: the paving is where it lands, not a window onto it.
-    parts.push(house);
-    parts.push(terraceFrame(sky, areas, fx, { puddles, mist }, t, loop, u));
-    for (const s of rings) {
-      const ph = (t * (loop / s.ms) + s.phase) % 1;
-      const sc = 0.2 + 1.5 * ph;
-      parts.push(`<ellipse cx="${n(s.x)}" cy="${n(s.y)}" rx="${n(7 * u * sc)}" ry="${n(3.5 * u * sc)}" fill="none" stroke="rgba(206,218,240,${(0.8 * (1 - ph)).toFixed(2)})" stroke-width="${n(u)}"/>`);
-    }
-    parts.push(`<g transform="translate(${n(-7 * u * sway)} 0)">${fogSvg(sky, W, H, u, 1)}</g>`);
-    parts.push(dark);
-    for (const ff of flies) {
-      const a = 2 * Math.PI * (t + ff.phase);
-      const x = ff.x + 6 * u * Math.sin(a);
-      const y = ff.y + 5 * u * Math.sin(2 * a);
-      const o = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(2 * a + 1));
-      parts.push(`<circle cx="${n(x)}" cy="${n(y)}" r="${n(5 * u)}" fill="rgba(226,240,140,${(0.25 * o).toFixed(2)})"/><circle cx="${n(x)}" cy="${n(y)}" r="${n(1.5 * u)}" fill="rgba(240,248,170,${(0.95 * o).toFixed(2)})"/>`);
-    }
-    frames.push(svg(W, H, `${clip}<g clip-path="url(#wc)">${parts.join('')}</g>`));
-  }
-  const flash = storm ? { svg: svg(W, H, `${clip}<rect x="0" y="0" width="${n(W)}" height="${n(H)}" clip-path="url(#wc)" fill="rgb(214,222,255)"/>`), steps: lightningSteps(), stepMs: 200 } : undefined;
-  return { frames, intervalMs, flash };
+  return { ground: still(groundSvg(sky, W, H, geom, u)), over: still(over), low, high };
 }

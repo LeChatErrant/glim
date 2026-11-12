@@ -24,20 +24,19 @@ declare class HueHttpModule extends NativeModule<Events> {
    */
   setCloudConfig?(config: { accessToken: string; expiresAt: number; preferCloud: boolean } | null): Promise<void>;
   /**
-   * Plays SVG frames (one loop, `intervalMs` apart) under a widget's image: rendered natively at
-   * `scale` px per dp, flipped by the launcher. Empty frames clear them. Missing in older builds.
+   * A map widget's outside under its image (WidgetOutside.kt): `ground` and `over` SVGs, rendered
+   * natively at `scale` px per dp, with animations between them (`low`) and above (`high`),
+   * played by the launcher. Nothing clears it. Missing in older builds.
    */
-  setWidgetFrames?(options: {
+  setWidgetOutside?(options: {
     widgetId: number;
-    frames: string[];
-    intervalMs: number;
     width: number;
     height: number;
     scale: number;
-    /** Lightning: an SVG shown at `flashSteps[i]` opacity for `flashMs` each, on its own strip. */
-    flash?: string;
-    flashSteps?: number[];
-    flashMs?: number;
+    ground?: string;
+    over?: string;
+    low: WidgetFx[];
+    high: WidgetFx[];
   }): Promise<void>;
   /** Starts live sync (widgets follow the bridge's event stream) if enabled and paired. */
   startLive(): Promise<void>;
@@ -46,3 +45,9 @@ declare class HueHttpModule extends NativeModule<Events> {
 }
 
 export default requireNativeModule<HueHttpModule>('HueHttp');
+
+/**
+ * One widget animation (scripts/widget-fx.mjs): a full field (`kind` only) or a placed one,
+ * centered at `x`, `y`, `w` × `h` dp. `tint` (#AARRGGBB) recolors it.
+ */
+export type WidgetFx = { kind: string; x?: number; y?: number; w?: number; h?: number; tint?: string };

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- One frame of a widget's weather loop. -->
+<!-- A still image of a map widget's outside (ground, or the house and the dark). -->
 <ImageView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@id/glim_frame_image"
     android:layout_width="match_parent"

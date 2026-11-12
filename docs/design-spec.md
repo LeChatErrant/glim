@@ -411,8 +411,8 @@ columns × rows). Design each size, in dark and light, plus states.
    room to toggle the room. Light tap targets at least ~40 dp; when the plan
    is too dense at small sizes, the widget falls back to room-level taps.
    Optional strip of 2–3 mood buttons along the bottom. It shows the outside
-   like the Map tab (sky, weather around the house), animated by the launcher
-   from a loop of frames.
+   like the Map tab (sky, weather around the house), calm and slow, animated
+   smoothly by the launcher.
 
 **Widget states for every type:** normal, all off, partially on, updating
 (just tapped, waiting for confirmation), a light unreachable, offline (last

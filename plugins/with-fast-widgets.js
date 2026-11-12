@@ -19,8 +19,8 @@ module.exports = function withFastWidgets(config, { widgets }) {
           `package ${pkg}.widget;\n\nimport io.lechaterrant.huehttp.FastWidgetProvider;\n\npublic class ${name} extends FastWidgetProvider {\n}\n`,
         );
       }
-      // The library's widget layout, with flippers underneath for the map widget's weather
-      // loop and its lightning (WidgetFrames.kt). App resources override the library's file of the same name.
+      // The library's widget layout, with a layer underneath for the map widget's outside
+      // (WidgetOutside.kt). App resources override the library's file of the same name.
       const layout = path.join(cfg.modRequest.platformProjectRoot, 'app/src/main/res/layout');
       fs.mkdirSync(layout, { recursive: true });
       fs.writeFileSync(path.join(layout, 'rn_widget.xml'), widgetLayout(false));
@@ -34,25 +34,16 @@ module.exports = function withFastWidgets(config, { widgets }) {
 };
 
 const widgetLayout = (dark) => `<?xml version="1.0" encoding="utf-8"?>
-<!-- Written by plugins/with-fast-widgets.js: react-native-android-widget's rn_widget.xml plus glim_frames and glim_flash. -->
+<!-- Written by plugins/with-fast-widgets.js: react-native-android-widget's rn_widget.xml plus glim_fx. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@android:id/background"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <ViewFlipper
-        android:id="@id/glim_frames"
+    <FrameLayout
+        android:id="@id/glim_fx"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:autoStart="true"
-        android:flipInterval="100" />
-
-    <ViewFlipper
-        android:id="@id/glim_flash"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:autoStart="true"
-        android:flipInterval="200" />
+        android:layout_height="match_parent" />
 
     <ImageView
         android:id="@+id/rn_widget_image_light"
