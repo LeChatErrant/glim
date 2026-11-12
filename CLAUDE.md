@@ -6,9 +6,9 @@ the bridge over its local API (CLIP v2). Product name: **Glim** (see
 `~/Work/glim` (`~/Work/hue-lab` is a symlink kept for older sessions). A few
 internal IDs still say `hue-lab`/`huelab` (see 2026-11-12).
 
-**Prototype for the maintainer, built to be sellable.** Ship fast for one home,
-but never in a way that would need a rewrite to sell it later (see
-[Keep it sellable](#keep-it-sellable)).
+**A personal app for the maintainer's home.** Not a product: no store release
+or sale planned. The repo is public so anyone can read it or build it for
+their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
 
 ## Product goals
 
@@ -70,12 +70,12 @@ but never in a way that would need a rewrite to sell it later (see
 - 2026-10-22: Away-from-home control via the Hue Remote API. The OAuth client
   secret stays server-side (EAS Hosting API route), never in the app bundle.
 - 2026-10-22: AR scan is part of the first map phase, not a later extra.
-- 2026-10-22: Prototype for personal use, but keep it sellable (paid app, Hue
-  Essentials-style). Repo stays private, no open-source license. Main
-  competitor feature: Hue SpatialAware (official app, 2026) does an AR room scan
-  and position-aware scenes, but needs a Bridge Pro, works per room, and only
-  supports some presets. Our edge: whole-home map, map widget, user-editable
-  map-aware moods, any bridge.
+- 2026-10-22: Prototype for personal use. Closest official feature: Hue
+  SpatialAware (2026) does an AR room scan and position-aware scenes, but
+  needs a Bridge Pro, works per room, and only supports some presets. Glim's
+  take: whole-home map, map widget, user-editable map-aware moods, any bridge.
+  2026-11-12: **Glim won't be sold.** The repo is public, with a README for
+  visitors; no store release planned.
 - 2026-10-22: Setup must work from a fresh, unconfigured bridge; scans can span
   several sessions; a manual 2D editor is required (AR isn't always available,
   and scans need fine-tuning).
@@ -91,16 +91,14 @@ but never in a way that would need a rewrite to sell it later (see
   <https://claude.ai/artifact/YXKHZbWT6s5PGMcXcQTZQJ>. Alternatives kept for
   later: Lightmap (room-glow mark), Nocturne (night-path constellation mark),
   Oriel (glowing arched window), Candela (open ring), Lucerna (wall lantern
-  half pool). Store and trademark availability not yet checked: do it before
-  renaming the package ID.
+  half pool).
   2026-11-12: renamed everywhere users see it: app name, launcher and
   adaptive icons (jewel mark, `scripts/icons.mjs`), splash (`#050506` + mark),
   deep link `glim://` (`huelab://` still accepted), the app's name on the
   bridge (`glim#android`, new pairings only), server sign-in page, the Hue developer
   app (shown on Hue's sign-in page), docs, GitHub repo, local folder (after a move, delete the `.cxx` CMake caches before
   building: they hold absolute paths). Kept on purpose, internal only: package ID `io.lechaterrant.huelab`
-  (a new ID installs a separate app without the map and pairing; switch it
-  before the store), Expo slug `hue-lab` (tied to the EAS project),
+  (a new ID installs a separate app without the map and pairing), Expo slug `hue-lab` (tied to the EAS project),
   SharedPreferences `huelab_fast`, the `hue-http` module.
 - 2026-10-23: Our own vocabulary, not Hue's (Hue's "scene" confuses people).
   See [Vocabulary](#vocabulary).
@@ -278,8 +276,8 @@ Two canvases:
   maintainer likes Celestial and wants to keep the idea within reach (a future
   theme or variant), but it is not the target now.
 
-Goal: luxury, about light, that anyone likes. **The map is the main selling
-point.**
+Goal: luxury, about light, that anyone likes. **The map is the main
+feature.**
 
 - **Palette:** near-black ground `#050506`, warm ivory text `#F2E8D8`, muted
   `#8F887D`, one champagne accent `#E9CF9F`. Hairlines (1px, ivory at 10–24%)
@@ -410,29 +408,15 @@ and `adb logcat` for native errors.
   Ream, is a PWA for this reason), but not a hard constraint. It must not block
   the main feature (widgets).
 
-## Keep it sellable
-
-Cheap rules now, so selling later is extra work and not a rewrite. None of these
-should slow down the prototype; if one does, ask.
+## Code rules
 
 - **No home-specific data in code.** Bridge IP/ID, room and light names live in
   storage, discovered at runtime. The values under "Hue bridge" below are for
   dev and testing only.
-- **Multi-bridge-ready data model.** Key stored data (maps, moods, widgets) by
-  bridge ID, even though the maintainer uses one.
-- **Handle what the maintainer doesn't own.** Unknown light types, gradient
-  strips, no rooms, 50+ lights: degrade gracefully, never crash.
-- **User-facing strings in English**, kept easy to extract for i18n (French
-  next). No French in UI code.
-- **Dependencies:** permissive licenses only (MIT, Apache, BSD). No GPL/AGPL.
-- **Naming:** the final name is a standalone brand with no "Hue" or "Philips"
-  in it. Mention Hue only in descriptive text ("works with Philips Hue" in the
-  store subtitle/description), never in the logo or icon, plus a "not affiliated
-  with Signify" line. Third-party apps using "for Philips Hue" in their name
-  have had trademark complaints on the App Store. Verify against the current
-  Hue developer terms before publishing. The name is Glim; switch the package
-  ID (`io.lechaterrant.huelab` today) before the first Play Store upload, as
-  it is permanent once published.
+- **Handle any setup, not just this home.** Several bridges (stored data is
+  keyed by bridge ID), unknown light types, gradient strips, no rooms, 50+
+  lights: degrade gracefully, never crash.
+- **User-facing strings in English.**
 
 ## Hue bridge
 
@@ -475,8 +459,8 @@ can keep serving the previous deployment for about a minute.
 ## Secrets
 
 - Real values live in `.env` (git-ignored). Template: `.env.example`.
-- Never commit `.env`, the app key or the client key, and never bake them into
-  a public build.
+- **The repo is public.** Never commit `.env`, the app key, the client key or
+  the Hue client secret, and never bake them into a build.
 
 ## Shipping: commit, push and deploy by default
 
