@@ -10,10 +10,9 @@ import { useHome } from '../../lib/hue/useHome';
 import { ambienceKelvin, averageBrightness, houseMood, isLit, lightLevel, lightShape, lightsOf, lightTypeLabel } from '../../lib/lights';
 import { loadHiddenLights, loadMap, saveHiddenLights, saveMapRotation, toPlan, type HomeMap } from '../../lib/map/map';
 import { useOutside, type Outside } from '../../lib/weather/source';
-import type { WeatherKind } from '../../lib/weather/sky';
 import { ConnectionBadge, Glow, IconButton, PillButton, Section, TagButton, type Connection } from '../../ui/controls';
 import { FloorPlan, Jewel, LightMarker } from '../../ui/FloorPlan';
-import { Icon, type IconName } from '../../ui/icons';
+import { Icon, weatherIcon } from '../../ui/icons';
 import { OutsideBack, OutsideFront } from '../../ui/Outside';
 import { turnTo, useMapGestures } from '../../ui/MapGestures';
 import { refreshAllWidgets } from '../../widgets/task-handler';
@@ -230,12 +229,10 @@ function useClock() {
   return now;
 }
 
-const WEATHER_ICONS: Record<WeatherKind, IconName> = { clear: 'sun', cloudy: 'cloud', fog: 'fog', rain: 'rain', storm: 'storm', snow: 'snow' };
-
 /** "Light rain · 10°" under the headline; opens the weather settings. Marked when forced. */
 function WeatherPill({ outside }: { outside: Outside }) {
   const { sky, label, temp, forcedWeather, forcedTime } = outside;
-  const icon = sky.weather === 'clear' && sky.day < 0.5 ? 'sleep' : WEATHER_ICONS[sky.weather];
+  const icon = weatherIcon(sky);
   const forced = forcedWeather || forcedTime;
   return (
     <Pressable

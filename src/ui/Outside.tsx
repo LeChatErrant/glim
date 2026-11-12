@@ -22,6 +22,7 @@ import {
   ripples,
   sparklePoints,
   spillSvg,
+  bandMask,
   svg,
   svgBox,
   terraceFx,
@@ -72,7 +73,15 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
   );
   const area = { x: -EXTEND, y: -EXTEND, w: width + 2 * EXTEND, h: height + 2 * EXTEND };
   const house = useMemo(
-    () => svg(width, height, houseSvg(sky, geom, u, false) + darknessSvg(geom, 64, area, beyondInk(sky, color.ground)) + spillSvg(sky, geom, u)),
+    () =>
+      svg(
+        width,
+        height,
+        houseSvg(sky, geom, u, false) +
+          darknessSvg(geom, 64, area, beyondInk(sky, color.ground)) +
+          // The lamps' spill fades with the band, except in fog, where it glows out into the mist.
+          (sky.weather === 'fog' ? spillSvg(sky, geom, u) : `<defs>${bandMask(geom, 64, area, 'nr')}</defs>${spillSvg(sky, geom, u, 'nr')}`),
+      ),
     [sky, width, height, geom], // eslint-disable-line react-hooks/exhaustive-deps
   );
   // Fog lights up what lies past the house: fade it back to the screen's black over the

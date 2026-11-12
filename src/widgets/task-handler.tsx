@@ -5,6 +5,7 @@ import { getBridge } from '../lib/hue/bridge';
 import { cachedSnapshot, fetchSnapshot, saveCachedSnapshot, type Snapshot } from '../lib/hue/client';
 import { loadMap } from '../lib/map/map';
 import { outsideNow } from '../lib/weather/source';
+import { weatherIcon } from '../ui/icons';
 import { sendMapOutside } from './outside';
 import { forgetWidgetSettings, loadWidgetSettings, widgetPlan } from './settings';
 import { MapWidget, NotPaired, RoomsWidget } from './widgets';
@@ -18,11 +19,25 @@ export async function render(info: WidgetInfo, { snapshot, stale }: State) {
   if (!(await getBridge())) return <NotPaired />;
   if (info.widgetName === 'Map') {
     const map = await loadMap();
-    const plan = widgetPlan(map, await loadWidgetSettings(info.widgetId));
+    const settings = await loadWidgetSettings(info.widgetId);
+    const plan = widgetPlan(map, settings);
     const outside = await outsideNow();
+    const background = settings.background ?? 'black';
     // The outside lands under the image the library is about to draw; native code waits for it.
-    sendMapOutside(info, plan, snapshot?.lights ?? [], outside).catch((e) => console.warn('Map widget outside', e));
-    return <MapWidget snapshot={snapshot} plan={plan} width={info.width} height={info.height} stale={stale} outside={!!outside} />;
+    sendMapOutside(info, plan, snapshot?.lights ?? [], outside, background).catch((e) => console.warn('Map widget outside', e));
+    const weather = outside && { icon: weatherIcon(outside.sky), text: outside.temp !== null ? `${outside.temp}°` : outside.label, temp: outside.temp !== null };
+    return (
+      <MapWidget
+        snapshot={snapshot}
+        plan={plan}
+        width={info.width}
+        height={info.height}
+        stale={stale}
+        outside={!!outside}
+        background={background}
+        weather={weather}
+      />
+    );
   }
   return <RoomsWidget snapshot={snapshot} width={info.width} height={info.height} stale={stale} />;
 }

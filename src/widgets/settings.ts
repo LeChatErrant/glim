@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { pointInPolygon } from '../lib/map/geometry';
 import { toPlan, type HomeMap, type Plan } from '../lib/map/map';
+import type { WidgetBackground } from '../lib/weather/scene';
 
 /**
  * Per-widget options of the Map widget (set from its configuration screen). A widget can show part
@@ -12,6 +13,8 @@ export type MapWidgetSettings = {
   rotation?: number;
   /** Map rooms to show; absent or empty = the whole home. */
   roomIds?: string[];
+  /** Behind the map: black (absent), see-through, or a smoked card. */
+  background?: WidgetBackground;
 };
 
 const key = (widgetId: number) => `widget:${widgetId}`;

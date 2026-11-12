@@ -6,6 +6,8 @@ import { walledRooms } from '../lib/map/glow';
 import { capsWidth, labelSpot } from '../lib/map/labels';
 import { fitPlan, type Plan } from '../lib/map/map';
 import { iconSvg, jewelSvg, planToSvg } from '../lib/map/svg';
+import { GLASS, type WidgetBackground } from '../lib/weather/scene';
+import { iconPath, type IconName } from '../ui/icons';
 import { color, font } from '../ui/theme';
 
 // Nocturne on the home screen: near-black ground, ivory text, hairlines, one champagne accent.
@@ -170,23 +172,38 @@ export function RoomsWidget({ snapshot, width, height, stale }: { snapshot: Snap
 }
 
 /** "Home" (or the room zoomed into) and "8 OF 9 ON" / "ALL OFF" / "LAST KNOWN · 21:42". */
-function HomeTitle({ snapshot, stale, size, title = 'Home', lightIds }: { snapshot: Snapshot; stale: boolean; size: number; title?: string; lightIds?: string[] }) {
+function HomeTitle({
+  snapshot,
+  stale,
+  size,
+  title = 'Home',
+  lightIds,
+  shadow = false,
+}: {
+  snapshot: Snapshot;
+  stale: boolean;
+  size: number;
+  title?: string;
+  lightIds?: string[];
+  shadow?: boolean;
+}) {
+  const sh = shadow ? SHADOW : {};
   const reachable = snapshot.lights.filter((l) => l.reachable && (!lightIds || lightIds.includes(l.id)));
   const lit = reachable.filter((l) => l.on).length;
   const sub = stale ? `LAST KNOWN · ${clock(snapshot.fetchedAt)}` : lit ? `${lit} OF ${reachable.length} ON` : 'ALL OFF';
   return (
     <FlexWidget style={{ flexDirection: 'column' }}>
-      <TextWidget text={title} maxLines={1} truncate="END" style={{ fontFamily: font.display, fontSize: size, color: stale ? SECONDARY : IVORY }} />
+      <TextWidget text={title} maxLines={1} truncate="END" style={{ fontFamily: font.display, fontSize: size, color: stale ? SECONDARY : IVORY, ...sh }} />
       <FlexWidget style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
         {stale && <SvgWidget svg={iconSvg('cloudOff', color.secondary, 11)} style={{ width: 11, height: 11, marginRight: 5 }} />}
-        <TextWidget text={sub} style={caps(9, stale ? MUTED : SECONDARY)} />
+        <TextWidget text={sub} style={shadow ? { ...caps(9, line(0.9)), ...CAPS_SHADOW } : caps(9, stale ? MUTED : SECONDARY)} />
       </FlexWidget>
     </FlexWidget>
   );
 }
 
 /** "All off" when something is lit, "All on" otherwise. Sent natively when the home group is known. */
-function AllButton({ snapshot, pill }: { snapshot: Snapshot; pill: boolean }) {
+function AllButton({ snapshot, pill, shadow = false }: { snapshot: Snapshot; pill: boolean; shadow?: boolean }) {
   const anyOn = snapshot.lights.some(isLit);
   const target = !anyOn;
   const fast = !!snapshot.homeGroupId;
@@ -200,7 +217,7 @@ function AllButton({ snapshot, pill }: { snapshot: Snapshot; pill: boolean }) {
         alignItems: 'center',
         height: pill ? 38 : 36,
         paddingHorizontal: pill ? 14 : 0,
-        ...(pill ? { borderRadius: 19, borderWidth: 1, borderColor: line(0.14) } : {}),
+        ...(pill ? { borderRadius: 19, borderWidth: 1, borderColor: line(0.14), ...(shadow ? { backgroundColor: 'rgba(7, 7, 8, 0.45)' as Rgba } : {}) } : {}),
       }}
     >
       <FlexWidget
@@ -213,7 +230,7 @@ function AllButton({ snapshot, pill }: { snapshot: Snapshot; pill: boolean }) {
           ...(anyOn ? {} : { backgroundColor: color.champagne as Hex }),
         }}
       />
-      <TextWidget text={anyOn ? 'ALL OFF' : 'ALL ON'} style={{ ...caps(9, SECONDARY), marginLeft: 9 }} />
+      <TextWidget text={anyOn ? 'ALL OFF' : 'ALL ON'} style={{ ...caps(9, shadow ? line(0.9) : SECONDARY), marginLeft: 9, ...(shadow ? CAPS_SHADOW : {}) }} />
     </FlexWidget>
   );
 }
@@ -235,6 +252,32 @@ export function mapWidgetBox(width: number, height: number, outside = false) {
   return { wide, box, pad: outside ? (wide ? 22 : 30) : 6, radius: 24 };
 }
 
+/** The weather in a Map widget's corner: its icon, and the temperature (or its name when forced). */
+export type WidgetWeather = { icon: IconName; text: string; temp: boolean };
+
+/** Soft shadow under text over a see-through widget (small text turns ivory too), so it reads on any wallpaper. */
+const SHADOW = { textShadowColor: 'rgba(0, 0, 0, 0.6)' as Rgba, textShadowRadius: 5, textShadowOffset: { width: 0, height: 1 } };
+/** A tighter one for small capitals (a wide shadow smudges them). */
+const CAPS_SHADOW = { ...SHADOW, textShadowColor: 'rgba(0, 0, 0, 0.5)' as Rgba, textShadowRadius: 2 };
+
+/** The weather, top left: a small icon and a bigger "11°" in Jost light. */
+function WeatherCorner({ weather, shadow }: { weather: WidgetWeather; shadow: boolean }) {
+  const ink = line(0.86);
+  const icon =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${ink}" ` +
+    `stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="${iconPath(weather.icon)}"/></svg>`;
+  return (
+    <FlexWidget style={{ marginLeft: 18, marginTop: 12, flexDirection: 'row', alignItems: 'center' }}>
+      <SvgWidget svg={icon} style={{ width: 22, height: 22 }} />
+      <TextWidget
+        text={weather.text}
+        maxLines={1}
+        style={{ fontFamily: font.display, fontSize: weather.temp ? 26 : 17, color: ink, marginLeft: 8, ...(shadow ? SHADOW : {}) }}
+      />
+    </FlexWidget>
+  );
+}
+
 export function MapWidget({
   snapshot,
   plan,
@@ -242,6 +285,8 @@ export function MapWidget({
   height,
   stale,
   outside = false,
+  background = 'black',
+  weather,
 }: {
   snapshot: Snapshot | null;
   plan: Plan | null;
@@ -249,6 +294,10 @@ export function MapWidget({
   height: number;
   /** The weather is drawn underneath (native frames): leave the ground see-through. */
   outside?: boolean;
+  /** Black, see-through, or a smoked card (drawn with the outside when there is one). */
+  background?: WidgetBackground;
+  /** Shown top left when the weather is on. */
+  weather?: WidgetWeather | null;
 } & Freshness) {
   if (!snapshot) return <NotPaired />;
   if (!plan) return <SetupCard title="Tap to set up" hint="Map · scan or draw your home" />;
@@ -262,9 +311,12 @@ export function MapWidget({
   const outlines = plan.rooms.filter((r) => r.pts.length > 2);
   const showLabels = box.height >= 200;
   const markers = plan.lights.map((l) => ({ x: X(l.u), y: Y(l.v) }));
+  const clear = background === 'transparent';
+  // With the outside, its ground image carries the background (this image lies over it).
+  const backgroundColor = outside || clear ? ('#00000000' as Hex) : background === 'glass' ? (GLASS as Rgba) : GROUND;
 
   return (
-    <OverlapWidget style={{ ...shell, borderColor: line(stale ? 0.07 : 0.09), ...(outside ? { backgroundColor: '#00000000' as Hex } : {}) }}>
+    <OverlapWidget style={{ ...shell, backgroundColor, borderColor: line(stale ? 0.07 : 0.09), ...(clear ? { borderWidth: 0 } : {}) }}>
       <SvgWidget
         svg={planToSvg(plan, lights, box.width, box.height, { padding: pad, ground: GROUND, stale, outdoorOpen: outside })}
         style={{ width: box.width, height: box.height, marginLeft: box.left, marginTop: box.top }}
@@ -341,8 +393,8 @@ export function MapWidget({
             justifyContent: 'space-between',
           }}
         >
-          <HomeTitle snapshot={snapshot} stale={stale} size={22} />
-          <AllButton snapshot={snapshot} pill={false} />
+          <HomeTitle snapshot={snapshot} stale={stale} size={22} shadow={clear} />
+          <AllButton snapshot={snapshot} pill={false} shadow={clear} />
         </FlexWidget>
       ) : (
         <FlexWidget
@@ -356,10 +408,11 @@ export function MapWidget({
             alignItems: 'center',
           }}
         >
-          <HomeTitle snapshot={snapshot} stale={stale} size={18} />
-          <AllButton snapshot={snapshot} pill />
+          <HomeTitle snapshot={snapshot} stale={stale} size={18} shadow={clear} />
+          <AllButton snapshot={snapshot} pill shadow={clear} />
         </FlexWidget>
       )}
+      {weather ? <WeatherCorner weather={weather} shadow={clear} /> : []}
     </OverlapWidget>
   );
 }

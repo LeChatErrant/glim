@@ -1,5 +1,6 @@
 import Svg, { Path } from 'react-native-svg';
 
+import type { Sky, WeatherKind } from '../lib/weather/sky';
 import { color } from './theme';
 
 // Stroke icons from the Nocturne Foundations page (24×24, 1.5 stroke, round caps).
@@ -39,6 +40,14 @@ const PATHS = {
 };
 
 export type IconName = keyof typeof PATHS;
+
+/** An icon's path data (24×24 grid, stroked), for SVG strings (widgets). */
+export const iconPath = (name: IconName) => PATHS[name];
+
+const WEATHER_ICONS: Record<WeatherKind, IconName> = { clear: 'sun', cloudy: 'cloud', fog: 'fog', rain: 'rain', storm: 'storm', snow: 'snow' };
+
+/** The weather's icon: a moon on a clear night. */
+export const weatherIcon = (sky: Sky): IconName => (sky.weather === 'clear' && sky.day < 0.5 ? 'sleep' : WEATHER_ICONS[sky.weather]);
 
 export function Icon({ name, size = 20, tint = color.ivory, stroke = 1.5 }: { name: IconName; size?: number; tint?: string; stroke?: number }) {
   return (

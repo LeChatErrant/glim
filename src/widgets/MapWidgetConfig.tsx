@@ -7,6 +7,7 @@ import { WidgetPreview, type WidgetConfigurationScreenProps } from 'react-native
 
 import { cachedSnapshot, type Snapshot } from '../lib/hue/client';
 import { loadMap, type HomeMap } from '../lib/map/map';
+import type { WidgetBackground } from '../lib/weather/scene';
 import { PillButton } from '../ui/controls';
 import { Choice } from '../ui/scan/parts';
 import { Display, Label, Txt } from '../ui/text';
@@ -15,9 +16,15 @@ import { loadWidgetSettings, saveWidgetSettings, widgetPlan, type MapWidgetSetti
 import { render } from './task-handler';
 import { MapWidget } from './widgets';
 
+const BACKGROUNDS: { id: WidgetBackground; label: string }[] = [
+  { id: 'black', label: 'Black' },
+  { id: 'transparent', label: 'See-through' },
+  { id: 'glass', label: 'Smoked glass' },
+];
+
 /**
  * Configuration of a Map widget (long-press the widget, then the edit pen): which rooms it shows,
- * so a big home stays tappable, and how it's turned. A live preview sits on top.
+ * so a big home stays tappable, how it's turned, and its background. A live preview sits on top.
  */
 export function MapWidgetConfig({ widgetInfo, renderWidget, setResult }: WidgetConfigurationScreenProps) {
   const [fontsReady] = useFonts({ Jost_200ExtraLight, Jost_300Light, Jost_400Regular, Geist_400Regular, Geist_500Medium });
@@ -64,7 +71,7 @@ export function MapWidgetConfig({ widgetInfo, renderWidget, setResult }: WidgetC
           key={JSON.stringify(settings)}
           width={pw}
           height={ph}
-          renderWidget={() => <MapWidget snapshot={snapshot} plan={plan} width={pw} height={ph} stale={false} />}
+          renderWidget={() => <MapWidget snapshot={snapshot} plan={plan} width={pw} height={ph} stale={false} background={settings.background} />}
         />
       </View>
 
@@ -88,6 +95,18 @@ export function MapWidgetConfig({ widgetInfo, renderWidget, setResult }: WidgetC
           <Choice label="Turn left" onPress={() => turn(-90)} />
           <Choice label="Turn right" onPress={() => turn(90)} />
         </View>
+      </View>
+
+      <View style={{ gap: 10 }}>
+        <Label tone="label">Background</Label>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {BACKGROUNDS.map((b) => (
+            <Choice key={b.id} label={b.label} chosen={(settings.background ?? 'black') === b.id} onPress={() => setSettings({ ...settings, background: b.id })} />
+          ))}
+        </View>
+        <Txt size={12} tone="muted">
+          See-through and smoked glass show your wallpaper past the garden. The weather then falls across the whole widget.
+        </Txt>
       </View>
 
       <View style={{ gap: 10, marginTop: 8 }}>

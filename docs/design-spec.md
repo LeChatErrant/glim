@@ -415,7 +415,8 @@ columns × rows). Design each size, in dark and light, plus states.
    is too dense at small sizes, the widget falls back to room-level taps.
    Optional strip of 2–3 mood buttons along the bottom. It shows the outside
    like the Map tab (sky, weather around the house), calm and slow, animated
-   smoothly by the launcher.
+   smoothly by the launcher, with the weather top left (icon and "11°").
+   Background, per widget: black, see-through or smoked glass.
 
 **Widget states for every type:** normal, all off, partially on, updating
 (just tapped, waiting for confirmation), a light unreachable, offline (last

@@ -236,6 +236,17 @@ but never in a way that would need a rewrite to sell it later (see
   across the whole garden (no more leaves on outdoor floors). Fog is a
   **milky veil**: past the band the world dissolves into the fog's color
   instead of black, long banks roll by, lamps glow out into the mist.
+- 2026-11-12: **Map widget: weather corner and background.** Top left, the
+  weather's icon and a big "11°" in Jost light (the weather's name when set
+  by hand), picked from options
+  (<https://claude.ai/artifact/R5mTAmHer3T6xpayqURJZb>, "Glim weather looks,
+  round 2"). Each Map widget picks its background in its configuration
+  screen: Black (default), See-through (the garden fades into the
+  wallpaper, `bandMask`), Smoked glass (a dark card at 55%). Animations
+  can't be clipped, so on the last two the weather falls across the whole
+  widget; text gets a soft shadow on See-through. Lamps spill only a little
+  light past the walls (small pools sharing one budget, faded with the
+  band; a fainter house halo): at night the garden stays night.
 
 ## Vocabulary
 

@@ -1,7 +1,7 @@
 import type { Light } from '../hue/client';
 import { placeLights, walledRooms } from '../map/glow';
 import type { Plan } from '../map/map';
-import { clamp, dim, mix, rgba, rng, smooth, type RGB, type Sky } from './sky';
+import { clamp, mix, rgba, rng, smooth, type RGB, type Sky } from './sky';
 
 // The outside drawn as SVG pieces. The app shows the static pieces with SvgXml and moves the
 // particle layers with Animated (Outside.tsx); the map widget gets still images and animated
@@ -119,12 +119,12 @@ export function houseSvg(sky: Sky, geom: HouseGeom, u: number, sparkle = true) {
   const out: string[] = [];
   const box = geom.box;
   if (!box) return '';
-  const haloA = geom.indoorLit ? 0.1 + 0.5 * sky.night * (1 - sky.day) : 0;
+  const haloA = geom.indoorLit ? 0.05 + 0.22 * sky.night * (1 - sky.day) : 0;
   if (haloA > 0.02) {
     // Many thin layers so the glow fades without visible steps (no blur in widget SVG).
     for (let k = 10; k >= 1; k--) {
       const stroke = rgba([255, 172, 104], (haloA * 0.07 * (11 - k)) / 5.5);
-      out.push(...geom.indoor.map((r) => `<path d="${poly(r)}" fill="none" stroke="${stroke}" stroke-width="${n(k * 7 * u)}" stroke-linejoin="round" opacity="0.5"/>`));
+      out.push(...geom.indoor.map((r) => `<path d="${poly(r)}" fill="none" stroke="${stroke}" stroke-width="${n(k * 4 * u)}" stroke-linejoin="round" opacity="0.5"/>`));
     }
   }
   if (sky.weather === 'snow') {
@@ -379,41 +379,60 @@ export function darkReach(geom: HouseGeom) {
  * steps, so daylight shows no bands. `ink` is the screen's own black.
  */
 export function darknessSvg(geom: HouseGeom, steps: number, area: Box, ink: string) {
+  const mask = bandMask(geom, steps, area, 'dk', true);
+  if (!mask) return '';
+  return `<defs>${mask}</defs><rect ${areaAttrs(area)} fill="${ink}" mask="url(#dk)"/>`;
+}
+
+const areaAttrs = (a: Box) => `x="${n(a.x)}" y="${n(a.y)}" width="${n(a.w)}" height="${n(a.h)}"`;
+
+/**
+ * The band we see around the house as a mask `id`: white on the house and its clear zone, fading
+ * out with the dark (`dark` true: the other way round, white where the dark is). Drawing through
+ * it lets the outside fade into a see-through widget instead of into black.
+ */
+export function bandMask(geom: HouseGeom, steps: number, area: Box, id: string, dark = false) {
   const shapes = [...geom.indoor, ...geom.outdoor];
   if (!shapes.length) return '';
   const d = shapes.map(poly).join('');
   const { clear, fade } = darkReach(geom);
   const reach = clear + fade;
-  const dark = (x: number) => {
+  const darkAt = (x: number) => {
     const t = Math.max(0, x - clear) / fade;
     return Math.max(1e-4, 1 - Math.exp(-2.4 * Math.pow(t, 1.3)) * (1 - smooth(0.7, 1, t)));
   };
+  // Each stroke paints `near` over what is under it, with the opacity that leaves exactly the
+  // dark wanted at its distance (the products telescope). Swapping the two colors inverts it.
+  const [far, near] = dark ? ['#fff', '#000'] : ['#000', '#fff'];
   const out: string[] = [];
   let beyond = 1;
   for (let i = steps; i >= 1; i--) {
-    const want = dark(((i - 0.5) / steps) * reach);
-    if (want / beyond < 0.9995) out.push(`<g opacity="${(1 - want / beyond).toFixed(3)}"><path d="${d}" fill="#000" stroke="#000" stroke-width="${n((2 * reach * i) / steps)}" stroke-linejoin="round"/></g>`);
+    const want = darkAt(((i - 0.5) / steps) * reach);
+    if (want / beyond < 0.9995) out.push(`<g opacity="${(1 - want / beyond).toFixed(3)}"><path d="${d}" fill="${near}" stroke="${near}" stroke-width="${n((2 * reach * i) / steps)}" stroke-linejoin="round"/></g>`);
     beyond = want;
   }
-  const at = `x="${n(area.x)}" y="${n(area.y)}" width="${n(area.w)}" height="${n(area.h)}"`;
-  return `<defs><mask id="dk" maskUnits="userSpaceOnUse" ${at}><rect ${at} fill="#fff"/>${out.join('')}<path d="${d}" fill="#000"/></mask></defs><rect ${at} fill="${ink}" mask="url(#dk)"/>`;
+  const at = areaAttrs(area);
+  return `<mask id="${id}" maskUnits="userSpaceOnUse" ${at}><rect ${at} fill="${far}"/>${out.join('')}<path d="${d}" fill="${near}"/></mask>`;
 }
 
 /**
- * Each lit lamp spills its own color past the walls, over the dark: the garden is lit from the
- * house. Stronger at night. The rooms' floors cover it indoors.
+ * Each lit lamp spills a little of its color past the walls: a small pool by the wall, stronger at
+ * night, never enough to light the garden (many lamps share one budget). The rooms' floors cover
+ * it indoors. In fog it spreads further, a glow in the mist. `mask`: a band mask to fade it with.
  */
-export function spillSvg(sky: Sky, geom: HouseGeom, u: number) {
-  // In fog the light spreads further, as a glow in the mist.
+export function spillSvg(sky: Sky, geom: HouseGeom, u: number, mask?: string) {
+  if (!geom.lamps.length) return '';
   const fog = sky.weather === 'fog';
-  const a = (fog ? 0.6 : 0.32) * (0.35 + 0.65 * sky.night);
-  return geom.lamps
+  const share = 1 / Math.sqrt(Math.max(1, geom.lamps.length / 2));
+  const a = (fog ? 0.3 : 0.15) * (0.4 + 0.6 * sky.night) * share;
+  const pools = geom.lamps
     .map((l, i) => {
       const c = hexRgb(l.color);
-      const r = clamp(l.r * (fog ? 3.4 : 2.6), 30 * u, (fog ? 280 : 220) * u);
-      return `<defs>${radial(`sp${i}`, l.x, l.y, r, [[0, rgba(c, a)], [0.45, rgba(c, a * 0.35)], [1, rgba(c, 0)]])}</defs><circle cx="${n(l.x)}" cy="${n(l.y)}" r="${n(r)}" fill="url(#sp${i})"/>`;
+      const r = clamp(l.r * (fog ? 2.2 : 1.5), 20 * u, (fog ? 150 : 90) * u);
+      return `<defs>${radial(`sp${i}`, l.x, l.y, r, [[0, rgba(c, a)], [0.4, rgba(c, a * 0.4)], [1, rgba(c, 0)]])}</defs><circle cx="${n(l.x)}" cy="${n(l.y)}" r="${n(r)}" fill="url(#sp${i})"/>`;
     })
     .join('');
+  return mask ? `<g mask="url(#${mask})">${pools}</g>` : pools;
 }
 
 /** Cloud shadows crossing the ground on a snowy day. */
@@ -570,6 +589,24 @@ export function fireflies(sky: Sky, geom: HouseGeom, u: number) {
  */
 export type WidgetFx = { kind: string; x?: number; y?: number; w?: number; h?: number; tint?: string };
 
+/** A mask `id` fading out over `w` px at each edge of a W × H image: no hard edge on a see-through widget. */
+function edgeMask(W: number, H: number, w: number, id: string) {
+  const g = (gid: string, x1: number, y1: number, x2: number, y2: number) =>
+    `<linearGradient id="${gid}" gradientUnits="userSpaceOnUse" x1="${n(x1)}" y1="${n(y1)}" x2="${n(x2)}" y2="${n(y2)}"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#000" stop-opacity="0"/></linearGradient>`;
+  return (
+    g(`${id}l`, 0, 0, w, 0) + g(`${id}r`, W, 0, W - w, 0) + g(`${id}t`, 0, 0, 0, w) + g(`${id}b`, 0, H, 0, H - w) +
+    `<mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="${n(W)}" height="${n(H)}"><rect x="0" y="0" width="${n(W)}" height="${n(H)}" fill="#fff"/>` +
+    `<rect x="0" y="0" width="${n(w)}" height="${n(H)}" fill="url(#${id}l)"/><rect x="${n(W - w)}" y="0" width="${n(w)}" height="${n(H)}" fill="url(#${id}r)"/>` +
+    `<rect x="0" y="0" width="${n(W)}" height="${n(w)}" fill="url(#${id}t)"/><rect x="0" y="${n(H - w)}" width="${n(W)}" height="${n(w)}" fill="url(#${id}b)"/></mask>`
+  );
+}
+
+/** A map widget's background: the screen's black, see-through, or a smoked card. */
+export type WidgetBackground = 'black' | 'transparent' | 'glass';
+
+/** The smoked card behind a glass widget. */
+export const GLASS = 'rgba(7, 7, 8, 0.55)';
+
 /** The widget's outside: two still SVGs, animations between them (`low`) and above (`high`). */
 export type WidgetOutside = { ground: string; over: string; low: WidgetFx[]; high: WidgetFx[] };
 
@@ -581,8 +618,10 @@ const argb = (c: RGB, a = 1) => `#${[Math.round(clamp(a, 0, 1) * 255), ...c].map
  * plan itself is drawn on top by the widget (its floors cover the inside). What moves is
  * smooth vector animations the launcher plays on its own, each on its own period.
  */
-export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, opts: { u: number; radius: number; ink: string }): WidgetOutside {
-  const { u, radius, ink } = opts;
+export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, opts: { u: number; radius: number; ink: string; background?: WidgetBackground }): WidgetOutside {
+  const { u, radius, ink, background = 'black' } = opts;
+  const black = background === 'black';
+  const area = { x: -8, y: -8, w: W + 16, h: H + 16 };
   const areas = outdoorAreas(geom, u);
   const fx = terraceFx(sky, areas, u);
   const clip = `<defs><clipPath id="wc"><rect x="0" y="0" width="${n(W)}" height="${n(H)}" rx="${n(radius)}" ry="${n(radius)}"/></clipPath></defs>`;
@@ -607,8 +646,9 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
     (puddles && `<g opacity="0.85">${puddles}</g>`) +
     (sky.wet ? areas.map((a, i) => glossSvg(a, a.box.x + a.box.w / 2, u, i)).join('') : '') +
     (mist && `<g opacity="0.8">${mist}</g>`) +
-    darknessSvg(geom, 40, { x: -8, y: -8, w: W + 16, h: H + 16 }, beyondInk(sky, ink)) +
-    spillSvg(sky, geom, u);
+    (black ? darknessSvg(geom, 40, area, beyondInk(sky, ink)) : '') +
+    // The spill fades with the band (in fog on black, it glows out into the mist).
+    (black && sky.weather === 'fog' ? spillSvg(sky, geom, u) : `<defs>${bandMask(geom, 40, area, 'nr')}</defs>${spillSvg(sky, geom, u, 'nr')}`);
 
   const high: WidgetFx[] = [];
   fx.splashes.forEach((p) => high.push({ kind: 'splash', x: p.x, y: p.y, w: 20 * u, h: 10 * u }));
@@ -617,5 +657,12 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
   fx.moths.forEach((m) => high.push({ kind: 'moth', x: m.x, y: m.y, w: m.r / 0.46, h: m.r / 0.46 }));
   fireflies(sky, geom, u).forEach((p) => high.push({ kind: 'firefly', x: p.x, y: p.y, w: 40 * u, h: 40 * u }));
 
-  return { ground: still(groundSvg(sky, W, H, geom, u)), over: still(over), low, high };
+  // See-through backgrounds: the ground fades out with the band instead of into black, over
+  // nothing (transparent) or a smoked card (glass).
+  const ground = black
+    ? groundSvg(sky, W, H, geom, u)
+    : (background === 'glass' ? `<rect x="0" y="0" width="${n(W)}" height="${n(H)}" fill="${GLASS}"/>` : '') +
+      `<defs>${bandMask(geom, 40, area, 'gb')}${background === 'transparent' ? edgeMask(W, H, 28, 'ge') : ''}</defs>` +
+      (background === 'transparent' ? `<g mask="url(#ge)"><g mask="url(#gb)">${groundSvg(sky, W, H, geom, u)}</g></g>` : `<g mask="url(#gb)">${groundSvg(sky, W, H, geom, u)}</g>`);
+  return { ground: still(ground), over: still(over), low, high };
 }
