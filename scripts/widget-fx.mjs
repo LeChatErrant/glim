@@ -145,7 +145,13 @@ function layered(layers) {
       [11, 110, 0.5, 0.75, 0.4, 80000, 3, 7300],
       [12, 80, 0.75, 1.05, 0.62, 58000, 4, 9100],
       [13, 45, 1.05, 1.5, 0.88, 43000, 5, 11300],
-    ].map(([seed, n, r0, r1, a, ms, sway, swayMs]) => ({ seed, n, color: hex(a, 'F8F8FC'), ms, sway, swayMs, draw: (x, y, r) => circle(x, y, r0 + r() * (r1 - r0)) })),
+    ]
+      // Each depth twice, same seed so they move together: a soft dark edge under the flakes
+      // keeps them visible on bright snow.
+      .flatMap(([seed, n, r0, r1, a, ms, sway, swayMs]) => [
+        { seed, n, color: hex(a * 0.3, '243460'), ms, sway, swayMs, draw: (x, y, r) => circle(x, y, r0 + r() * (r1 - r0) + 0.8) },
+        { seed, n, color: hex(a, 'F8F8FC'), ms, sway, swayMs, draw: (x, y, r) => circle(x, y, r0 + r() * (r1 - r0)) },
+      ]),
   );
   write('snow', true, F, F, body, targets);
 }
@@ -227,7 +233,7 @@ function blobs(name, banks) {
   });
   write(name, true, F, F, body, targets);
 }
-// Long wisps drifting both ways (fog banks; a pearl sky's thin clouds), breathing. Full white:
+// Long wisps drifting both ways (fog banks), breathing. Full white:
 // JS tints them with the alpha (thick fog, thin wisps).
 {
   const r = rng(13);
@@ -250,9 +256,6 @@ function blobs(name, banks) {
   }
   write('fog', true, F, F, body, targets);
 }
-// Cloud shadows crossing the ground on a grey day.
-blobs('clouds', [{ seed: 12, n: 3, rx: [115, 125], ry: [68, 75], a: 1, drift: 14, ms: 47000 }]);
-
 // ---- Placed kinds (variants) ----
 
 /**

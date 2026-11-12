@@ -42,27 +42,70 @@ export type Sky = {
 
 type Key = { near: RGB; far: RGB; wash: RGB; washA: number };
 
-const NIGHT: Key = { near: [15, 19, 47], far: [9, 13, 33], wash: [150, 170, 235], washA: 0 };
+const NIGHT: Key = { near: [30, 44, 96], far: [8, 10, 30], wash: [150, 170, 235], washA: 0 };
 
 // The ground around the house under a clear sky, through the day, on the design clock: by the
-// walls, further out, and the sun's light. Always saturated (a grey-ish hour reads as fog):
-// rose sunrise, periwinkle, aqua morning, cerulean noon, violet, coral golden hour, plum sunset.
+// walls (the horizon's color), further out (the zenith's), and the sun's light. "Two-tone
+// skies", picked from https://claude.ai/artifact/6FhBExVDbYTHiBnnaN7Qa1: apricot to periwinkle
+// at sunrise, mint to blue, bright sky to deep blue, gold to magenta, coral to indigo.
 const KEYS: [number, Key][] = [
   [0, NIGHT],
   [5.8, NIGHT],
-  [6.7, { near: [62, 44, 85], far: [29, 25, 60], wash: [210, 150, 180], washA: 0.14 }],
-  [7.6, { near: [151, 90, 99], far: [86, 54, 84], wash: [255, 178, 138], washA: 0.5 }],
-  [8.3, { near: [112, 116, 176], far: [48, 54, 116], wash: [255, 210, 170], washA: 0.48 }],
-  [9, { near: [64, 150, 158], far: [22, 74, 104], wash: [255, 226, 172], washA: 0.45 }],
-  [12.5, { near: [44, 124, 204], far: [18, 52, 124], wash: [255, 244, 212], washA: 0.5 }],
-  [15.3, { near: [52, 116, 186], far: [22, 50, 118], wash: [255, 228, 172], washA: 0.46 }],
-  [16, { near: [120, 92, 150], far: [58, 46, 104], wash: [255, 200, 140], washA: 0.5 }],
-  [16.6, { near: [172, 97, 77], far: [111, 66, 84], wash: [255, 170, 98], washA: 0.56 }],
-  [17.5, { near: [142, 67, 90], far: [81, 43, 80], wash: [255, 132, 112], washA: 0.46 }],
-  [18.3, { near: [54, 45, 91], far: [29, 29, 67], wash: [160, 140, 210], washA: 0.1 }],
+  [6.7, { near: [96, 70, 120], far: [26, 26, 72], wash: [210, 150, 180], washA: 0.14 }],
+  [7.6, { near: [240, 168, 120], far: [92, 90, 168], wash: [255, 178, 138], washA: 0.5 }],
+  [8.3, { near: [206, 192, 162], far: [74, 108, 182], wash: [255, 210, 170], washA: 0.48 }],
+  [9, { near: [168, 210, 196], far: [60, 130, 192], wash: [255, 226, 172], washA: 0.45 }],
+  [12.5, { near: [110, 190, 230], far: [30, 80, 180], wash: [255, 244, 212], washA: 0.5 }],
+  [15.3, { near: [122, 184, 222], far: [36, 76, 172], wash: [255, 228, 172], washA: 0.46 }],
+  [16, { near: [200, 176, 164], far: [100, 74, 156], wash: [255, 200, 140], washA: 0.5 }],
+  [16.6, { near: [255, 180, 90], far: [160, 80, 122], wash: [255, 170, 98], washA: 0.56 }],
+  [17.5, { near: [238, 110, 90], far: [70, 50, 130], wash: [255, 132, 112], washA: 0.46 }],
+  [18.3, { near: [122, 110, 200], far: [24, 30, 90], wash: [160, 140, 210], washA: 0.1 }],
   [20, NIGHT],
   [24, NIGHT],
 ];
+
+/** Hours of the moments (sunrise, morning, noon, golden hour, sunset, blue hour, night) on the design clock. */
+const AT = [7.6, 9, 12.5, 16.6, 17.5, 18.3];
+
+/**
+ * A weather's own ground, written color by color (greying the clear sky turned warm hours to
+ * mud): [near, far] in hex at sunrise, morning, noon, golden hour, sunset, blue hour, night.
+ * Noon holds through the afternoon; night holds from 20:00 to dawn.
+ */
+function own(pairs: [string, string][]): [number, RGB, RGB][] {
+  const hex = (s: string): RGB => [parseInt(s.slice(1, 3), 16), parseInt(s.slice(3, 5), 16), parseInt(s.slice(5, 7), 16)];
+  const c = pairs.map(([a, b]) => [hex(a), hex(b)] as const);
+  const night = c[6];
+  return [
+    [0, ...night],
+    [5.8, ...night],
+    ...AT.slice(0, 3).map((h, i) => [h, ...c[i]] as [number, RGB, RGB]),
+    [15.3, ...c[2]],
+    ...AT.slice(3).map((h, i) => [h, ...c[i + 3]] as [number, RGB, RGB]),
+    [20, ...night],
+    [24, ...night],
+  ];
+}
+
+/** Cloudy: a low ceiling, an even slate, warm only by the house. */
+const CEILING = own([['#B4868A', '#4C5674'], ['#8AA4AE', '#465C70'], ['#8EA6C0', '#4A5E7A'], ['#C09A7C', '#4E5470'], ['#A87484', '#3E4462'], ['#4E5078', '#262A46'], ['#262C44', '#12162A']]);
+/** Storm: charcoal blue, the lamps and the lightning carry the scene. */
+const CHARCOAL = own([['#3E3A4A', '#14161E'], ['#2C3A4C', '#10161E'], ['#2E3E54', '#101820'], ['#463E44', '#16161E'], ['#3A3040', '#121218'], ['#1C2232', '#0A0C14'], ['#0A0E16', '#040508']]);
+/** Snow: icy blue, pink-lavender at low sun, cobalt at night. */
+const ICE = own([['#B8B4D8', '#5E6AA0'], ['#A8D0E0', '#4C7CA8'], ['#B0D4EE', '#4C78B4'], ['#E0C4C0', '#7C7CB0'], ['#C0A0C8', '#4E4E8C'], ['#6670B0', '#262E64'], ['#2C3E72', '#101A3C']]);
+/** Fog: the deep blue mist's own color through the day (the ground mixes it with the clear sky). */
+const MIST = own([['#8278B4', '#8278B4'], ['#648CBE', '#648CBE'], ['#6492C8', '#6492C8'], ['#9678AA', '#9678AA'], ['#7860A0', '#7860A0'], ['#384082', '#384082'], ['#1E285A', '#1E285A']]);
+
+/** A table's [near, far] at `hour`, eased between its keys. */
+function at(table: [number, RGB, RGB][], hour: number): [RGB, RGB] {
+  let i = 0;
+  while (i < table.length - 2 && hour > table[i + 1][0]) i++;
+  const [ha, an, af] = table[i];
+  const [hb, bn, bf] = table[i + 1];
+  const t = smooth(0, 1, (hour - ha) / (hb - ha || 1));
+  return [mix(an, bn, t), mix(af, bf, t)];
+}
 
 const COVER: Record<WeatherKind, number> = { clear: 0, cloudy: 0.75, fog: 0.6, rain: 0.85, storm: 0.95, snow: 0.7 };
 
@@ -74,10 +117,6 @@ export const smooth = (a: number, b: number, x: number) => {
 export const mix = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 export const dim = (c: RGB, k: number): RGB => [c[0] * k, c[1] * k, c[2] * k];
 const mul = (c: RGB, m: RGB): RGB => [c[0] * m[0], c[1] * m[1], c[2] * m[2]];
-const desat = (c: RGB, t: number): RGB => {
-  const l = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
-  return mix(c, [l, l, l], t);
-};
 export const rgba = (c: RGB, a = 1) =>
   `rgba(${Math.round(clamp(c[0], 0, 255))},${Math.round(clamp(c[1], 0, 255))},${Math.round(clamp(c[2], 0, 255))},${clamp(a, 0, 1).toFixed(3)})`;
 
@@ -128,33 +167,32 @@ export function skyAt(weather: WeatherKind, clockHour: number, sun: SunTimes = D
   const near = key('near');
   const far = key('far');
 
-  // Fog and overcast take the hour's light: milky white by day, peach in a low sun, blue-grey
-  // at night (lit by the lamps).
-  const fog = weather === 'cloudy' ? mix([50, 56, 80], mix([196, 206, 220], [216, 182, 170], warm), day) : mix([84, 90, 112], mix([224, 223, 220], [240, 204, 178], warm), day);
-  // Rain-teal, storm-violet, snow-blue: recolor the sky's light (the ground is it, dimmed by
-  // `k`), then dim again, darker under a thick sky.
-  const snow = mix([54, 66, 108], [198, 206, 224], day);
-  const recolor = (c: RGB, k: number): RGB => {
-    const sky = dim(c, 1 / k);
-    const wet =
-      weather === 'rain' ? mul(desat(sky, 0.5), [0.72, 0.86, 1.02]) : weather === 'storm' ? mul(desat(sky, 0.6), [0.62, 0.6, 0.84]) : weather === 'snow' ? mix(desat(sky, 0.45), snow, 0.55) : sky;
-    return dim(wet, k * (1 - 0.3 * cloud));
-  };
+  // Each weather has its own colors, picked from https://claude.ai/artifact/6FhBExVDbYTHiBnnaN7Qa1.
+  const mist = at(MIST, hour)[0];
+  // The light of overcast (outdoor mist, snow) and of the fog's banks.
+  const fog = weather === 'fog' ? mix(mist, [255, 255, 255], 0.15) : mix([50, 56, 80], mix([196, 206, 220], [216, 182, 170], warm), day);
   let ground: [RGB, RGB];
   switch (weather) {
     case 'clear':
       ground = [near, far];
       break;
-    // A pearl sky: bright and silvery, still tinted by the hour.
     case 'cloudy':
-      ground = [dim(mix(near, fog, 0.55), 0.84), dim(mix(far, fog, 0.55), 0.6)];
+      ground = at(CEILING, hour);
       break;
-    // A milky veil: the world past the house dissolves into it.
+    // Deep blue mist: the clear sky by the walls drowning in it, navy past the house.
     case 'fog':
-      ground = [dim(mix(near, fog, 0.5), 0.8), dim(mix(far, fog, 0.72), 0.82)];
+      ground = [dim(mix(near, mist, 0.7), 0.85), dim(mist, 0.45)];
       break;
-    default:
-      ground = [recolor(near, 0.72), recolor(far, 0.648)];
+    // Wet hour: the hour's own colors, darker and a touch cooler, as things look when wet.
+    case 'rain':
+      ground = [mul(dim(near, 0.66), [0.9, 0.97, 1.1]), mul(dim(far, 0.6), [0.9, 0.97, 1.1])];
+      break;
+    case 'storm':
+      ground = at(CHARCOAL, hour);
+      break;
+    case 'snow':
+      ground = at(ICE, hour);
+      break;
   }
   return {
     weather,
@@ -171,7 +209,7 @@ export function skyAt(weather: WeatherKind, clockHour: number, sun: SunTimes = D
     wash: key('wash'),
     washA: (a.washA + (b.washA - a.washA) * t) * (1 - cloud * 0.85),
     fog,
-    beyond: weather === 'fog' ? dim(fog, 0.8) : null,
+    beyond: weather === 'fog' ? dim(mist, 0.16) : null,
   };
 }
 

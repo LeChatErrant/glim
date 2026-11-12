@@ -9,7 +9,6 @@ internal object FxKinds {
     "storm" to (R.layout.glim_fx_storm to true),
     "dust" to (R.layout.glim_fx_dust to true),
     "fog" to (R.layout.glim_fx_fog to true),
-    "clouds" to (R.layout.glim_fx_clouds to true),
     "ripple_1" to (R.layout.glim_fx_ripple_1 to false),
     "ripple_2" to (R.layout.glim_fx_ripple_2 to false),
     "ripple_3" to (R.layout.glim_fx_ripple_3 to false),

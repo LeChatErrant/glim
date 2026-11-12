@@ -230,7 +230,8 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   (<https://claude.ai/artifact/Ww2BdTupJwwwvASaH1m9vT>, "Glim weather looks"):
   the ground's colors are written per hour in `sky.ts` and always saturated
   (a greyish hour reads as fog): rose sunrise, periwinkle, aqua morning,
-  cerulean noon, violet, coral golden hour. Cloudy is a **pearl sky**:
+  cerulean noon, violet, coral golden hour (palette replaced by **weather
+  colors**, below). Cloudy is a **pearl sky**:
   silvery, tinted by the hour, with the same calm life as a clear day (see
   the rollback below). Fog is a
   **milky veil**: past the band the world dissolves into the fog's color
@@ -258,6 +259,19 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   leaves, seeds or wisps (rollback check:
   <https://claude.ai/artifact/KyANrWN4djtdYr1qdM4nJa>). Every visual change
   now comes with a before/after of real renders.
+- 2026-11-12: **Weather colors**, picked from three palettes per weather
+  (<https://claude.ai/artifact/6FhBExVDbYTHiBnnaN7Qa1>, "Glim weather
+  colors"). Greying the clear sky for each weather turned warm hours to mud,
+  so each weather now has **its own colors, written hour by hour** in
+  `sky.ts` (only rain still derives from clear). Clear: **two-tone skies**,
+  the horizon's color by the walls and the zenith's further out (apricot to
+  periwinkle, mint to blue, bright sky to deep blue, gold to magenta, coral
+  to indigo). Cloudy: a **low ceiling**, even slate warm by the house, with
+  the still mottling of a cloud base (`cloudBaseSvg`) and lamps glowing a
+  little by day. Rain: the **wet hour**, clear's colors darker and cooler.
+  Storm: **charcoal blue**. Snow: **icy blue** (flakes get a soft dark edge
+  to show on it; the snow day's cloud shadows are gone). Fog: **deep blue
+  mist**, navy past the house. Moths around outdoor lamps are removed.
 
 ## Vocabulary
 

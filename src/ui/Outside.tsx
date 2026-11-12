@@ -6,7 +6,6 @@ import type { Light } from '../lib/hue/client';
 import { fitPlan, type Plan, type PlanView } from '../lib/map/map';
 import {
   beyondInk,
-  cloudShadowsSvg,
   darknessSvg,
   fireflies,
   fogSvg,
@@ -67,7 +66,7 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
   const geom = useMemo(() => offset(houseGeom(plan, fitPlan(plan, mapBox.w, mapBox.h, PAD), lights), mapBox.x, mapBox.y), [plan, mapBox, lights]);
 
   const ground = useMemo(
-    () => svg(width, height, groundSvg(sky, width, height, geom, u) + cloudShadowsSvg(sky, width, height, u)),
+    () => svg(width, height, groundSvg(sky, width, height, geom, u)),
     [sky, width, height, geom],
   );
   const area = { x: -EXTEND, y: -EXTEND, w: width + 2 * EXTEND, h: height + 2 * EXTEND };

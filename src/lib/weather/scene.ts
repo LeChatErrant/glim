@@ -1,7 +1,7 @@
 import type { Light } from '../hue/client';
 import { placeLights, walledRooms } from '../map/glow';
 import type { Plan } from '../map/map';
-import { clamp, mix, rgba, rng, smooth, type RGB, type Sky } from './sky';
+import { clamp, dim, mix, rgba, rng, smooth, type RGB, type Sky } from './sky';
 
 // The outside drawn as SVG pieces. The app shows the static pieces with SvgXml and moves the
 // particle layers with Animated (Outside.tsx); the map widget gets still images and animated
@@ -114,7 +114,19 @@ export function groundSvg(sky: Sky, W: number, H: number, geom: HouseGeom, u: nu
   const { near, far } = ambience(sky);
   const R = Math.max(b.w, b.h) * 0.6 + 45 * u;
   const all = `x="${n(-W)}" y="${n(-H)}" width="${n(W * 3)}" height="${n(H * 3)}"`;
-  return `<defs>${radial('gn', b.x + b.w / 2, b.y + b.h / 2, R, [[0, rgba(near)], [0.55, rgba(mix(near, far, 0.5))], [1, rgba(far)]])}</defs><rect ${all} fill="url(#gn)"/>`;
+  return `<defs>${radial('gn', b.x + b.w / 2, b.y + b.h / 2, R, [[0, rgba(near)], [0.55, rgba(mix(near, far, 0.5))], [1, rgba(far)]])}</defs><rect ${all} fill="url(#gn)"/>` + cloudBaseSvg(sky, W, H, u);
+}
+
+/** Cloudy: the soft mottling of a low cloud base over the garden, lighter and darker patches, still. */
+function cloudBaseSvg(sky: Sky, W: number, H: number, u: number) {
+  if (sky.weather !== 'cloudy') return '';
+  const r = rng(14);
+  const light = mix(sky.near, [255, 255, 255], 0.3);
+  const dark = dim(sky.far, 0.5);
+  const count = clamp(Math.round((W * H) / (16000 * u * u)), 8, 24);
+  const out: string[] = [];
+  for (let i = 0; i < count; i++) out.push(ellipseBlob(`cb${i}`, r() * W, r() * H, (80 + 70 * r()) * u, (40 + 30 * r()) * u, i % 2 ? dark : light, 0.28));
+  return out.join('');
 }
 
 /** Around the house: the warm light it leaks at night, a snowy rim. No cast shadow: it read as odd shapes. */
@@ -122,7 +134,8 @@ export function houseSvg(sky: Sky, geom: HouseGeom, u: number, sparkle = true) {
   const out: string[] = [];
   const box = geom.box;
   if (!box) return '';
-  const haloA = geom.indoorLit ? 0.05 + 0.22 * sky.night * (1 - sky.day) : 0;
+  // Under a low grey sky the lamps glow out a little even by day.
+  const haloA = geom.indoorLit ? 0.05 + 0.22 * sky.night * (1 - sky.day) + (sky.weather === 'cloudy' ? 0.1 * (1 - sky.night) : 0) : 0;
   if (haloA > 0.02) {
     // Many thin layers so the glow fades without visible steps (no blur in widget SVG).
     for (let k = 10; k >= 1; k--) {
@@ -430,18 +443,9 @@ export function spillSvg(sky: Sky, geom: HouseGeom, u: number, mask?: string) {
   return mask ? `<g mask="url(#${mask})">${pools}</g>` : pools;
 }
 
-/** Cloud shadows crossing the ground on a snowy day. */
-export function cloudShadowsSvg(sky: Sky, W: number, H: number, u: number) {
-  if (sky.day < 0.1 || sky.weather !== 'snow') return '';
-  const r = rng(12);
-  const out: string[] = [];
-  for (let i = 0; i < 3; i++) out.push(ellipseBlob(`cs${i}`, r() * W, H * (0.25 + 0.6 * r()), 150 * u, 90 * u, [22, 20, 46], 0.38 * sky.day));
-  return out.join('');
-}
-
 /** How visible the drifting fog banks are (fog only). */
 export function wispAlpha(sky: Sky) {
-  if (sky.weather === 'fog') return 0.34 + 0.16 * sky.day;
+  if (sky.weather === 'fog') return 0.3 + 0.08 * sky.day;
   return 0;
 }
 
@@ -506,7 +510,8 @@ export function particleLayers(sky: Sky, u: number): ParticleLayer[] {
       const particles: Particle[] = [];
       for (let j = 0; j < s.n; j++) {
         const d = (s.d + r()) * u;
-        particles.push({ x: 4 * u + r() * (t - 8 * u), y: 4 * u + r() * (t - 8 * u), w: d, h: d, color: `rgba(248,248,252,${s.a})` });
+        // A soft dark edge keeps the flakes visible on bright snow.
+        particles.push({ x: 4 * u + r() * (t - 8 * u), y: 4 * u + r() * (t - 8 * u), w: d, h: d, color: `rgba(248,248,252,${s.a})`, glow: `rgba(36,52,96,${(0.3 * s.a).toFixed(2)})` });
       }
       return { tileW: t, tileH: t, angle: 0, particles, tilesPerLoop: 1, loopMs: 7000 };
     });
@@ -610,7 +615,6 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
   const still = (body: string) => svg(W, H, `${clip}<g clip-path="url(#wc)">${body}</g>`);
 
   const low: WidgetFx[] = [];
-  if (sky.day >= 0.1 && sky.weather === 'snow') low.push({ kind: 'clouds', tint: argb([22, 20, 46], 0.38 * sky.day) });
   if (wispAlpha(sky)) low.push({ kind: 'fog', tint: argb(mix(sky.fog, [255, 255, 255], 0.3), wispAlpha(sky)) });
   // A storm's rain carries its lightning (one vector each: cheaper for the launcher to redraw).
   if (sky.wet) low.push({ kind: sky.weather === 'storm' ? 'storm' : 'rain' });

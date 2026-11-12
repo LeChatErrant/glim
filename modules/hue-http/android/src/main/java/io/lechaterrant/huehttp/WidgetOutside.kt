@@ -25,7 +25,7 @@ import kotlin.math.roundToInt
  * A map widget's outside, in the glim_fx layer under the widget's image (the app overrides the
  * widget library's rn_widget.xml to add it), from the bottom up:
  * - the ground, a still image;
- * - `low` animations: the weather in the garden (rain, snow, fog, clouds, ripples);
+ * - `low` animations: the weather in the garden (rain, snow, fog, ripples);
  * - `over`, a still image: outdoor floors, the house's rim, the dark all around;
  * - `high` animations: what moves on outdoor areas, fireflies, lightning.
  * Animations are animated vectors in ProgressBars (FxKinds, written by scripts/widget-fx.mjs): the

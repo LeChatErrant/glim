@@ -234,11 +234,14 @@ distinct shape for plugs. Your call.
 **The outside:** we only see a few steps around the house, as if the rest
 were night: a band hugging the rooms' outlines, then the screen's black. The
 band carries the ambience of the hour rather than a realistic view (no sky,
-sun or moon): the sky's colors all around the house, always saturated (rose
-at sunrise, aqua in the morning, cerulean at noon, coral at golden hour,
-navy at night), recolored by the weather: rain, storm with lightning, snow,
-a pearl sky when cloudy, a milky veil of fog (the world past the house
-dissolves into it, lamps glow out into the mist). The home feels sheltered.
+sun or moon): the sky's colors all around the house, always saturated, in
+two tones (the horizon's color by the walls, the zenith's further out:
+apricot to periwinkle at sunrise, mint to blue in the morning, bright sky to
+deep blue at noon, gold to magenta at golden hour, coral to indigo at
+sunset, navy at night). Each weather has its own colors: rain darkens the
+hour, storm turns charcoal blue with lightning, snow icy blue, cloudy a low
+slate ceiling with a mottled cloud base, fog a deep blue mist (the world
+past the house dissolves into it, lamps glow out into the mist). The home feels sheltered.
 Outdoor rooms (terrace) stay rooms of the plan (dark outdoor floor, no
 paving or planks), tinted by the light of the hour; the weather lands there
 instead of passing by: splashes, eave drips and puddles in the rain,
