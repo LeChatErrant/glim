@@ -6,7 +6,7 @@
 //
 // Two shapes of kinds:
 // - full: a 300×300 field shown in a square as big as the widget's longer side, centered;
-// - placed: a small view at a point (fireflies, moths, ripples...), several variants per kind,
+// - placed: a small view at a point (fireflies, ripples, drips...), several variants per kind,
 //   each with its own period and phase so they never move in step.
 // Periods differ between layers, so the whole picture never visibly loops.
 import fs from 'node:fs';
@@ -323,17 +323,6 @@ placed('settle', 8, (i, name) => {
     flake: [keys(ms, [['translateX', cycle((t) => 5 * (1 - ease(t)), ph)], ['translateY', cycle((t) => -30 * (1 - ease(t)), ph)]])],
     d: [keys(ms, [['fillAlpha', cycle((t) => (t < 0.15 ? t / 0.15 : t > 0.62 ? (1 - t) / 0.38 : 1) * 0.95, ph)]])],
   });
-});
-
-// A moth circling a lit lamp, fluttering a little.
-variants.moth = 3;
-[
-  [5600, 1],
-  [7200, -1],
-  [9100, 1],
-].forEach(([ms, dir], i) => {
-  const body = `<group android:name="orbit" android:pivotX="50" android:pivotY="50"><group android:name="flutter"><path android:fillColor="#E6FAF0DC" android:pathData="${circle(96, 50, 2.6)}"/></group></group>`;
-  write(`moth_${i + 1}`, false, 100, 100, body, { orbit: [anim('rotation', 0, 360 * dir, ms)], flutter: [anim('translateY', -2.5, 2.5, 900 + 230 * i, true)] });
 });
 
 // A firefly wandering slowly (two drifts on unrelated periods), glowing on and off.

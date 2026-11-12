@@ -194,8 +194,8 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   streaks and slow rings vs quick splash crowns, eave drips, puddles holding
   the lights and a gloss on the wet floor; falling flakes vs flakes settling
   into the cover (drifts, glitter); fog banks vs low lamp-lit mist;
-  cloud shadows vs autumn leaves; fireflies vs
-  moths circling a lit lamp; string lights sway in a storm. Everything moves (rain, snow, fog, clouds, ripples, fireflies,
+  cloud shadows vs autumn leaves; fireflies
+  (moths circling a lit lamp: removed 2026-11-12, they looked odd); string lights sway in a storm. Everything moves (rain, snow, fog, clouds, ripples, fireflies,
   golden dust, lightning). Live weather: Open-Meteo (no key, CC BY 4.0,
   credited in Settings) at the home's location, taken once with coarse
   location only, rounded to ~1 km, per bridge. Settings → Weather control
@@ -212,14 +212,14 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   clouds), and the weather happens inside it. Settings → "Weather on the map"
   off brings back the plain black map and hides location and Weather control.
 - 2026-11-12: **The outside is calm, and the widget plays it smoothly.**
-  Everything moves slowly (snow, fireflies, moths, leaves); lightning is rare
+  Everything moves slowly (snow, fireflies, leaves); lightning is rare
   and uneven (app: 10 to 30 s apart, near or far). The Map widget no longer
   flips a loop of frames (choppy at 5 to 10 fps, and the loop showed): two
   still images (ground; outdoor floors, rim and the dark) with animated
   vectors between and over them, played by the launcher at the screen's rate.
   Each animation is a ProgressBar layout written by `scripts/widget-fx.mjs`
   (run it, then rebuild): full fields (one vector per weather: one big vector
-  is cheaper to redraw than three) and placed ones (fireflies, moths, rings,
+  is cheaper to redraw than three) and placed ones (fireflies, rings,
   drips, settling flakes, leaves) in variants with their own period and
   phase, so nothing moves in step and the scene never visibly loops.
   `WidgetOutside.kt` adds them as stable views in `glim_fx` (in the app's
@@ -254,7 +254,7 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   maintainer disliked every one on real renders
   (<https://claude.ai/artifact/4PhaMEeUGXqee1d75NQ2Fv>). Snow, rain and fog
   are back to the earlier look. Cloudy keeps its pearl colors and now has
-  **the same animations as clear** (golden dust, fireflies, moths): no
+  **the same animations as clear** (golden dust, fireflies): no
   leaves, seeds or wisps (rollback check:
   <https://claude.ai/artifact/KyANrWN4djtdYr1qdM4nJa>). Every visual change
   now comes with a before/after of real renders.

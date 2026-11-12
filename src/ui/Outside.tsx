@@ -179,9 +179,6 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
         {fx.settle.map((d, i) => (
           <Settle key={`f${i}`} x={d.x} y={d.y} ms={d.ms} phase={d.phase} active={active} />
         ))}
-        {fx.moths.map((d, i) => (
-          <Moth key={`o${i}`} x={d.x} y={d.y} r={d.r} dir={d.dir} ms={d.ms} phase={d.phase} active={active} />
-        ))}
         {sky.wet && geom.outdoorLights.map((l, i) => <Glints key={i} x={l.x} y={l.y} r={l.r} color={l.color} storm={sky.weather === 'storm'} active={active} />)}
         {rings.map((r, i) => (
           <Ripple key={`${kind}-${i}`} x={r.x} y={r.y} ms={r.ms} phase={r.phase} active={active} />
@@ -326,25 +323,6 @@ function Settle({ x, y, ms, phase, active }: { x: number; y: number; ms: number;
         ],
       }}
     />
-  );
-}
-
-/** A moth circling a lit lamp. */
-function Moth({ x, y, r, dir, ms, phase, active }: { x: number; y: number; r: number; dir: 1 | -1; ms: number; phase: number; active: boolean }) {
-  const t = usePhasedLoop(active, ms, phase);
-  return (
-    <Animated.View
-      style={{
-        position: 'absolute',
-        left: x - r,
-        top: y - r,
-        width: 2 * r,
-        height: 2 * r,
-        transform: [{ rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['0deg', `${dir * 360}deg`] }) }],
-      }}
-    >
-      <View style={{ position: 'absolute', left: 2 * r - 1.2, top: r - 1.2, width: 2.4, height: 2.4, borderRadius: 1.2, backgroundColor: 'rgba(250,240,220,0.9)', boxShadow: '0 0 4px 1px rgba(255,220,170,0.6)' }} />
-    </Animated.View>
   );
 }
 

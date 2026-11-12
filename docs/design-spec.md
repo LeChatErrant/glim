@@ -242,7 +242,7 @@ dissolves into it, lamps glow out into the mist). The home feels sheltered.
 Outdoor rooms (terrace) stay rooms of the plan (dark outdoor floor, no
 paving or planks), tinted by the light of the hour; the weather lands there
 instead of passing by: splashes, eave drips and puddles in the rain,
-settling snow, low mist, moths around a lit lamp; grey days keep the calm life of a
+settling snow, low mist; grey days keep the calm life of a
 clear one (golden dust, fireflies). Everything moves. A pill under the headline says the weather
 ("Rain · 10°", "Set by hand" when forced) and opens Settings.
 

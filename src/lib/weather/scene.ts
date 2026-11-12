@@ -8,7 +8,7 @@ import { clamp, mix, rgba, rng, smooth, type RGB, type Sky } from './sky';
 // vectors the launcher plays (widgetOutside). Sizes are in px, `u` scales them
 // (1 on a phone-size map).
 
-/** Clear or cloudy: no weather falls, the garden has what a calm evening has (fireflies, moths, golden dust). */
+/** Clear or cloudy: no weather falls, the garden has what a calm evening has (fireflies, golden dust). */
 const calm = (sky: Sky) => sky.weather === 'clear' || sky.weather === 'cloudy';
 
 export type Pt = { x: number; y: number };
@@ -294,12 +294,10 @@ export type TerraceFx = {
   drips: (Pt & Loop & { nx: number; ny: number })[];
   /** Flakes slowing down, settling and melting into the snow. */
   settle: (Pt & Loop)[];
-  /** Moths circling a lit lamp. */
-  moths: (Pt & Loop & { r: number; dir: 1 | -1 })[];
 };
 
 export function terraceFx(sky: Sky, areas: OutdoorArea[], u: number): TerraceFx {
-  const fx: TerraceFx = { splashes: [], drips: [], settle: [], moths: [] };
+  const fx: TerraceFx = { splashes: [], drips: [], settle: [] };
   const storm = sky.weather === 'storm';
   areas.forEach((area, i) => {
     const r = rng(61 + i);
@@ -322,12 +320,6 @@ export function terraceFx(sky: Sky, areas: OutdoorArea[], u: number): TerraceFx 
     }
     if (sky.weather === 'snow') {
       for (const p of pointsIn(area, clamp(Math.round(size / 2500), 6, 20), 67 + i, u)) fx.settle.push({ ...p, ms: 8000 + 4000 * r(), phase: r() });
-    }
-    if (calm(sky) && sky.night > 0.6) {
-      for (const l of area.lights) {
-        if (l.beads.length) continue;
-        [12, 18, 24].forEach((rad, k) => fx.moths.push({ x: l.x, y: l.y, r: rad * u, ms: [5000, 6500, 8000][k], dir: k % 2 ? -1 : 1, phase: r() }));
-      }
     }
   });
   return fx;
@@ -643,7 +635,6 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
   fx.splashes.forEach((p) => high.push({ kind: 'splash', x: p.x, y: p.y, w: 20 * u, h: 10 * u }));
   fx.drips.forEach((p) => high.push({ kind: 'drip', x: p.x, y: p.y + 9 * u, w: 14 * u, h: 26 * u }));
   fx.settle.forEach((p) => high.push({ kind: 'settle', x: p.x + 2 * u, y: p.y - 16 * u, w: 12 * u, h: 40 * u }));
-  fx.moths.forEach((m) => high.push({ kind: 'moth', x: m.x, y: m.y, w: m.r / 0.46, h: m.r / 0.46 }));
   fireflies(sky, geom, u).forEach((p) => high.push({ kind: 'firefly', x: p.x, y: p.y, w: 40 * u, h: 40 * u }));
 
   // See-through backgrounds: the ground fades out with the band instead of into black, over

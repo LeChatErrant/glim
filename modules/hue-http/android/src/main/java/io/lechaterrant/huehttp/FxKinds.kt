@@ -50,9 +50,6 @@ internal object FxKinds {
     "settle_6" to (R.layout.glim_fx_settle_6 to false),
     "settle_7" to (R.layout.glim_fx_settle_7 to false),
     "settle_8" to (R.layout.glim_fx_settle_8 to false),
-    "moth_1" to (R.layout.glim_fx_moth_1 to false),
-    "moth_2" to (R.layout.glim_fx_moth_2 to false),
-    "moth_3" to (R.layout.glim_fx_moth_3 to false),
     "firefly_1" to (R.layout.glim_fx_firefly_1 to false),
     "firefly_2" to (R.layout.glim_fx_firefly_2 to false),
     "firefly_3" to (R.layout.glim_fx_firefly_3 to false),
@@ -65,7 +62,6 @@ internal object FxKinds {
     "splash" to 12,
     "drip" to 8,
     "settle" to 8,
-    "moth" to 3,
     "firefly" to 4,
   )
 }
