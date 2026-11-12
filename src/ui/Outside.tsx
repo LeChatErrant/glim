@@ -69,7 +69,7 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
   );
   const area = { x: -EXTEND, y: -EXTEND, w: width + 2 * EXTEND, h: height + 2 * EXTEND };
   const house = useMemo(
-    () => svg(width, height, houseSvg(sky, width, geom, u, false) + darknessSvg(geom, 64, area, color.ground) + spillSvg(sky, geom, u)),
+    () => svg(width, height, houseSvg(sky, geom, u, false) + darknessSvg(geom, 64, area, color.ground) + spillSvg(sky, geom, u)),
     [sky, width, height, geom], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const fogHigh = useMemo(() => fogSvg(sky, width, height, u, 1), [sky, width, height]);

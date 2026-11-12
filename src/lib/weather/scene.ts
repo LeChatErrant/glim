@@ -92,11 +92,6 @@ export function svg(w: number, h: number, body: string) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${n(w)}" height="${n(h)}" viewBox="0 0 ${n(w)} ${n(h)}">${body}</svg>`;
 }
 
-/** Where the sun is, above the map: it only sets which way the house's shadow falls. */
-function sunAt(sky: Sky, W: number, u: number) {
-  return { x: W * (0.12 + 0.76 * sky.arc), y: -70 * u - 50 * u * Math.sin(Math.PI * sky.arc) };
-}
-
 const dim = (c: RGB, k: number): RGB => [c[0] * k, c[1] * k, c[2] * k];
 
 /** The light of the hour around the house: near the walls, and further out. */
@@ -121,29 +116,11 @@ export function groundSvg(sky: Sky, W: number, H: number, geom: HouseGeom, u: nu
   return `<defs>${radial('gn', b.x + b.w / 2, b.y + b.h / 2, R, [[0, rgba(near)], [0.55, rgba(mix(near, far, 0.5))], [1, rgba(far)]])}</defs><rect ${all} fill="url(#gn)"/>`;
 }
 
-/** Around the house: its soft shadow by day, the warm light it leaks at night, a snowy rim. */
-/** `origin`: where `geom`'s (0, 0) sits on the screen the sky is laid out on (W wide). */
-export function houseSvg(sky: Sky, W: number, geom: HouseGeom, u: number, sparkle = true, origin: Pt = { x: 0, y: 0 }) {
+/** Around the house: the warm light it leaks at night, a snowy rim. No cast shadow: it read as odd shapes. */
+export function houseSvg(sky: Sky, geom: HouseGeom, u: number, sparkle = true) {
   const out: string[] = [];
   const box = geom.box;
   if (!box) return '';
-  const seen = sunAt(sky, W, u);
-  const sun = { x: seen.x - origin.x, y: seen.y - origin.y };
-  const shA = sky.day * (1 - sky.cloud * 0.85) * 0.75;
-  if (shA > 0.03 && sky.alt > 1) {
-    const len = clamp(14 / Math.tan((sky.alt * Math.PI) / 180), 8, 60) * u;
-    const cx = box.x + box.w / 2;
-    const cy = box.y + box.h / 2;
-    const d = Math.hypot(cx - sun.x, cy - sun.y) || 1;
-    const sc = rgba(mix([26, 22, 58], sky.top, 0.15));
-    // Copies smeared along the light, fading out: a soft shadow without blur.
-    for (let i = 0; i < 9; i++) {
-      const k = 0.2 + i * 0.12;
-      const dx = ((cx - sun.x) / d) * len * k;
-      const dy = ((cy - sun.y) / d) * len * k;
-      out.push(`<g opacity="${(shA * 0.15 * (1 - i / 12)).toFixed(3)}" transform="translate(${n(dx)} ${n(dy)})">${geom.indoor.map((r) => `<path d="${poly(r)}" fill="${sc}"/>`).join('')}</g>`);
-    }
-  }
   const haloA = geom.indoorLit ? 0.1 + 0.5 * sky.night * (1 - sky.day) : 0;
   if (haloA > 0.02) {
     // Many thin layers so the glow fades without visible steps (no blur in widget SVG).
@@ -610,7 +587,7 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
   const puddles = areas.map((a, i) => puddlesSvg(sky, a, u, i)).join('');
   const mist = areas.map((a, i) => mistSvg(sky, a, u, i)).join('');
   const over =
-    houseSvg(sky, W, geom, u) +
+    houseSvg(sky, geom, u) +
     (puddles && `<g opacity="0.85">${puddles}</g>`) +
     (sky.wet ? areas.map((a, i) => glossSvg(a, a.box.x + a.box.w / 2, u, i)).join('') : '') +
     (mist && `<g opacity="0.8">${mist}</g>`) +
