@@ -1,7 +1,7 @@
-# hue-lab: design spec
+# Glim: design spec
 
-Handoff brief for the visual and interaction design of **hue-lab** (working
-name), a personal Android app to control Philips Hue lights. This document
+Handoff brief for the visual and interaction design of **Glim**, a
+personal Android app to control Philips Hue lights. This document
 says *what* the app does and *what each screen needs*. The visual language,
 layout and details are yours to propose.
 
@@ -391,7 +391,7 @@ preview** of the widget at the top of the configuration screen.
 - **Lights and rooms:** rename (writes to the bridge), hide from the app.
 - **Widgets:** list of placed widgets and their configuration.
 - **Appearance:** theme (dark, light, system), accent.
-- **About:** version and build ("hue-lab 0.3.1 · a1b2c3d").
+- **About:** version and build ("Glim 0.3.1 · a1b2c3d").
 
 ---
 

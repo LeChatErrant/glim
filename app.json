@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "hue-lab",
+    "name": "Glim",
     "slug": "hue-lab",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -12,7 +12,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0B0B0B",
+        "backgroundColor": "#050506",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -31,7 +31,10 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "scheme": "huelab",
+    "scheme": [
+      "glim",
+      "huelab"
+    ],
     "plugins": [
       "expo-router",
       "expo-secure-store",
@@ -94,6 +97,14 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Glim uses your location once to show the weather around your home on the map."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#050506",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200
         }
       ]
     ],

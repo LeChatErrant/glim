@@ -86,7 +86,7 @@ export async function pairOnce(bridge: { id: string; ip: string }): Promise<Pair
     const r = await HueHttp.request({
       url: `https://${bridge.ip}/api`,
       method: 'POST',
-      body: JSON.stringify({ devicetype: 'hue-lab#android', generateclientkey: true }),
+      body: JSON.stringify({ devicetype: 'glim#android', generateclientkey: true }),
       bridgeId: bridge.id,
       timeoutMs: 4000,
     });

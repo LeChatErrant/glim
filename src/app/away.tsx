@@ -13,7 +13,7 @@ import { Display, Label, Txt } from '../ui/text';
 import { color } from '../ui/theme';
 
 // Control from anywhere: connect a Hue account so lights and widgets work away from home, through
-// Hue's cloud. Hue's sign-in comes back here (huelab://away?code=...&state=...), from this screen
+// Hue's cloud. Hue's sign-in comes back here (glim://away?code=...&state=...), from this screen
 // or from the onboarding step.
 
 type Phase = 'loading' | 'off' | 'signing' | 'on';

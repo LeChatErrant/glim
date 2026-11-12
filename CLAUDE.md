@@ -1,8 +1,9 @@
-# hue-lab
+# Glim
 
 A personal mobile app to control the maintainer's Philips Hue lights, talking to
 the bridge over its local API (CLIP v2). Product name: **Glim** (see
-[Decisions log](#decisions-log)); `hue-lab` is the repo's working name.
+[Decisions log](#decisions-log)). GitHub repo `LeChatErrant/glim`; the local
+folder and a few internal IDs still say `hue-lab`/`huelab` (see 2026-11-12).
 
 **Prototype for the maintainer, built to be sellable.** Ship fast for one home,
 but never in a way that would need a rewrite to sell it later (see
@@ -91,6 +92,14 @@ but never in a way that would need a rewrite to sell it later (see
   Oriel (glowing arched window), Candela (open ring), Lucerna (wall lantern
   half pool). Store and trademark availability not yet checked: do it before
   renaming the package ID.
+  2026-11-12: renamed everywhere users see it: app name, launcher and
+  adaptive icons (jewel mark, `scripts/icons.mjs`), splash (`#050506` + mark),
+  deep link `glim://` (`huelab://` still accepted), the app's name on the
+  bridge (`glim#android`, new pairings only), server sign-in page, docs, GitHub
+  repo. Kept on purpose, internal only: package ID `io.lechaterrant.huelab`
+  (a new ID installs a separate app without the map and pairing; switch it
+  before the store), Expo slug `hue-lab` (tied to the EAS project),
+  SharedPreferences `huelab_fast`, the `hue-http` module.
 - 2026-10-23: Our own vocabulary, not Hue's (Hue's "scene" confuses people).
   See [Vocabulary](#vocabulary).
 - 2026-10-26: Widgets follow the bridge live: a foreground service ("Live
@@ -151,7 +160,7 @@ but never in a way that would need a rewrite to sell it later (see
   app and widget starts, and tries the bridge again every 20 s and on app
   resume. The bridge app key from pairing works through the cloud, so no
   second pairing. Sign-in: the app opens our server's `/api/hue/login`, Hue
-  calls back `/api/hue/callback`, which hands the code to `huelab://away`
+  calls back `/api/hue/callback`, which hands the code to `glim://away`
   (`src/app/away.tsx`); the app swaps it through `/api/hue/token` (adds the
   client secret) and checks the account reaches *this* bridge. Tokens per
   bridge in SecureStore, refreshed ahead of expiry. Widget fast taps fall back

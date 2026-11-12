@@ -2,7 +2,7 @@
 // code back to the app, which swaps it for tokens through /api/hue/token.
 
 /** The app's deep link (scheme in app.json, screen src/app/away.tsx). */
-const APP_RETURN = 'huelab://away';
+const APP_RETURN = 'glim://away';
 
 export function GET(request: Request) {
   const params = new URL(request.url).searchParams;
@@ -15,9 +15,9 @@ export function GET(request: Request) {
   // Redirect at once, with a button in case the browser asks before opening an app.
   const html = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="0;url=${href}">
-<title>Back to the app</title>
+<title>Back to Glim</title>
 <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#050506;font-family:system-ui,sans-serif">
-<a href="${href}" style="color:#050506;background:#E9CF9F;padding:16px 28px;border-radius:26px;text-decoration:none;font-size:16px">Back to the app</a>
+<a href="${href}" style="color:#050506;background:#E9CF9F;padding:16px 28px;border-radius:26px;text-decoration:none;font-size:16px">Back to Glim</a>
 </body>`;
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
