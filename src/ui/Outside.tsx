@@ -5,10 +5,12 @@ import { SvgXml } from 'react-native-svg';
 import type { Light } from '../lib/hue/client';
 import { fitPlan, type Plan, type PlanView } from '../lib/map/map';
 import {
+  beyondInk,
   cloudShadowsSvg,
   darknessSvg,
   fireflies,
   fogSvg,
+  gardenLeaves,
   groundSvg,
   houseGeom,
   glossSvg,
@@ -28,7 +30,7 @@ import {
   type ParticleLayer,
   type Pt,
 } from '../lib/weather/scene';
-import { rgba, type Sky } from '../lib/weather/sky';
+import { clamp, rgba, type Sky } from '../lib/weather/sky';
 import { color } from './theme';
 
 // The outside around the map (the light of the hour and the weather in a band around the house,
@@ -57,6 +59,7 @@ const PAD = 16;
 const u = 1;
 /** Past the screen's edges, so panning and turning the map don't uncover it. */
 const EXTEND = 200;
+const FOG_MARGIN = 60;
 const FILL = { position: 'absolute' as const, left: 0, top: 0, right: 0, bottom: 0 };
 
 export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, twist = 0, active }: Props) {
@@ -64,15 +67,37 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
   const geom = useMemo(() => offset(houseGeom(plan, fitPlan(plan, mapBox.w, mapBox.h, PAD), lights), mapBox.x, mapBox.y), [plan, mapBox, lights]);
 
   const ground = useMemo(
-    () => svg(width, height, groundSvg(sky, width, height, geom, u) + cloudShadowsSvg(sky, width, height, u) + fogSvg(sky, width, height, u, 0)),
+    () => svg(width, height, groundSvg(sky, width, height, geom, u) + cloudShadowsSvg(sky, width, height, u)),
     [sky, width, height, geom],
   );
   const area = { x: -EXTEND, y: -EXTEND, w: width + 2 * EXTEND, h: height + 2 * EXTEND };
   const house = useMemo(
-    () => svg(width, height, houseSvg(sky, geom, u, false) + darknessSvg(geom, 64, area, color.ground) + spillSvg(sky, geom, u)),
+    () => svg(width, height, houseSvg(sky, geom, u, false) + darknessSvg(geom, 64, area, beyondInk(sky, color.ground)) + spillSvg(sky, geom, u)),
     [sky, width, height, geom], // eslint-disable-line react-hooks/exhaustive-deps
   );
-  const fogHigh = useMemo(() => fogSvg(sky, width, height, u, 1), [sky, width, height]);
+  // Fog lights up what lies past the house: fade it back to the screen's black over the
+  // headline and the numbers under the map, so their text stays readable.
+  const shade = useMemo(() => {
+    if (!sky.beyond) return '';
+    const o = (y: number) => clamp(y / height, 0, 1).toFixed(3);
+    const top = mapBox.y;
+    const bottom = mapBox.y + mapBox.h;
+    const g = color.ground;
+    return svg(
+      width,
+      height,
+      `<defs><linearGradient id="sh" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${height}">` +
+        `<stop offset="0" stop-color="${g}" stop-opacity="1"/><stop offset="${o(top - 30)}" stop-color="${g}" stop-opacity="0.94"/>` +
+        `<stop offset="${o(top + 40)}" stop-color="${g}" stop-opacity="0"/><stop offset="${o(bottom - 40)}" stop-color="${g}" stop-opacity="0"/>` +
+        `<stop offset="${o(bottom + 20)}" stop-color="${g}" stop-opacity="0.94"/><stop offset="1" stop-color="${g}" stop-opacity="1"/></linearGradient></defs>` +
+        `<rect x="0" y="0" width="${width}" height="${height}" fill="url(#sh)"/>`,
+    );
+  }, [sky.beyond, width, height, mapBox]);
+  // Wisps are drawn wider than the screen, so their edge never slides into view as they drift.
+  const fogW = width + 2 * FOG_MARGIN;
+  const fogLow = useMemo(() => fogSvg(sky, fogW, height, u, 0), [sky, fogW, height]);
+  const fogHigh = useMemo(() => fogSvg(sky, fogW, height, u, 1), [sky, fogW, height]);
+  const leaves = useMemo(() => gardenLeaves(sky, height), [sky.weather, height]); // eslint-disable-line react-hooks/exhaustive-deps
   const snowy = sky.weather === 'snow';
   const areas = useMemo(() => outdoorAreas(geom, u), [geom]);
   const fxKind = kindOf(sky);
@@ -108,11 +133,19 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
       {layers.map((l, i) => (
         <Particles key={`${kind}-${i}`} layer={l} width={width} height={height} active={active} />
       ))}
-      {fogHigh !== '' && (
-        <Drift active={active} range={-16} ms={26000} style={FILL}>
-          <SvgXml xml={svg(width, height, fogHigh)} width={width} height={height} />
+      {fogLow !== '' && (
+        <Drift active={active} range={36} ms={70000} style={FILL}>
+          <SvgXml xml={svg(fogW, height, fogLow)} width={fogW} height={height} style={{ marginLeft: -FOG_MARGIN }} />
         </Drift>
       )}
+      {fogHigh !== '' && (
+        <Drift active={active} range={-44} ms={56000} style={FILL}>
+          <SvgXml xml={svg(fogW, height, fogHigh)} width={fogW} height={height} style={{ marginLeft: -FOG_MARGIN }} />
+        </Drift>
+      )}
+      {leaves.map((d, i) => (
+        <Leaf key={`l${i}`} x={-12} y={d.y} span={width + 24} color={d.color} ms={d.ms} phase={d.phase} active={active} />
+      ))}
       <View style={follow}>
         <SvgXml xml={house} width={width} height={height} style={StyleSheet.absoluteFill} />
         {glitter.map(([a, b], i) => (
@@ -142,9 +175,6 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
         {fx.settle.map((d, i) => (
           <Settle key={`f${i}`} x={d.x} y={d.y} ms={d.ms} phase={d.phase} active={active} />
         ))}
-        {fx.leaves.map((d, i) => (
-          <Leaf key={`l${i}`} x={d.x} y={d.y} span={d.span} color={d.color} ms={d.ms} phase={d.phase} active={active} />
-        ))}
         {fx.moths.map((d, i) => (
           <Moth key={`o${i}`} x={d.x} y={d.y} r={d.r} dir={d.dir} ms={d.ms} phase={d.phase} active={active} />
         ))}
@@ -153,6 +183,7 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
           <Ripple key={`${kind}-${i}`} x={r.x} y={r.y} ms={r.ms} phase={r.phase} active={active} />
         ))}
       </View>
+      {shade !== '' && <SvgXml xml={shade} width={width} height={height} style={StyleSheet.absoluteFill} />}
       {flies.length > 0 && (
         <View style={follow}>
           {flies.map((f, i) => (
@@ -294,7 +325,7 @@ function Settle({ x, y, ms, phase, active }: { x: number; y: number; ms: number;
   );
 }
 
-/** An autumn leaf skittering across, tumbling as it goes. */
+/** An autumn leaf blowing across the garden, tumbling as it goes. */
 function Leaf({ x, y, span, color, ms, phase, active }: { x: number; y: number; span: number; color: string; ms: number; phase: number; active: boolean }) {
   const t = usePhasedLoop(active, ms, phase);
   return (
@@ -311,8 +342,9 @@ function Leaf({ x, y, span, color, ms, phase, active }: { x: number; y: number; 
         opacity: t.interpolate({ inputRange: [0, 0.08, 0.92, 1], outputRange: [0, 0.95, 0.95, 0] }),
         transform: [
           { translateX: t.interpolate({ inputRange: [0, 0.45, 0.55, 1], outputRange: [0, span * 0.46, span * 0.54, span] }) },
-          { translateY: t.interpolate({ inputRange: [0, 0.45, 0.55, 1], outputRange: [0, -7, -5, 5] }) },
-          { rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '420deg'] }) },
+          { translateY: t.interpolate({ inputRange: [0, 0.2, 0.4, 0.6, 0.8, 1], outputRange: [0, -9, 6, -4, 12, 22] }) },
+          { rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '1080deg'] }) },
+          { scaleY: t.interpolate({ inputRange: [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1], outputRange: [1, 0.25, 1, 0.25, 1, 0.25, 1, 0.25, 1] }) },
         ],
       }}
     />

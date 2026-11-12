@@ -1,11 +1,11 @@
 import type { Light } from '../hue/client';
 import { placeLights, walledRooms } from '../map/glow';
 import type { Plan } from '../map/map';
-import { clamp, mix, rgba, rng, smooth, type RGB, type Sky } from './sky';
+import { clamp, dim, mix, rgba, rng, smooth, type RGB, type Sky } from './sky';
 
 // The outside drawn as SVG pieces. The app shows the static pieces with SvgXml and moves the
-// particle layers with Animated (Outside.tsx); the map widget bakes everything into a loop of
-// frames that the launcher flips through (widgetFrames). Sizes are in px, `u` scales them
+// particle layers with Animated (Outside.tsx); the map widget gets still images and animated
+// vectors the launcher plays (widgetOutside). Sizes are in px, `u` scales them
 // (1 on a phone-size map).
 
 export type Pt = { x: number; y: number };
@@ -92,13 +92,11 @@ export function svg(w: number, h: number, body: string) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${n(w)}" height="${n(h)}" viewBox="0 0 ${n(w)} ${n(h)}">${body}</svg>`;
 }
 
-const dim = (c: RGB, k: number): RGB => [c[0] * k, c[1] * k, c[2] * k];
-
 /** The light of the hour around the house: near the walls, and further out. */
-function ambience(sky: Sky) {
-  const k = 0.72 * (1 - 0.3 * sky.cloud);
-  return { near: dim(mix(sky.mid, sky.low, 0.25), k), far: dim(mix(sky.mid, sky.top, 0.45), k * 0.9) };
-}
+const ambience = (sky: Sky) => ({ near: sky.near, far: sky.far });
+
+/** The dark past the band around the house: the screen's own `ink`, or the fog itself. */
+export const beyondInk = (sky: Sky, ink: string) => (sky.beyond ? rgba(sky.beyond) : ink);
 
 /** An outdoor room's floor on the plan (theme `floorOutdoor`). */
 const OUTDOOR_FLOOR: RGB = [7, 7, 8];
@@ -293,14 +291,12 @@ export type TerraceFx = {
   drips: (Pt & Loop & { nx: number; ny: number })[];
   /** Flakes slowing down, settling and melting into the snow. */
   settle: (Pt & Loop)[];
-  /** Autumn leaves skittering across. */
-  leaves: (Pt & Loop & { span: number; color: string })[];
   /** Moths circling a lit lamp. */
   moths: (Pt & Loop & { r: number; dir: 1 | -1 })[];
 };
 
 export function terraceFx(sky: Sky, areas: OutdoorArea[], u: number): TerraceFx {
-  const fx: TerraceFx = { splashes: [], drips: [], settle: [], leaves: [], moths: [] };
+  const fx: TerraceFx = { splashes: [], drips: [], settle: [], moths: [] };
   const storm = sky.weather === 'storm';
   areas.forEach((area, i) => {
     const r = rng(61 + i);
@@ -323,11 +319,6 @@ export function terraceFx(sky: Sky, areas: OutdoorArea[], u: number): TerraceFx 
     }
     if (sky.weather === 'snow') {
       for (const p of pointsIn(area, clamp(Math.round(size / 2500), 6, 20), 67 + i, u)) fx.settle.push({ ...p, ms: 8000 + 4000 * r(), phase: r() });
-    }
-    if (sky.weather === 'cloudy') {
-      ['#B8643A', '#C98A3E', '#8E5A34', '#A8703A'].forEach((color, k) => {
-        fx.leaves.push({ x: area.box.x, y: area.box.y + area.box.h * (0.2 + 0.2 * k), span: area.box.w, color, ms: 18000 + 8000 * r(), phase: r() });
-      });
     }
     if (sky.weather === 'clear' && sky.night > 0.6) {
       for (const l of area.lights) {
@@ -413,35 +404,59 @@ export function darknessSvg(geom: HouseGeom, steps: number, area: Box, ink: stri
  * house. Stronger at night. The rooms' floors cover it indoors.
  */
 export function spillSvg(sky: Sky, geom: HouseGeom, u: number) {
-  const a = 0.32 * (0.35 + 0.65 * sky.night);
+  // In fog the light spreads further, as a glow in the mist.
+  const fog = sky.weather === 'fog';
+  const a = (fog ? 0.6 : 0.32) * (0.35 + 0.65 * sky.night);
   return geom.lamps
     .map((l, i) => {
       const c = hexRgb(l.color);
-      const r = clamp(l.r * 2.6, 30 * u, 220 * u);
+      const r = clamp(l.r * (fog ? 3.4 : 2.6), 30 * u, (fog ? 280 : 220) * u);
       return `<defs>${radial(`sp${i}`, l.x, l.y, r, [[0, rgba(c, a)], [0.45, rgba(c, a * 0.35)], [1, rgba(c, 0)]])}</defs><circle cx="${n(l.x)}" cy="${n(l.y)}" r="${n(r)}" fill="url(#sp${i})"/>`;
     })
     .join('');
 }
 
-/** Cloud shadows crossing the ground on a grey day. */
+/** Cloud shadows crossing the ground on a snowy day. */
 export function cloudShadowsSvg(sky: Sky, W: number, H: number, u: number) {
-  if (sky.day < 0.1 || (sky.weather !== 'cloudy' && sky.weather !== 'snow')) return '';
+  if (sky.day < 0.1 || sky.weather !== 'snow') return '';
   const r = rng(12);
   const out: string[] = [];
   for (let i = 0; i < 3; i++) out.push(ellipseBlob(`cs${i}`, r() * W, H * (0.25 + 0.6 * r()), 150 * u, 90 * u, [22, 20, 46], 0.38 * sky.day));
   return out.join('');
 }
 
-/** Fog banks drifting both ways, `layer` 0 and 1. */
+/** How visible the drifting wisps are: thick banks of fog, thin wisps under a pearl sky. */
+export function wispAlpha(sky: Sky) {
+  if (sky.weather === 'fog') return 0.34 + 0.16 * sky.day;
+  if (sky.weather === 'cloudy') return 0.06 + 0.08 * sky.day;
+  return 0;
+}
+
+/** Long wisps drifting both ways (fog banks, a pearl sky's thin clouds), `layer` 0 and 1. */
 export function fogSvg(sky: Sky, W: number, H: number, u: number, layer: 0 | 1) {
-  if (sky.weather !== 'fog') return '';
+  const a = wispAlpha(sky);
+  if (!a) return '';
   const r = rng(13 + layer);
+  const c = mix(sky.fog, [255, 255, 255], 0.3);
   const out: string[] = [];
-  const count = layer ? 5 : 7;
+  const count = 5;
   for (let i = 0; i < count; i++) {
-    out.push(ellipseBlob(`fb${layer}-${i}`, -60 * u + r() * (W + 120 * u), r() * H, (210 + 80 * r()) * u, (85 + 40 * r()) * u, sky.fog, layer ? 0.34 : 0.42));
+    const y = ((i + layer * 0.5 + 0.3 * r()) / count) * H;
+    out.push(ellipseBlob(`fb${layer}-${i}`, -40 * u + r() * (W + 80 * u), y, (150 + 90 * r()) * u, (24 + 20 * r()) * u, c, a));
   }
   return out.join('');
+}
+
+/** Autumn leaves blowing across the garden on a grey day: start rows, periods and colors. */
+export function gardenLeaves(sky: Sky, H: number) {
+  if (sky.weather !== 'cloudy') return [];
+  const r = rng(29);
+  return ['#C4703A', '#AA542E', '#D0964A', '#8C783C', '#B8643A', '#C98A3E', '#9A5A30'].map((color, k) => ({
+    y: H * (0.1 + 0.8 * ((k + 0.5 * r()) / 7)),
+    color,
+    ms: 26000 + 16000 * r(),
+    phase: k / 7 + 0.1 * r(),
+  }));
 }
 
 /** A streak (w×h, drawn vertical) or a dot (w = h) in a particle tile; `glow` adds a soft halo. */
@@ -574,8 +589,9 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
   const still = (body: string) => svg(W, H, `${clip}<g clip-path="url(#wc)">${body}</g>`);
 
   const low: WidgetFx[] = [];
-  if (sky.day >= 0.1 && (sky.weather === 'cloudy' || sky.weather === 'snow')) low.push({ kind: 'clouds', tint: argb([22, 20, 46], 0.38 * sky.day) });
-  if (sky.weather === 'fog') low.push({ kind: 'fog', tint: argb(sky.fog) });
+  if (sky.day >= 0.1 && sky.weather === 'snow') low.push({ kind: 'clouds', tint: argb([22, 20, 46], 0.38 * sky.day) });
+  if (wispAlpha(sky)) low.push({ kind: 'fog', tint: argb(mix(sky.fog, [255, 255, 255], 0.3), wispAlpha(sky)) });
+  if (sky.weather === 'cloudy') low.push({ kind: 'leaves' });
   // A storm's rain carries its lightning (one vector each: cheaper for the launcher to redraw).
   if (sky.wet) low.push({ kind: sky.weather === 'storm' ? 'storm' : 'rain' });
   else if (sky.weather === 'snow') low.push({ kind: 'snow' });
@@ -591,14 +607,13 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
     (puddles && `<g opacity="0.85">${puddles}</g>`) +
     (sky.wet ? areas.map((a, i) => glossSvg(a, a.box.x + a.box.w / 2, u, i)).join('') : '') +
     (mist && `<g opacity="0.8">${mist}</g>`) +
-    darknessSvg(geom, 40, { x: -8, y: -8, w: W + 16, h: H + 16 }, ink) +
+    darknessSvg(geom, 40, { x: -8, y: -8, w: W + 16, h: H + 16 }, beyondInk(sky, ink)) +
     spillSvg(sky, geom, u);
 
   const high: WidgetFx[] = [];
   fx.splashes.forEach((p) => high.push({ kind: 'splash', x: p.x, y: p.y, w: 20 * u, h: 10 * u }));
   fx.drips.forEach((p) => high.push({ kind: 'drip', x: p.x, y: p.y + 9 * u, w: 14 * u, h: 26 * u }));
   fx.settle.forEach((p) => high.push({ kind: 'settle', x: p.x + 2 * u, y: p.y - 16 * u, w: 12 * u, h: 40 * u }));
-  fx.leaves.forEach((l) => high.push({ kind: 'leaf', x: l.x + l.span / 2, y: l.y, w: l.span, h: 16 * u, tint: argb(hexRgb(l.color)) }));
   fx.moths.forEach((m) => high.push({ kind: 'moth', x: m.x, y: m.y, w: m.r / 0.46, h: m.r / 0.46 }));
   fireflies(sky, geom, u).forEach((p) => high.push({ kind: 'firefly', x: p.x, y: p.y, w: 40 * u, h: 40 * u }));
 

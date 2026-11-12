@@ -227,12 +227,29 @@ function blobs(name, banks) {
   });
   write(name, true, F, F, body, targets);
 }
-// Fog banks drifting both ways.
-blobs('fog', [
-  // Few, big banks: each soft blob is costly for the launcher to redraw.
-  { seed: 13, n: 5, rx: [140, 185], ry: [55, 78], a: 0.42, drift: 16, ms: 31000 },
-  { seed: 14, n: 3, rx: [140, 185], ry: [55, 78], a: 0.34, drift: -18, ms: 39000 },
-]);
+// Long wisps drifting both ways (fog banks; a pearl sky's thin clouds), breathing. Full white:
+// JS tints them with the alpha (thick fog, thin wisps).
+{
+  const r = rng(13);
+  let body = '';
+  const targets = {};
+  const count = 8;
+  for (let i = 0; i < count; i++) {
+    const x = r() * F;
+    const y = ((i + 0.3 * r()) / count) * F + 8;
+    const sx = (90 + 55 * r()) / 100;
+    const sy = (15 + 13 * r()) / 100;
+    const dir = i % 2 ? -1 : 1;
+    body += `<group android:name="w${i}"><group android:translateX="${f(x)}" android:translateY="${f(y)}" android:scaleX="${f(sx)}" android:scaleY="${f(sy)}"><path android:name="p${i}" android:pathData="${circle(0, 0, 100)}">${radialFill(100, [
+      [0, '#FFFFFFFF'],
+      [0.45, hex(0.62, 'FFFFFF')],
+      [1, '#00FFFFFF'],
+    ])}</path></group></group>`;
+    targets[`w${i}`] = [anim('translateX', -dir * (30 + 20 * r()), dir * (30 + 20 * r()), 50000 + 30000 * r(), true)];
+    targets[`p${i}`] = [anim('fillAlpha', 0.55, 1, 17000 + 12000 * r(), true)];
+  }
+  write('fog', true, F, F, body, targets);
+}
 // Cloud shadows crossing the ground on a grey day.
 blobs('clouds', [{ seed: 12, n: 3, rx: [115, 125], ry: [68, 75], a: 1, drift: 14, ms: 47000 }]);
 
@@ -308,22 +325,32 @@ placed('settle', 8, (i, name) => {
   });
 });
 
-// An autumn leaf skittering across an outdoor area, tumbling (white: tinted from JS).
-variants.leaf = 3;
-for (let i = 0; i < 3; i++) {
-  const ms = [19000, 23000, 27000][i];
-  const ph = [0.1, 0.45, 0.8][i];
-  const body = `<group android:translateY="8"><group android:name="leaf"><path android:name="d" android:fillColor="#FFFFFF" android:pathData="${ellipse(0, 0, 3.5, 2)}"/></group></group>`;
-  write(`leaf_${i + 1}`, false, 200, 16, body, {
-    leaf: [
+// Autumn leaves blowing across the garden on a grey day, tumbling and flipping, each on its own
+// period (colors baked in).
+{
+  const r = rng(29);
+  const colors = ['#F2C4703A', '#F2AA542E', '#F2D0964A', '#F28C783C', '#F2B8643A', '#F2C98A3E', '#F29A5A30'];
+  let body = '';
+  const targets = {};
+  colors.forEach((color, k) => {
+    const y = F * (0.1 + 0.8 * ((k + 0.5 * r()) / colors.length));
+    const ms = 26000 + 16000 * r();
+    const ph = k / colors.length + 0.1 * r();
+    const wob = 2 + Math.floor(3 * r());
+    const turns = (r() < 0.5 ? -1 : 1) * (2 + Math.floor(3 * r()));
+    const flips = 5 + Math.floor(6 * r());
+    body += `<group android:translateY="${f(y)}"><group android:name="m${k}"><group android:name="s${k}"><path android:name="d${k}" android:fillColor="${color}" android:pathData="${ellipse(0, 0, 3.1, 1.6)}"/></group></group></group>`;
+    targets[`m${k}`] = [
       keys(ms, [
-        ['translateX', cycle((t) => 200 * t, ph)],
-        ['translateY', cycle((t) => -6 * Math.sin(2 * Math.PI * t), ph)],
-        ['rotation', cycle((t) => 420 * t, ph)],
+        ['translateX', cycle((t) => -12 + (F + 24) * t, ph, 64)],
+        ['translateY', cycle((t) => 9 * Math.sin(2 * Math.PI * wob * t) + 22 * t, ph, 64)],
+        ['rotation', cycle((t) => 360 * turns * t, ph, 64)],
       ]),
-    ],
-    d: [keys(ms, [['fillAlpha', cycle((t) => 0.95 * (t < 0.08 ? t / 0.08 : t > 0.92 ? (1 - t) / 0.08 : 1), ph)]])],
+    ];
+    targets[`s${k}`] = [keys(ms, [['scaleY', cycle((t) => 0.25 + 0.75 * Math.abs(Math.cos(Math.PI * flips * t)), ph, 96)]])];
+    targets[`d${k}`] = [keys(ms, [['fillAlpha', cycle((t) => (t < 0.06 ? t / 0.06 : t > 0.94 ? (1 - t) / 0.06 : 1), ph)]])];
   });
+  write('leaves', true, F, F, body, targets);
 }
 
 // A moth circling a lit lamp, fluttering a little.

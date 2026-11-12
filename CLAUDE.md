@@ -216,6 +216,15 @@ but never in a way that would need a rewrite to sell it later (see
   override of the library's `rn_widget.xml`, written by
   `plugins/with-fast-widgets.js`): a redraw keeps them running. Placing them
   needs Android 12 (older: full fields only).
+- 2026-11-12: **Daytime weather looks**, picked from options
+  (<https://claude.ai/artifact/Ww2BdTupJwwwvASaH1m9vT>, "Glim weather looks"):
+  the ground's colors are written per hour in `sky.ts` and always saturated
+  (a greyish hour reads as fog): rose sunrise, periwinkle, aqua morning,
+  cerulean noon, violet, coral golden hour. Cloudy is a **pearl sky**:
+  silvery, tinted by the hour, thin light wisps, autumn leaves blowing
+  across the whole garden (no more leaves on outdoor floors). Fog is a
+  **milky veil**: past the band the world dissolves into the fog's color
+  instead of black, long banks roll by, lamps glow out into the mist.
 
 ## Vocabulary
 
