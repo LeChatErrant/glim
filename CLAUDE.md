@@ -2,8 +2,9 @@
 
 A personal mobile app to control the maintainer's Philips Hue lights, talking to
 the bridge over its local API (CLIP v2). Product name: **Glim** (see
-[Decisions log](#decisions-log)). GitHub repo `LeChatErrant/glim`; the local
-folder and a few internal IDs still say `hue-lab`/`huelab` (see 2026-11-12).
+[Decisions log](#decisions-log)). Repo `LeChatErrant/glim`, local folder
+`~/Work/glim` (`~/Work/hue-lab` is a symlink kept for older sessions). A few
+internal IDs still say `hue-lab`/`huelab` (see 2026-11-12).
 
 **Prototype for the maintainer, built to be sellable.** Ship fast for one home,
 but never in a way that would need a rewrite to sell it later (see
@@ -95,8 +96,9 @@ but never in a way that would need a rewrite to sell it later (see
   2026-11-12: renamed everywhere users see it: app name, launcher and
   adaptive icons (jewel mark, `scripts/icons.mjs`), splash (`#050506` + mark),
   deep link `glim://` (`huelab://` still accepted), the app's name on the
-  bridge (`glim#android`, new pairings only), server sign-in page, docs, GitHub
-  repo. Kept on purpose, internal only: package ID `io.lechaterrant.huelab`
+  bridge (`glim#android`, new pairings only), server sign-in page, the Hue developer
+  app (shown on Hue's sign-in page), docs, GitHub repo, local folder (after a move, delete the `.cxx` CMake caches before
+  building: they hold absolute paths). Kept on purpose, internal only: package ID `io.lechaterrant.huelab`
   (a new ID installs a separate app without the map and pairing; switch it
   before the store), Expo slug `hue-lab` (tied to the EAS project),
   SharedPreferences `huelab_fast`, the `hue-http` module.
