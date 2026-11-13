@@ -13,15 +13,18 @@ import {
   addMood,
   captureLights,
   deleteMood,
+  isMapAware,
   loadMoods,
   moodLightColor,
   PATH_TONES,
   pathLights,
   planLights,
   planMood,
+  recipeLights,
   suggestName,
   updateMood,
   type Mood,
+  type MapRecipe,
   type MoodLight,
   type PathRecipe,
 } from '../../lib/moods';
@@ -29,7 +32,9 @@ import { addFavorite, colorName, kelvinName } from '../../lib/palette';
 import { PillButton } from '../../ui/controls';
 import { Icon } from '../../ui/icons';
 import { ColorDot } from '../../ui/LightControls';
+import { KIND_TITLES, MapMoodSheet, type MapMoodKind } from '../../ui/MapMoodSheet';
 import { MoodDots } from '../../ui/MoodChips';
+import { MoodMap } from '../../ui/MoodMap';
 import { PathPreview, PathSheet } from '../../ui/PathSheet';
 import { Choice } from '../../ui/scan/parts';
 import { Display, Label, Txt } from '../../ui/text';
@@ -49,7 +54,7 @@ export default function MoodsScreen() {
   const [open, setOpen] = useState<string | null>(null);
   const [applied, setApplied] = useState<string | null>(null);
   const [presetTarget, setPresetTarget] = useState<string | null>(null);
-  const [editing, setEditing] = useState<{ mood?: Mood } | null>(null);
+  const [editing, setEditing] = useState<{ mood?: Mood; kind: 'path' | MapMoodKind } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -65,8 +70,8 @@ export default function MoodsScreen() {
 
   const targetName = (id: string | null) =>
     id === null ? 'Whole home' : (snapshot?.rooms.find((r) => r.id === id)?.name ?? snapshot?.zones?.find((z) => z.id === id)?.name ?? 'Removed room');
-  const own = moods.filter((m) => !m.path);
-  const paths = moods.filter((m) => m.path);
+  const own = moods.filter((m) => !isMapAware(m));
+  const mapMoods = moods.filter(isMapAware);
   const targets = [...new Set(own.map((m) => m.targetId))];
   const hasMap = !!map?.rooms.some((r) => r.points.length >= 3);
 
@@ -94,12 +99,25 @@ export default function MoodsScreen() {
     (m ? updateMood(m.id, { name, path }) : addMood({ name, targetId: null, lights: [], path })).then(setMoods);
     setEditing(null);
   };
+  const saveRecipe = (name: string, recipe: MapRecipe) => {
+    const m = editing?.mood;
+    (m ? updateMood(m.id, { name, recipe }) : addMood({ name, targetId: null, lights: [], recipe })).then(setMoods);
+    setEditing(null);
+  };
+  const deleteEditing = editing?.mood
+    ? () => {
+        const m = editing.mood!;
+        setEditing(null);
+        deleteMood(m.id).then(setMoods);
+      }
+    : undefined;
+  const editMood = (m: Mood) => setEditing({ mood: m, kind: m.recipe?.kind ?? 'path' });
 
   return (
     <ScrollView contentContainerStyle={{ paddingTop: insets.top + 28, paddingHorizontal: 24, paddingBottom: insets.bottom + TAB_BAR_SPACE + 32 }}>
       <Display>Moods</Display>
       <Txt size={14} tone="secondary" style={{ marginTop: 6 }}>
-        A look for your lights, light by light. Start from a preset, save your own from a room or a group, or draw a path across your home.
+        A look for your lights, light by light. Start from a preset, save your own from a room or a group, or shape one on your map.
       </Txt>
       <PillButton
         title="Save the whole home as a mood"
@@ -140,24 +158,25 @@ export default function MoodsScreen() {
       ))}
 
       <View style={{ marginTop: 32, gap: 10 }}>
-        <Label tone="label">Paths</Label>
+        <Label tone="label">On your map</Label>
         {map &&
-          paths.map((m) => (
-            <PathCard
-              key={m.id}
-              mood={m}
-              map={map}
-              snapshot={snapshot}
-              applied={applied === m.id}
-              onApply={() => apply(m)}
-              onEdit={() => setEditing({ mood: m })}
-            />
-          ))}
+          mapMoods.map((m) =>
+            m.path ? (
+              <PathCard key={m.id} mood={m} map={map} snapshot={snapshot} applied={applied === m.id} onApply={() => apply(m)} onEdit={() => editMood(m)} />
+            ) : (
+              <RecipeCard key={m.id} mood={m} map={map} snapshot={snapshot} applied={applied === m.id} onApply={() => apply(m)} onEdit={() => editMood(m)} />
+            ),
+          )}
         {hasMap ? (
-          <DashedButton title="New night path" onPress={() => setEditing({})} />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <DashedButton title="Night path" onPress={() => setEditing({ kind: 'path' })} />
+            {(['sweep', 'spot', 'glow'] as const).map((k) => (
+              <DashedButton key={k} title={KIND_TITLES[k]} onPress={() => setEditing({ kind: k })} />
+            ))}
+          </View>
         ) : (
           <Txt size={13} tone="muted">
-            A path lights the way from one room to another, along the lights on your map. Scan or draw your home on the Map tab first.
+            Moods that use where your lights are: a path lighting the way from one room to another, a gradient across the home, a spotlight, a color per room. Scan or draw your home on the Map tab first.
           </Txt>
         )}
       </View>
@@ -188,22 +207,26 @@ export default function MoodsScreen() {
         </Txt>
       </View>
 
-      {editing && map && (
+      {editing && map && editing.kind !== 'path' && (
+        <MapMoodSheet
+          kind={editing.kind}
+          map={map}
+          snapshot={snapshot}
+          initial={editing.mood?.recipe && { name: editing.mood.name, recipe: editing.mood.recipe }}
+          onSend={(lights) => act((s) => planLights(s, lights))}
+          onSave={saveRecipe}
+          onDelete={deleteEditing}
+          onClose={() => setEditing(null)}
+        />
+      )}
+      {editing && map && editing.kind === 'path' && (
         <PathSheet
           map={map}
           snapshot={snapshot}
           initial={editing.mood?.path && { name: editing.mood.name, path: editing.mood.path }}
           onTry={(path) => act((s) => planLights(s, pathLights(s, path, map) ?? []))}
           onSave={savePath}
-          onDelete={
-            editing.mood
-              ? () => {
-                  const m = editing.mood!;
-                  setEditing(null);
-                  deleteMood(m.id).then(setMoods);
-                }
-              : undefined
-          }
+          onDelete={deleteEditing}
           onClose={() => setEditing(null)}
         />
       )}
@@ -246,6 +269,58 @@ function PathCard({
           </Display>
           <Label size={9} tone={applied ? 'champagne' : 'muted'}>
             {applied ? 'Lit' : lit.length ? `${lit.length} ${lit.length === 1 ? 'light' : 'lights'} · ${path.brightness}% · tap to light` : 'No light on the way'}
+          </Label>
+        </View>
+      </Pressable>
+      <Pressable onPress={onEdit} accessibilityRole="button" accessibilityLabel={`Edit ${mood.name}`} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name="edit" size={15} tint={color.muted} stroke={1.6} />
+      </Pressable>
+    </View>
+  );
+}
+
+/** The map points a recipe's small preview frames: the rooms it covers, the spotlight's circle. */
+function recipeFrame(map: HomeMap, r: MapRecipe) {
+  if (r.kind === 'spot') return [-1, 1].flatMap((dx) => [-1, 1].map((dz) => ({ x: r.at.x + dx * r.radius, z: r.at.z + dz * r.radius })));
+  const ids = r.kind === 'sweep' ? r.rooms : r.rooms.map((x) => x.id);
+  return ids ? map.rooms.filter((m) => ids.includes(m.id)).flatMap((m) => m.points) : undefined;
+}
+
+/** A gradient sweep, spotlight or room glow: its look on a tiny map, its name; tap applies, the pencil edits it. */
+function RecipeCard({
+  mood,
+  map,
+  snapshot,
+  applied,
+  onApply,
+  onEdit,
+}: {
+  mood: Mood;
+  map: HomeMap;
+  snapshot: Snapshot | null;
+  applied: boolean;
+  onApply: () => void;
+  onEdit: () => void;
+}) {
+  const recipe = mood.recipe!;
+  const lights = snapshot ? (recipeLights(snapshot, recipe, map) ?? []) : [];
+  const lit = lights.filter((m) => m.on).length;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 22, borderWidth: 1, borderColor: hairline(0.1), backgroundColor: color.card, padding: 8, paddingLeft: 10 }}>
+      <Pressable
+        onPress={onApply}
+        onLongPress={onEdit}
+        accessibilityRole="button"
+        accessibilityLabel={`Apply ${mood.name}`}
+        style={({ pressed }) => ({ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 14, opacity: pressed ? 0.6 : 1 })}
+      >
+        <MoodMap map={map} recipe={recipe} lights={lights} width={76} height={56} frame={recipeFrame(map, recipe)} />
+        <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
+          <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
+            {mood.name}
+          </Display>
+          <Label size={9} tone={applied ? 'champagne' : 'muted'} numberOfLines={1}>
+            {applied ? 'Applied' : lit ? `${KIND_TITLES[recipe.kind]} · ${lit} ${lit === 1 ? 'light' : 'lights'} · tap to apply` : `${KIND_TITLES[recipe.kind]} · no light`}
           </Label>
         </View>
       </Pressable>

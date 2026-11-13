@@ -1,11 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { hasTemperature, mirekFor } from '../lib/actions';
-import { mirekToHex } from '../lib/hue/color';
+import { gamutHex, mirekToHex } from '../lib/hue/color';
 import type { Snapshot } from '../lib/hue/client';
 import type { HomeMap } from '../lib/map/map';
 import { PRESETS, presetLights } from '../lib/moodPresets';
-import { moodLightColor, moodLights, PATH_TONES, type Mood, type MoodLight } from '../lib/moods';
+import { moodLightColor, moodLights, PATH_TONES, recipeColors, type Mood, type MoodLight } from '../lib/moods';
 import { near } from '../lib/palette';
 
 /** One button of a Moods widget: a saved mood or path, a preset (whole home), or "All off". */
@@ -59,6 +59,8 @@ export function moodButtons(items: MoodItem[], moods: Mood[], s: Snapshot, map: 
       const tint = (PATH_TONES.find((t) => t.id === m.path!.tone) ?? PATH_TONES[0]).hex;
       return [{ key: itemKey(i), name: m.name, dots: [tint, tint, tint], lights, path: true }];
     }
+    // A sweep shows its colors in order, a spotlight its color, a room glow one dot per room color.
+    if (m.recipe) return [{ key: itemKey(i), name: m.name, dots: recipeColors(m.recipe), lights, path: false }];
     const dots = [...new Set(lights.map((l) => moodLightColor(l)).filter((c): c is string => !!c))];
     return [{ key: itemKey(i), name: m.name, dots, lights, path: false }];
   });
@@ -80,7 +82,8 @@ export function isShowing(s: Snapshot, b: MoodButton): boolean {
     if (!m.on) return true;
     if (m.brightness !== undefined && l.brightness !== null && Math.abs(l.brightness - m.brightness) > 4) return false;
     if (m.effect && l.effects?.includes(m.effect)) return l.effect === m.effect;
-    if (m.hex && l.kind === 'color') return !l.mirek && near(l.color, m.hex);
+    // Compared as the bridge reads it back: clamped to the light's gamut (a pure red comes back orange-red).
+    if (m.hex && l.kind === 'color') return !l.mirek && near(l.color, gamutHex(m.hex));
     // A white: the light must be in white mode (a color light showing a color isn't), near that white.
     if (m.kelvin && hasTemperature(l)) return !!l.mirek && Math.abs(l.mirek - mirekFor(l, m.kelvin)) <= 12;
     return true;

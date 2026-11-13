@@ -315,6 +315,27 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   picks per widget (`src/widgets/tiles.ts`, `TilesWidgetConfig.tsx`). Not
   yet: the "updating" arc from the design canvas (it would cost one more
   redraw, and redraws flicker).
+- 2026-11-13: **Gradient sweep, spotlight, room glow**, the other
+  map-aware moods, next to paths in the Moods tab's "On your map" section.
+  Stored as a recipe (`Mood.recipe`, a `kind` union in `src/lib/moods.ts`;
+  paths keep `Mood.path`) and worked out at each apply (`recipeLights`), the
+  geometry in `src/lib/map/spread.ts`. **Sweep:** 2 or 3 colors or whites
+  along an angle, across the whole home or picked rooms (and rooms inside
+  them), spread from the first light to the last along the arrow so the end
+  colors always show; colors mix in linear light at full strength (red to
+  blue goes through magenta), whites mix in mirek (`src/lib/tints.ts`).
+  **Spotlight:** a point and a radius; brightness falls off as (1 − d²/r²)²,
+  straight-line distance (walls don't block). **Room glow:** a color per map
+  room; a light takes the smallest colored room around it (a nightstand
+  corner without its own color takes the bedroom's). White-only lights take
+  the nearest white (warm colors → 2200 K, greens 4000 K, blues 6500 K);
+  plugs are never turned on. Each has "other lights: leave or turn off".
+  One sheet for the three (`src/ui/MapMoodSheet.tsx`) with the map as the
+  editing surface (`src/ui/MoodMap.tsx`: drag to turn the arrow, drag the
+  spotlight, tap a room to color it). "Try it" goes live: each change is
+  sent to the lights (only the ones that changed), "Put back" restores how
+  they were. Widget dots: the sweep's colors in order, the spotlight's
+  color, the room glow's colors.
 
 ## Vocabulary
 

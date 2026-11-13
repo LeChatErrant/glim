@@ -8,7 +8,7 @@ import { WidgetPreview, type WidgetConfigurationScreenProps } from 'react-native
 import { cachedSnapshot, type Snapshot } from '../lib/hue/client';
 import { loadMap, type HomeMap } from '../lib/map/map';
 import { PRESET_CATEGORIES, PRESETS } from '../lib/moodPresets';
-import { loadMoods, type Mood } from '../lib/moods';
+import { isMapAware, loadMoods, type Mood } from '../lib/moods';
 import { PillButton } from '../ui/controls';
 import { Choice } from '../ui/scan/parts';
 import { Display, Label, Txt } from '../ui/text';
@@ -52,8 +52,8 @@ export function MoodsWidgetConfig({ widgetInfo, renderWidget, setResult }: Widge
   const pw = Math.round(widgetInfo.width * k);
   const ph = Math.round(widgetInfo.height * k);
   const buttons = snapshot ? moodButtons(items, moods, snapshot, map).map((b) => ({ ...b, showing: isShowing(snapshot, b) })) : [];
-  const own = moods.filter((m) => !m.path);
-  const paths = moods.filter((m) => m.path);
+  const own = moods.filter((m) => !isMapAware(m));
+  const paths = moods.filter(isMapAware);
 
   const save = async () => {
     await saveMoodsWidgetSettings(widgetInfo.widgetId, { items });
@@ -83,7 +83,7 @@ export function MoodsWidgetConfig({ widgetInfo, renderWidget, setResult }: Widge
         </Section>
       )}
       {!!paths.length && (
-        <Section title="Paths">
+        <Section title="On your map">
           {paths.map((m) => chip({ kind: 'mood', id: m.id }, m.name))}
         </Section>
       )}

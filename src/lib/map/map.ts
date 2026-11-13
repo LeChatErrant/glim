@@ -101,7 +101,25 @@ export type Plan = {
   height: number;
   rooms: (MapRoom & { pts: { u: number; v: number }[] })[];
   lights: (MapLight & { u: number; v: number })[];
+  /** Where map coordinates start in the plan, and how they're turned (to go back from a touch). */
+  origin?: { u: number; v: number; rotation: number };
 };
+
+/** A point of the plan (u, v) back in map coordinates, e.g. where a finger touched the map. */
+export function planToMap(plan: Plan, u: number, v: number): FloorPoint {
+  const o = plan.origin ?? { u: 0, v: 0, rotation: 0 };
+  const x = u + o.u;
+  const z = v + o.v;
+  const a = (-o.rotation * Math.PI) / 180;
+  return { x: Math.cos(a) * x - Math.sin(a) * z, z: Math.sin(a) * x + Math.cos(a) * z };
+}
+
+/** A map point in the plan (u, v). */
+export function mapToPlan(plan: Plan, p: FloorPoint): { u: number; v: number } {
+  const o = plan.origin ?? { u: 0, v: 0, rotation: 0 };
+  const a = (o.rotation * Math.PI) / 180;
+  return { u: Math.cos(a) * p.x - Math.sin(a) * p.z - o.u, v: Math.sin(a) * p.x + Math.cos(a) * p.z - o.v };
+}
 
 /** Lays out a map for drawing, turned by `rotation` degrees clockwise (default: the map's own). */
 export function toPlan(map: HomeMap, rotation = map.rotation ?? 0): Plan {
@@ -126,6 +144,7 @@ export function toPlan(map: HomeMap, rotation = map.rotation ?? 0): Plan {
     height: maxV - minV,
     rooms: map.rooms.map((r) => ({ ...r, pts: r.points.map(shift) })),
     lights: map.lights.map((l) => ({ ...l, ...shift(l) })),
+    origin: { u: minU, v: minV, rotation },
   };
 }
 

@@ -105,3 +105,33 @@ export function kelvinTint(k: number): string {
 
 export const kelvinToMirek = (k: number) => Math.round(1_000_000 / k);
 export const mirekToKelvin = (m: number) => Math.round(1_000_000 / m);
+
+// Hue's gamut C (current color lights): red, green, blue corners in CIE xy.
+const GAMUT_C: [number, number][] = [
+  [0.6915, 0.3083],
+  [0.17, 0.7],
+  [0.1532, 0.0475],
+];
+
+/**
+ * How a color comes back from a color light: the bridge clamps colors outside the light's gamut
+ * to its nearest edge, so a pure red reads back a little orange. Used to tell whether a light
+ * shows a color it was sent (gamut C; older lights differ a little).
+ */
+export function gamutHex(hex: string): string {
+  const { x, y } = hexToXy(hex);
+  const [a, b, c] = GAMUT_C;
+  const side = (p: [number, number], q: [number, number]) => (q[0] - p[0]) * (y - p[1]) - (q[1] - p[1]) * (x - p[0]);
+  if (side(a, b) >= 0 && side(b, c) >= 0 && side(c, a) >= 0) return hex;
+  let best: [number, number] = [x, y];
+  let d = Infinity;
+  for (const [p, q] of [[a, b], [b, c], [c, a]] as const) {
+    const dx = q[0] - p[0];
+    const dy = q[1] - p[1];
+    const t = Math.max(0, Math.min(1, ((x - p[0]) * dx + (y - p[1]) * dy) / (dx * dx + dy * dy)));
+    const pt: [number, number] = [p[0] + dx * t, p[1] + dy * t];
+    const dd = (pt[0] - x) ** 2 + (pt[1] - y) ** 2;
+    if (dd < d) [d, best] = [dd, pt];
+  }
+  return xyToHex(best[0], best[1]);
+}

@@ -6,8 +6,10 @@ import { hexToXy, mirekToHex, mirekToKelvin } from './hue/color';
 import { EFFECTS, effectLabel, hasEffect } from './effects';
 import { setLight, stateBody, type Light, type LightState, type Snapshot } from './hue/client';
 import { findRoute, lightsAlongRoute } from './map/route';
-import type { HomeMap } from './map/map';
+import type { FloorPoint, HomeMap, MapLight } from './map/map';
+import { glowRooms, spotWeights, sweepPositions } from './map/spread';
 import { colorName, kelvinName } from './palette';
+import { tintAt, tintHex, whiteFor, type Tint } from './tints';
 
 /** How one light looks in a mood. Off lights stay off; color lights keep a color or a white. */
 export type MoodLight = { lightId: string; on: boolean; brightness?: number; hex?: string; kelvin?: number; effect?: string };
@@ -26,12 +28,34 @@ export const PATH_TONES: { id: PathTone; label: string; hex: string; kelvin: num
  */
 export type PathRecipe = { from: string; to: string; brightness: number; tone: PathTone; others: 'leave' | 'off' };
 
+/** What happens to the lights a map-aware mood doesn't light: left as they are, or turned off. */
+export type Others = 'leave' | 'off';
+
+/**
+ * A gradient sweep: 2 or 3 tints spread across the home (or some map rooms) along a direction,
+ * the first at the tail of the arrow, the last at its head. `angle` in degrees, map coordinates.
+ */
+export type SweepRecipe = { kind: 'sweep'; tints: Tint[]; angle: number; rooms: string[] | null; brightness: number; others: Others };
+
+/** A spotlight: lights within `radius` m of a point, brighter the closer they are (up to `brightness`). */
+export type SpotRecipe = { kind: 'spot'; at: FloorPoint; radius: number; tint: Tint; brightness: number; others: Others };
+
+/** A room glow: one tint per map room; lights take the tint of the room they stand in. */
+export type GlowRecipe = { kind: 'glow'; rooms: { id: string; tint: Tint }[]; brightness: number; others: Others };
+
+/** The map-aware moods other than paths: worked out from the map at each apply, like paths. */
+export type MapRecipe = SweepRecipe | SpotRecipe | GlowRecipe;
+
 /**
  * A mood: a look for some lights, light by light (one red, one blue...). Our own data, not a
  * bridge scene. Saved from a room or a group, and shown there; `targetId` is that room or group.
- * A path mood has a `path` instead of fixed lights (`lights` stays empty).
+ * A map-aware mood has a `path` (night path) or a `recipe` (sweep, spotlight, room glow) instead
+ * of fixed lights (`lights` stays empty).
  */
-export type Mood = { id: string; name: string; targetId: string | null; lights: MoodLight[]; createdAt: number; path?: PathRecipe };
+export type Mood = { id: string; name: string; targetId: string | null; lights: MoodLight[]; createdAt: number; path?: PathRecipe; recipe?: MapRecipe };
+
+/** Paths, sweeps, spotlights and room glows: moods worked out from the map. */
+export const isMapAware = (m: Mood) => !!(m.path || m.recipe);
 
 const key = async () => `moods:${(await getBridge())?.id ?? 'none'}`;
 
@@ -110,9 +134,58 @@ export function pathLights(s: Snapshot, path: PathRecipe, map: HomeMap | null): 
   return [...on, ...off];
 }
 
-/** The lights a mood sets, light by light: its saved lights, or a path worked out from the map. */
+/**
+ * A light set to a tint, as far as it can: a color light takes the color (or the white), a
+ * white light the white (or the white closest to the color), a plain one just the brightness.
+ */
+export function tintLight(l: Light, tint: Tint, brightness: number): MoodLight {
+  const b = Math.max(1, Math.min(100, Math.round(brightness)));
+  if (l.kind === 'color') return tint.hex ? { lightId: l.id, on: true, brightness: b, hex: tint.hex } : { lightId: l.id, on: true, brightness: b, kelvin: tint.kelvin ?? 2700 };
+  if (hasTemperature(l)) return { lightId: l.id, on: true, brightness: b, kelvin: tint.kelvin ?? whiteFor(tint.hex ?? '#FFB868') };
+  return { lightId: l.id, on: true, brightness: b };
+}
+
+/**
+ * A sweep, spotlight or room glow's lights for today's map and lights, or null without a map.
+ * Smart plugs are never turned on (a plug has no color or brightness); they go off with the
+ * other lights when the mood turns the others off.
+ */
+export function recipeLights(s: Snapshot, recipe: MapRecipe, map: HomeMap | null): MoodLight[] | null {
+  if (!map) return null;
+  const byId = new Map(s.lights.map((l) => [l.id, l]));
+  const usable = (m: MapLight) => {
+    const l = byId.get(m.lightId);
+    return !!l && l.reachable && l.kind !== 'onoff';
+  };
+  let on: MoodLight[];
+  if (recipe.kind === 'sweep') {
+    const at = sweepPositions(map, recipe.angle, recipe.rooms, usable);
+    on = [...at].map(([id, t]) => tintLight(byId.get(id)!, tintAt(recipe.tints, t), recipe.brightness));
+  } else if (recipe.kind === 'spot') {
+    const w = spotWeights(map, recipe.at, recipe.radius, usable);
+    on = [...w].map(([id, k]) => tintLight(byId.get(id)!, recipe.tint, recipe.brightness * k));
+  } else {
+    const tints = new Map(recipe.rooms.map((r) => [r.id, r.tint]));
+    const rooms = glowRooms(map, new Set(tints.keys()), usable);
+    on = [...rooms].map(([id, room]) => tintLight(byId.get(id)!, tints.get(room)!, recipe.brightness));
+  }
+  const lit = new Set(on.map((m) => m.lightId));
+  const off = recipe.others === 'off' ? s.lights.filter((l) => l.reachable && !lit.has(l.id)).map((l): MoodLight => ({ lightId: l.id, on: false })) : [];
+  return [...on, ...off];
+}
+
+/** The colors a sweep, spotlight or room glow shows, for dots and previews (no lights needed). */
+export function recipeColors(recipe: MapRecipe): string[] {
+  if (recipe.kind === 'sweep') return recipe.tints.map(tintHex);
+  if (recipe.kind === 'spot') return [tintHex(recipe.tint)];
+  return [...new Set(recipe.rooms.map((r) => tintHex(r.tint)))];
+}
+
+/** The lights a mood sets, light by light: its saved lights, or a path or recipe worked out from the map. */
 export function moodLights(s: Snapshot, mood: Mood, map: HomeMap | null): MoodLight[] {
-  return mood.path ? (pathLights(s, mood.path, map) ?? []) : mood.lights;
+  if (mood.path) return pathLights(s, mood.path, map) ?? [];
+  if (mood.recipe) return recipeLights(s, mood.recipe, map) ?? [];
+  return mood.lights;
 }
 
 /** Puts every light of the mood back as it was saved. Lights gone from the bridge are skipped. */
