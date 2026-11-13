@@ -45,6 +45,8 @@ class TileRecord : Record {
   // JSON [[path, body], ...].
   @Field val on: String = "[]"
   @Field val off: String = "[]"
+  // JSON: a path's auto-off, a sleep fade's settings (GlimTile.Config.extra).
+  @Field val extra: String = "{}"
 }
 
 class FxRecord : Record {
@@ -97,7 +99,32 @@ class HueHttpModule : Module() {
     // What the Quick Settings tile does (GlimTile.kt). Null: nothing chosen.
     AsyncFunction("setTileConfig") { t: TileRecord? ->
       val context = appContext.reactContext ?: return@AsyncFunction
-      GlimTile.save(context, t?.let { GlimTile.Config(it.kind, it.icon, it.label, it.sub, it.lights, it.on, it.off) })
+      GlimTile.save(context, t?.let { GlimTile.Config(it.kind, it.icon, it.label, it.sub, it.lights, it.on, it.off, it.extra) })
+    }
+
+    // A night path's auto-off (PathOff.kt): an exact alarm turns its lights off at `at` (epoch ms)
+    // if they still look like the path. `lights`: JSON [[lightId, brightness], ...].
+    AsyncFunction("schedulePathOff") { key: String, at: Double, lights: String ->
+      appContext.reactContext?.let { PathOff.schedule(it, key, at.toLong(), lights) }
+    }
+
+    AsyncFunction("cancelPathOff") { key: String ->
+      appContext.reactContext?.let { PathOff.cancel(it, key) }
+    }
+
+    // What "sleep fade now" changes on the bridge, for widget and tile taps (GlimSleep.kt).
+    AsyncFunction("setSleepPool") { json: String? ->
+      appContext.reactContext?.let { GlimSleep.savePool(it, json) }
+    }
+
+    // Notes shared with native code about fades stopped by hand (`sleepStopped`, `sleepPaused`).
+    Function("getSleepNotes") { key: String ->
+      appContext.reactContext?.let { GlimSleep.notes(it, key) }
+    }
+
+    Function("setSleepNotes") { key: String, value: String ->
+      appContext.reactContext?.let { GlimSleep.setNotes(it, key, value) }
+      Unit
     }
 
     // Whether the tile is in the user's Quick Settings (as last seen by the tile itself).

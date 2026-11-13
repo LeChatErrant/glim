@@ -119,6 +119,7 @@ export function SleepSheet({
   onStart,
   onStop,
   onAllOff,
+  onExtend,
   onSave,
   onDelete,
   onClose,
@@ -129,6 +130,7 @@ export function SleepSheet({
   onStart: (r: SleepRitual) => void;
   onStop: () => void;
   onAllOff: () => void;
+  onExtend: () => void;
   onSave: (r: SleepRitual) => void;
   onDelete?: () => void;
   onClose: () => void;
@@ -137,7 +139,7 @@ export function SleepSheet({
   const set = (c: Partial<SleepRitual>) => setR((x) => ({ ...x, ...c }));
   return (
     <ModalSheet visible title={initial.id ? r.name : 'New sleep fade'} onClose={onClose}>
-      {run ? <SleepRunning run={run} snapshot={snapshot} onStop={onStop} onAllOff={onAllOff} /> : null}
+      {run ? <SleepRunning run={run} snapshot={snapshot} onStop={onStop} onAllOff={onAllOff} onExtend={onExtend} /> : null}
       <Block label="Lights">
         <TargetChips snapshot={snapshot} targets={r.targets} onChange={(targets) => set({ targets })} />
       </Block>
@@ -168,7 +170,7 @@ export function SleepSheet({
 }
 
 /** "Fading to dark": a ring with the time left, Stop and keep lights, Lights off now. */
-function SleepRunning({ run, snapshot, onStop, onAllOff }: { run: SleepRun; snapshot: Snapshot | null; onStop: () => void; onAllOff: () => void }) {
+function SleepRunning({ run, snapshot, onStop, onAllOff, onExtend }: { run: SleepRun; snapshot: Snapshot | null; onStop: () => void; onAllOff: () => void; onExtend: () => void }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -207,13 +209,16 @@ function SleepRunning({ run, snapshot, onStop, onAllOff }: { run: SleepRun; snap
           {waiting ? 'Starting' : left > 0 ? 'Left' : 'Good night'}
         </Label>
         <Txt size={12} tone="muted">
-          {`of ${run.fadeMin} min`}
+          {`of ${Math.round(run.fadeMin)} min`}
         </Txt>
       </View>
       {left > 0 && (
-        <View style={{ flexDirection: 'row', gap: 10, alignSelf: 'stretch' }}>
-          <PillButton title="Stop and keep lights" kind="primary" onPress={onStop} style={{ flex: 1 }} />
-          <PillButton title="Lights off now" onPress={onAllOff} />
+        <View style={{ gap: 10, alignSelf: 'stretch' }}>
+          <PillButton title="Stop and keep lights" kind="primary" onPress={onStop} />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <PillButton title="+5 min" onPress={onExtend} style={{ flex: 1 }} />
+            <PillButton title="Lights off now" onPress={onAllOff} style={{ flex: 1 }} />
+          </View>
         </View>
       )}
     </View>

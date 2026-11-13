@@ -6,6 +6,7 @@ import { cachedSnapshot, fetchSnapshot, saveCachedSnapshot, type Snapshot } from
 import { planScene } from '../lib/hueMoods';
 import { loadMap } from '../lib/map/map';
 import { loadMoods, planLights } from '../lib/moods';
+import { ensureSleepPool, findSleepRun } from '../lib/rituals/sleepNow';
 import { syncTile } from '../lib/tile';
 import { outsideNow } from '../lib/weather/source';
 import { weatherIcon } from '../ui/icons';
@@ -105,9 +106,15 @@ export async function render(info: WidgetInfo, state: State, force = true) {
   }
   if (info.widgetName === 'Moods') {
     const held = tappedMood && tappedMood.until > Date.now() ? tappedMood.key : null;
-    const buttons = snapshot
-      ? (await moodsWidgetButtons(info.widgetId, snapshot)).map((b) => ({ ...b, showing: held ? b.key === held : isShowing(snapshot, b) }))
-      : [];
+    const list = snapshot ? await moodsWidgetButtons(info.widgetId, snapshot) : [];
+    // Sleep fade buttons: the bridge has what a tap changes, and they show while a fade runs.
+    const sleepTargets = list.flatMap((b) => b.sleep?.targets ?? []);
+    let fading: string[] | null = null;
+    if (snapshot && sleepTargets.length && !stale) {
+      ensureSleepPool(snapshot, sleepTargets).catch((e) => console.warn('Sleep fade button', e));
+      fading = (await findSleepRun().catch(() => null))?.targets ?? null;
+    }
+    const buttons = snapshot ? list.map((b) => ({ ...b, showing: held !== null ? b.key === held : isShowing(snapshot, b, fading) })) : [];
     if (alreadyDrawn(info, drawKey(info, [shown(snapshot, stale), stale, buttons.map((b) => [b.key, b.name, b.dots, b.showing])]), force)) return null;
     return <MoodsWidget snapshot={snapshot} buttons={buttons} width={info.width} height={info.height} stale={stale} />;
   }
@@ -191,6 +198,9 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
         }
       }
       if (clickAction?.endsWith('TOGGLE_ALL') && target === false) tappedMood = { key: 'off', until: Date.now() + HOLD_MS };
+      // A sleep fade button: shown on (or off) while native code tells the bridge.
+      if (clickAction === 'FAST_SLEEP' && typeof data.moodKey === 'string') tappedMood = { key: data.moodKey, until: Date.now() + HOLD_MS };
+      if (clickAction === 'FAST_SLEEP_STOP') tappedMood = { key: '', until: Date.now() + HOLD_MS };
       if (plan) {
         const until = Date.now() + HOLD_MS;
         for (const l of plan.next.lights) if (cached?.lights.find((c) => c.id === l.id)?.on !== l.on) expected.set(l.id, { on: l.on, until });
@@ -202,7 +212,7 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
       // Bring every widget to the real state, so they stay consistent.
       const state = await fresh();
       await refreshAllWidgets(state.snapshot, state.stale);
-      if (plan) {
+      if (plan || clickAction?.startsWith('FAST_SLEEP')) {
         // Once the tapped state is no longer held, show what the bridge really did (a light that
         // didn't answer goes back), if that differs.
         await sleep(HOLD_MS + 200);

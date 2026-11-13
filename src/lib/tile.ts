@@ -2,12 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 import { HueHttp, type TileConfig } from '../../modules/hue-http';
-import { moodButtons, type MoodItem } from '../widgets/moodButtons';
+import { moodButtons, type MoodItem, type SleepItem } from '../widgets/moodButtons';
 import { getBridge } from './hue/bridge';
 import { cachedSnapshot, type Snapshot } from './hue/client';
 import { hueMoodPlace } from './hueMoods';
 import { loadMap, type HomeMap } from './map/map';
 import { loadMoods, moodRequests, type Mood } from './moods';
+import { ensureSleepPool } from './rituals/sleepNow';
 import { onSavedDataChange } from './savedData';
 
 /**
@@ -15,7 +16,12 @@ import { onSavedDataChange } from './savedData';
  * and that target turned into ready-made bridge requests for native taps (GlimTile.kt in
  * modules/hue-http), written whenever the target, the moods, the map or the lights change.
  */
-export type TileTarget = { kind: 'home' } | { kind: 'room' | 'group'; id: string } | { kind: 'mood'; item: Extract<MoodItem, { kind: 'mood' | 'preset' | 'scene' }> };
+export type TileTarget =
+  | { kind: 'home' }
+  | { kind: 'room' | 'group'; id: string }
+  | { kind: 'mood'; item: Extract<MoodItem, { kind: 'mood' | 'preset' | 'scene' }> }
+  /** Starts a sleep fade on these rooms and groups (stops it while it runs). */
+  | { kind: 'sleep'; item: SleepItem };
 
 const key = async () => `tile:${(await getBridge())?.id ?? 'none'}`;
 
@@ -43,6 +49,22 @@ function lightsTile(kind: TileConfig['kind'], label: string, ids: string[], grou
 
 /** What the tile does for a target. A room, group or mood that's gone falls back to the whole home. */
 export function tileConfig(t: TileTarget, s: Snapshot, moods: Mood[], map: HomeMap | null): TileConfig {
+  if (t.kind === 'sleep') {
+    const names = t.item.targets.map((id) => s.rooms.find((r) => r.id === id)?.name ?? s.zones?.find((z) => z.id === id)?.name).filter(Boolean);
+    if (names.length) {
+      const lights = [...new Set([...s.rooms, ...(s.zones ?? [])].filter((g) => t.item.targets.includes(g.id)).flatMap((g) => g.lightIds))];
+      return {
+        kind: 'sleep',
+        icon: 'sleep',
+        label: t.item.name,
+        sub: `${t.item.fadeMin} min · ${names.join(', ')}`,
+        lights,
+        on: '[]',
+        off: '[]',
+        extra: JSON.stringify({ sleep: { targets: t.item.targets, fadeSec: t.item.fadeMin * 60 } }),
+      };
+    }
+  }
   if (t.kind === 'mood') {
     const b = moodButtons([t.item], moods, s, map)[0];
     if (b?.lights?.length) {
@@ -59,6 +81,8 @@ export function tileConfig(t: TileTarget, s: Snapshot, moods: Mood[], map: HomeM
         on: JSON.stringify(b.request ? [b.request] : moodRequests(s, b.lights)),
         // Tapped while it shows: the lights it turned on go off.
         off: JSON.stringify(lit.map((l) => [`light/${l.lightId}`, JSON.stringify(OFF)])),
+        // A path that turns itself off: the tile sets its alarm when it lights it.
+        extra: JSON.stringify(b.off ? { pathOff: b.off } : {}),
       };
     }
   }
@@ -83,6 +107,8 @@ export async function syncTile(snapshot?: Snapshot | null) {
     const s = snapshot ?? (await cachedSnapshot());
     if (!s) return;
     const [t, moods, map] = await Promise.all([loadTileTarget(), loadMoods(), loadMap()]);
+    // A sleep fade: the bridge must have what the tap changes (made once).
+    if (t.kind === 'sleep') await ensureSleepPool(s, t.item.targets).catch((e) => console.warn('Tile sleep fade', e));
     const c = tileConfig(t, s, moods, map);
     const json = JSON.stringify(c);
     if (json === last) return;

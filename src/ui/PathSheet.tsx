@@ -5,7 +5,7 @@ import Svg, { Circle, Defs, G, Path, Polyline, RadialGradient, Stop } from 'reac
 import type { Snapshot } from '../lib/hue/client';
 import { fitPlan, toPlan, type HomeMap } from '../lib/map/map';
 import { findRoute, type Route } from '../lib/map/route';
-import { PATH_TONES, pathLights, type PathRecipe, type PathTone } from '../lib/moods';
+import { PATH_OFF_AFTER, PATH_TONES, pathLights, type PathRecipe, type PathTone } from '../lib/moods';
 import { PillButton, Slider } from './controls';
 import { Field, ModalSheet } from './ModalSheet';
 import { Choice } from './scan/parts';
@@ -92,6 +92,11 @@ export function PathSheet({
       <Choices label="Other lights">
         <Choice label="Leave as they are" chosen={path.others === 'leave'} onPress={() => set({ others: 'leave' })} />
         <Choice label="Turn off" chosen={path.others === 'off'} onPress={() => set({ others: 'off' })} />
+      </Choices>
+      <Choices label="Turn off after">
+        {PATH_OFF_AFTER.map((min) => (
+          <Choice key={min} label={min ? `${min} min` : 'Never'} chosen={(path.offAfter ?? 0) === min} onPress={() => set({ offAfter: min || undefined })} />
+        ))}
       </Choices>
       <Field label="Name" value={name ?? pathName(map, snapshot, path)} onChange={setName} />
       <View style={{ flexDirection: 'row', gap: 10 }}>

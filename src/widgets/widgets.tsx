@@ -570,6 +570,10 @@ function moodDotsSvg(dots: string[], path: boolean, stale: boolean) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs>${defs}</defs>${body}</svg>`;
 }
 
+/** The moon for a sleep fade button. */
+const moonSvg = (c: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${iconPath('sleep')}"/></svg>`;
+
 /** The power mark for "All off". */
 const powerSvg = (c: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"><path d="${iconPath('power')}"/></svg>`;
@@ -582,16 +586,28 @@ function MoodButtonTile({ b, snapshot, stale, width, lines }: { b: MoodTile; sna
   const home = snapshot.homeGroupId;
   // A mood from the Hue app is one scene recall; the others, a request per light.
   const batch = b.request ? JSON.stringify([b.request]) : b.lights?.length ? JSON.stringify(moodRequests(snapshot, b.lights)) : null;
-  const click = off
+  const click = b.sleep
+    ? {
+        // Native code starts the fade (or stops the one running), like the Rituals tab (GlimSleep.kt).
+        clickAction: b.showing ? 'FAST_SLEEP_STOP' : 'FAST_SLEEP',
+        clickActionData: { fastSleep: JSON.stringify({ targets: b.sleep.targets, fadeSec: b.sleep.fadeMin * 60 }), moodKey: b.key },
+      }
+    : off
     ? home
       ? { clickAction: 'FAST_TOGGLE_ALL', clickActionData: fastToggle(`grouped_light/${home}`, false, { all: 'home' }) }
       : { clickAction: 'TOGGLE_ALL', clickActionData: { target: 'off' } }
     : batch
-      ? { clickAction: 'FAST_APPLY_MOOD', clickActionData: { fastBatch: batch, moodKey: b.key } }
+      ? {
+          clickAction: 'FAST_APPLY_MOOD',
+          // A path that turns itself off carries its alarm (PathOff.kt): set from native code with the tap.
+          clickActionData: b.off
+            ? { fastBatch: batch, moodKey: b.key, fastOffKey: b.off.key, fastOffMin: String(b.off.min), fastOffLights: JSON.stringify(b.off.lights) }
+            : { fastBatch: batch, moodKey: b.key },
+        }
       : { clickAction: 'OPEN_APP' };
   const live = b.showing && !stale;
-  const dotSvg = off ? powerSvg(live ? color.champagne : color.secondary) : moodDotsSvg(b.dots, b.path, stale);
-  const dotW = off ? 14 : b.path ? 46 : Math.max(14, Math.min(5, b.dots.length) * 10 + 4);
+  const dotSvg = b.sleep ? moonSvg(live ? color.champagne : color.secondary) : off ? powerSvg(live ? color.champagne : color.secondary) : moodDotsSvg(b.dots, b.path, stale);
+  const dotW = off || b.sleep ? 14 : b.path ? 46 : Math.max(14, Math.min(5, b.dots.length) * 10 + 4);
   return (
     <FlexWidget
       {...click}

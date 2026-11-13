@@ -9,15 +9,16 @@ import { useHome } from '../../lib/hue/useHome';
 import { loadMap, type HomeMap } from '../../lib/map/map';
 import { PRESET_CATEGORIES, PRESETS } from '../../lib/moodPresets';
 import { loadMoods, type Mood } from '../../lib/moods';
+import { loadBridgeRituals, type BridgeRitual } from '../../lib/rituals/rituals';
 import { loadTileTarget, saveTileTarget, tileConfig, type TileTarget } from '../../lib/tile';
-import { isShowing, moodButtons } from '../../widgets/moodButtons';
+import { isShowing, itemKey, moodButtons, sleepItems } from '../../widgets/moodButtons';
 import { PillButton, Section, TagButton } from '../controls';
 import { Icon, type IconName } from '../icons';
 import { Choice } from '../scan/parts';
 import { Display, Label, Txt } from '../text';
 import { color, hairline } from '../theme';
 
-const targetKey = (t: TileTarget) => (t.kind === 'home' ? 'home' : t.kind === 'mood' ? `mood:${t.item.kind}:${t.item.id}` : `${t.kind}:${t.id}`);
+const targetKey = (t: TileTarget) => (t.kind === 'home' ? 'home' : t.kind === 'mood' || t.kind === 'sleep' ? `${t.kind}:${itemKey(t.item)}` : `${t.kind}:${t.id}`);
 
 /**
  * Settings → Quick Settings tile (Android): what the one Glim tile controls, a room, a group, the
@@ -31,6 +32,7 @@ export function QuickTile() {
   const [added, setAdded] = useState(false);
   const [morePresets, setMorePresets] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [rituals, setRituals] = useState<{ list: BridgeRitual[]; fading: string[] | null }>({ list: [], fading: null });
 
   useFocusEffect(
     useCallback(() => {
@@ -39,6 +41,10 @@ export function QuickTile() {
         setData({ moods, map });
         if (t.kind === 'mood' && t.item.kind === 'preset') setMorePresets(true);
       });
+      // Sleep fades the tile can start, and whether one runs now (for the preview).
+      loadBridgeRituals()
+        .then((b) => setRituals({ list: b.rituals, fading: b.sleepRun?.targets ?? null }))
+        .catch(() => null);
       setAdded(HueHttp.isTileAdded?.() ?? false);
     }, []),
   );
@@ -68,7 +74,7 @@ export function QuickTile() {
   return (
     <Section title="Quick Settings tile">
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-        <TilePreview target={target} snapshot={snapshot} moods={data.moods} map={data.map} />
+        <TilePreview target={target} snapshot={snapshot} moods={data.moods} map={data.map} fading={rituals.fading} />
         <Txt size={12} tone="muted" style={{ flex: 1 }}>
           Tap the tile to turn it on or off. Hold it to come back here.
         </Txt>
@@ -90,6 +96,11 @@ export function QuickTile() {
       {!!fromHue.length && (
         <Group title="From the Hue app">{fromHue.map((sc) => chip({ kind: 'mood', item: { kind: 'scene', id: sc.id } }, `${sc.name} · ${hueMoodPlace(snapshot, sc)}`))}</Group>
       )}
+      <Group title="Sleep fade">
+        {(target.kind === 'sleep' && !sleepItems(snapshot, rituals.list).some((i) => itemKey(i) === itemKey(target.item)) ? [target.item, ...sleepItems(snapshot, rituals.list)] : sleepItems(snapshot, rituals.list)).map((i) =>
+          chip({ kind: 'sleep', item: i }, `${i.name} · ${i.fadeMin} min`),
+        )}
+      </Group>
       {morePresets ? (
         PRESET_CATEGORIES.map((c) => (
           <Group key={c} title={c}>
@@ -102,18 +113,21 @@ export function QuickTile() {
         </View>
       )}
       <Txt size={12} tone="muted">
-        A mood’s tile is on while the lights look like it; tapping it then turns those lights off. Presets set the whole home.
+        A mood’s tile is on while the lights look like it; tapping it then turns those lights off. Presets set the whole home. A sleep fade’s tile is on while it fades; tapping it then stops the fade and keeps the lights where they are.
       </Txt>
     </Section>
   );
 }
 
 /** The tile as Android draws it: champagne when on, an outline when off. */
-function TilePreview({ target, snapshot, moods, map }: { target: TileTarget; snapshot: Snapshot; moods: Mood[]; map: HomeMap | null }) {
+function TilePreview({ target, snapshot, moods, map, fading }: { target: TileTarget; snapshot: Snapshot; moods: Mood[]; map: HomeMap | null; fading: string[] | null }) {
   const c = tileConfig(target, snapshot, moods, map);
   let on = false;
   let sub = c.sub;
-  if (c.kind === 'mood') {
+  if (c.kind === 'sleep') {
+    on = target.kind === 'sleep' && !!fading && target.item.targets.some((t) => fading.includes(t));
+    if (on) sub = 'Fading';
+  } else if (c.kind === 'mood') {
     const b = target.kind === 'mood' ? moodButtons([target.item], moods, snapshot, map)[0] : undefined;
     on = !!b && isShowing(snapshot, b);
   } else {

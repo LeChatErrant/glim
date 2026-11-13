@@ -30,9 +30,11 @@ object GlimTile {
   /**
    * `kind`: room, group, home or mood. `icon`: room, home, mood or sleep. `lights`: the light ids
    * it covers (on/off count). `on` / `off`: [[path, body], ...] to turn it on (apply the mood) or
-   * off. A mood is "on" while its lights look like its `on` requests.
+   * off. A mood is "on" while its lights look like its `on` requests. `extra` (JSON): a path's
+   * auto-off (`pathOff`: {key, min, lights}), a sleep fade's settings (`sleep`: {targets, fadeSec}).
+   * Kind `sleep` starts a sleep fade (GlimSleep), and stops it while one runs.
    */
-  data class Config(val kind: String, val icon: String, val label: String, val sub: String, val lights: List<String>, val on: String, val off: String)
+  data class Config(val kind: String, val icon: String, val label: String, val sub: String, val lights: List<String>, val on: String, val off: String, val extra: String = "{}")
 
   fun save(context: Context, c: Config?) {
     // JS sends it at every start and refresh: only a real change redraws the tile.
@@ -42,7 +44,7 @@ object GlimTile {
       e.remove("tileKind")
     } else {
       e.putString("tileKind", c.kind).putString("tileIcon", c.icon).putString("tileLabel", c.label).putString("tileSub", c.sub)
-        .putString("tileLights", JSONArray(c.lights).toString()).putString("tileOn", c.on).putString("tileOff", c.off)
+        .putString("tileLights", JSONArray(c.lights).toString()).putString("tileOn", c.on).putString("tileOff", c.off).putString("tileExtra", c.extra)
     }
     // Another target: what the tile shows is from the old one. Forget it, the next look at the
     // bridge fills it. (Same target, new requests, e.g. a mood edited: keep it.)
@@ -59,7 +61,7 @@ object GlimTile {
     } catch (_: Exception) {
       emptyList()
     }
-    return Config(kind, p.getString("tileIcon", "home")!!, p.getString("tileLabel", "Glim")!!, p.getString("tileSub", "")!!, lights, p.getString("tileOn", "[]")!!, p.getString("tileOff", "[]")!!)
+    return Config(kind, p.getString("tileIcon", "home")!!, p.getString("tileLabel", "Glim")!!, p.getString("tileSub", "")!!, lights, p.getString("tileOn", "[]")!!, p.getString("tileOff", "[]")!!, p.getString("tileExtra", "{}")!!)
   }
 
   /** Last known state, shown at once when the shade opens: active, and the subtitle. */
@@ -96,6 +98,12 @@ object GlimTile {
    * answered. Blocking.
    */
   fun readState(context: Context, c: Config): Shown? {
+    if (c.kind == "sleep") {
+      val list = FastRoute.get(context, "behavior_instance") ?: return null
+      val run = GlimSleep.running(context, list) ?: return Shown(false, null)
+      val end = java.util.Calendar.getInstance().apply { timeInMillis = run.endsAt }
+      return Shown(true, if (run.pending) "Starting" else "Ends %d:%02d".format(end.get(java.util.Calendar.HOUR_OF_DAY), end.get(java.util.Calendar.MINUTE)))
+    }
     val lights = FastRoute.get(context, "light") ?: return null
     // Unreachable lights report a stale state: leave them out, like the app does.
     val down = HashSet<String>()
@@ -181,6 +189,8 @@ object GlimTile {
     return checked > 0
   }
 
+  fun extra(c: Config): JSONObject = try { JSONObject(c.extra) } catch (_: Exception) { JSONObject() }
+
   /** Opens the tile's section in Settings (`glim://settings?section=tile`). */
   fun settingsIntent(context: Context): Intent =
     Intent(Intent.ACTION_VIEW, Uri.parse("glim://settings?section=tile")).setPackage(context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -224,12 +234,27 @@ class GlimTileService : TileService() {
     }
     val wasActive = GlimTile.shown(this)?.active ?: (qsTile?.state == Tile.STATE_ACTIVE)
     val requests = FastRoute.parseBatch(if (wasActive) config.off else config.on)
+    val extra = GlimTile.extra(config)
     // Shown at once; the bridge's answer corrects it a moment later.
-    val guess = GlimTile.Shown(!wasActive, if (config.kind == "mood") null else if (wasActive) "Off" else "On")
+    val guess = GlimTile.Shown(!wasActive, if (config.kind == "mood") null else if (config.kind == "sleep") (if (wasActive) null else "Starting") else if (wasActive) "Off" else "On")
     GlimTile.saveShown(this, guess)
     draw(config, guess)
     executor.execute {
-      FastRoute.sendAll(this, requests)
+      if (config.kind == "sleep") {
+        val sleep = extra.optJSONObject("sleep")
+        if (wasActive) GlimSleep.stop(this)
+        else if (sleep != null) GlimSleep.start(this, FastWidgetProvider.sleepTargets(sleep.toString()), FastWidgetProvider.sleepSeconds(sleep.toString()))
+      } else {
+        // A path that turns itself off: set its alarm when it's lit, drop it when it's turned off.
+        extra.optJSONObject("pathOff")?.let { p ->
+          val key = p.optString("key")
+          if (key.isNotEmpty()) {
+            if (wasActive) PathOff.cancel(this, key)
+            else if (p.optDouble("min", 0.0) > 0) PathOff.schedule(this, key, System.currentTimeMillis() + (p.optDouble("min") * 60_000).toLong(), p.optJSONArray("lights")?.toString() ?: "[]")
+          }
+        }
+        FastRoute.sendAll(this, requests)
+      }
       // The bridge reports a room's lights one by one: give it a moment before reading back.
       Thread.sleep(900)
       val s = GlimTile.readState(this, config) ?: return@execute
@@ -248,6 +273,7 @@ class GlimTileService : TileService() {
       !paired -> "Not paired"
       config == null -> "Choose in Glim"
       config.kind == "mood" -> config.sub
+      config.kind == "sleep" -> shown?.state?.takeIf { shown.active } ?: config.sub
       else -> shown?.state
     }
     if (Build.VERSION.SDK_INT >= 29) tile.subtitle = sub

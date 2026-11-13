@@ -4,6 +4,7 @@ import { getBridge } from '../hue/bridge';
 import { createBehavior, createScene, deleteBehavior, deleteScene, SCRIPT, updateBehavior, type Ref, type SceneAction } from '../hue/behaviors';
 import type { Snapshot } from '../hue/client';
 import { AFTER_SLEEP_READY } from './flags';
+import { pausedResets, savePausedResets } from './sleepNotes';
 import { DAYS, type Clock, type Day } from './time';
 
 /**
@@ -13,12 +14,25 @@ import { DAYS, type Clock, type Day } from './time';
  * level back while they stay off: a scene with only a brightness per light (no on/off, so it
  * doesn't turn anything on or off).
  */
-type Refs = { behavior: string; scenes: string[] };
+export type Refs = { behavior: string; scenes: string[] };
 
 /** What a plug does in the level scene (it has no level). */
 const PLUG_ACTION = { dynamics: { duration: 0 } };
 
 const key = async () => `after-sleep:${(await getBridge())?.id ?? 'none'}`;
+
+/** Each sleep fade's level reset: ritual ID (or 'now') → its behavior and scenes. */
+export async function afterSleepRefs(): Promise<Record<string, Refs>> {
+  return load();
+}
+
+/** "Sleep fade now" keeps one level reset, changed at each start (sleepNow.ts): registered as 'now'. */
+export async function setNowAfterSleep(refs: Refs | null) {
+  const all = await load();
+  if (refs) all.now = refs;
+  else delete all.now;
+  await save(all);
+}
 
 async function load(): Promise<Record<string, Refs>> {
   try {
@@ -104,21 +118,17 @@ export async function removeAfterSleep(ritualId: string) {
   await save(all);
 }
 
-const pausedKey = async () => `after-sleep-paused:${(await getBridge())?.id ?? 'none'}`;
-
 /** A fade stopped by hand keeps its lights: tonight's "after sleep" must not change them. */
 export async function pauseAfterSleep(ritualId: string, until: number) {
   await setAfterSleepEnabled(ritualId, false);
-  const raw = await AsyncStorage.getItem(await pausedKey());
-  const paused: Record<string, number> = raw ? JSON.parse(raw) : {};
+  const paused = await pausedResets();
   paused[ritualId] = until;
-  await AsyncStorage.setItem(await pausedKey(), JSON.stringify(paused));
+  await savePausedResets(paused);
 }
 
 /** Switches back on the ones paused for a night that is over (scheduled fades only). */
 export async function resumeAfterSleep(isOn: (ritualId: string) => boolean) {
-  const raw = await AsyncStorage.getItem(await pausedKey());
-  const paused: Record<string, number> = raw ? JSON.parse(raw) : {};
+  const paused = await pausedResets();
   let changed = false;
   for (const [id, until] of Object.entries(paused)) {
     if (Date.now() < until) continue;
@@ -126,5 +136,5 @@ export async function resumeAfterSleep(isOn: (ritualId: string) => boolean) {
     delete paused[id];
     changed = true;
   }
-  if (changed) await AsyncStorage.setItem(await pausedKey(), JSON.stringify(paused));
+  if (changed) await savePausedResets(paused);
 }

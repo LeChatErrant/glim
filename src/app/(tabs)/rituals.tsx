@@ -12,6 +12,7 @@ import { checkRhythms, deleteRhythm, RHYTHM_PRESETS, saveRhythm, setRhythmEnable
 import {
   createBridgeRitual,
   deleteBridgeRitual,
+  extendSleep,
   loadBridgeRituals,
   saveBridgeRitual,
   setBridgeRitualEnabled,
@@ -171,6 +172,14 @@ export default function RitualsScreen() {
     run(stopSleepNow);
   };
 
+  /** "+5 min": the running fade ends five minutes later. */
+  const extendSleepRun = () => {
+    if (!snapshot || !sleepRun) return;
+    const r = sleepRun;
+    setSleepRun({ ...r, endsAt: r.endsAt + 5 * 60_000 });
+    run(async () => setSleepRun(await extendSleep(snapshot, r)));
+  };
+
   const sleepAllOff = () => {
     const targets = sleepRun?.targets ?? [];
     setSleepRun(null);
@@ -284,7 +293,7 @@ export default function RitualsScreen() {
               badge={running ? 'Fading' : null}
               summary={r.enabled ? `${daysLabel(r.days)} · ${fmtClock(r.at)} · ${r.fadeMin} min · ${targetNames(snapshot, r.targets)}` : `${r.fadeMin} min · ${targetNames(snapshot, r.targets)}`}
               on={r.enabled || running}
-              action={running ? undefined : { title: 'Start', onPress: () => startSleep(r) }}
+              action={running ? { title: '+5 min', onPress: extendSleepRun } : { title: 'Start', onPress: () => startSleep(r) }}
               onToggle={() => toggleBridge(r)}
               onPress={() => setEditing({ kind: 'sleep', r })}
             />
@@ -295,9 +304,10 @@ export default function RitualsScreen() {
             kind="sleep"
             name="Sleep fade"
             badge="Fading"
-            summary={`${sleepRun.fadeMin} min · ${targetNames(snapshot, sleepRun.targets)}`}
+            summary={`${Math.round(sleepRun.fadeMin)} min · ${targetNames(snapshot, sleepRun.targets)}`}
             on
-            onPress={() => setEditing({ kind: 'sleep', r: { ...newSleep(snapshot, false), targets: sleepRun.targets, fadeMin: sleepRun.fadeMin } })}
+            action={{ title: '+5 min', onPress: extendSleepRun }}
+            onPress={() => setEditing({ kind: 'sleep', r: { ...newSleep(snapshot, false), targets: sleepRun.targets, fadeMin: Math.round(sleepRun.fadeMin) } })}
           />
         )}
         {rhythms.map((r) => (
@@ -351,6 +361,7 @@ export default function RitualsScreen() {
           onStart={(r) => startSleep(r)}
           onStop={stopSleep}
           onAllOff={sleepAllOff}
+          onExtend={extendSleepRun}
           onSave={saveBridge}
           onDelete={editing.r.id ? () => removeBridge(editing.r) : undefined}
           onClose={() => setEditing(null)}

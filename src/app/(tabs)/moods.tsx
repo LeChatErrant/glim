@@ -272,7 +272,13 @@ function PathCard({
             {mood.name}
           </Display>
           <Label size={9} tone={applied ? 'champagne' : 'muted'}>
-            {applied ? 'Lit' : lit.length ? `${lit.length} ${lit.length === 1 ? 'light' : 'lights'} · ${path.brightness}% · tap to light` : 'No light on the way'}
+            {applied
+              ? path.offAfter
+                ? `Lit · off in ${path.offAfter} min`
+                : 'Lit'
+              : lit.length
+                ? `${lit.length} ${lit.length === 1 ? 'light' : 'lights'} · ${path.brightness}% · ${path.offAfter ? `off after ${path.offAfter} min` : 'tap to light'}`
+                : 'No light on the way'}
           </Label>
         </View>
       </Pressable>

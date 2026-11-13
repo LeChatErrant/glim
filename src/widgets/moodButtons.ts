@@ -6,11 +6,16 @@ import type { Snapshot } from '../lib/hue/client';
 import type { HomeMap } from '../lib/map/map';
 import { sceneColors, sceneMoodLights, sceneRequest, sceneShowing } from '../lib/hueMoods';
 import { PRESETS, presetLights } from '../lib/moodPresets';
-import { moodLightColor, moodLights, PATH_TONES, recipeColors, type Mood, type MoodLight } from '../lib/moods';
+import { moodLightColor, moodLights, PATH_TONES, pathOffFor, recipeColors, type Mood, type MoodLight, type PathOff } from '../lib/moods';
 import { near } from '../lib/palette';
 
-/** One button of a Moods widget: a saved mood or path, a preset (whole home), a mood from the Hue app (bridge scene), or "All off". */
-export type MoodItem = { kind: 'mood'; id: string } | { kind: 'preset'; id: string } | { kind: 'scene'; id: string } | { kind: 'off' };
+/**
+ * One button of a Moods widget: a saved mood or path, a preset (whole home), a mood from the Hue
+ * app (bridge scene), "All off", or a sleep fade now (on these rooms and groups, as a sleep fade
+ * ritual of the Rituals tab).
+ */
+export type MoodItem = { kind: 'mood'; id: string } | { kind: 'preset'; id: string } | { kind: 'scene'; id: string } | { kind: 'off' } | SleepItem;
+export type SleepItem = { kind: 'sleep'; name: string; targets: string[]; fadeMin: number };
 
 /** Per-widget options of the Moods widget (its configuration screen). Absent = the defaults. */
 export type MoodsWidgetSettings = { items?: MoodItem[] };
@@ -28,6 +33,18 @@ export async function loadMoodsWidgetSettings(widgetId: number): Promise<MoodsWi
 export const saveMoodsWidgetSettings = (widgetId: number, s: MoodsWidgetSettings) => AsyncStorage.setItem(key(widgetId), JSON.stringify(s));
 export const forgetMoodsWidgetSettings = (widgetId: number) => AsyncStorage.removeItem(key(widgetId));
 
+/**
+ * The sleep fades a widget button or the tile can start: one per sleep fade ritual (its rooms and
+ * length), else a 20 min one on the bedroom (or the first room), like "Start now · 20 min".
+ */
+export function sleepItems(s: Snapshot, rituals: { kind: string; name: string; targets: string[]; fadeMin: number }[]): SleepItem[] {
+  const items: SleepItem[] = rituals.filter((r) => r.kind === 'sleep' && r.targets.length).map((r) => ({ kind: 'sleep', name: r.name, targets: r.targets, fadeMin: r.fadeMin }));
+  if (items.length) return items;
+  const rooms = s.rooms.filter((r) => r.lightIds.length);
+  const room = rooms.find((r) => r.archetype === 'bedroom') ?? rooms[0];
+  return room ? [{ kind: 'sleep', name: 'Sleep fade', targets: [room.id], fadeMin: 20 }] : [];
+}
+
 export const MAX_ITEMS = 8;
 const DEFAULT_PRESETS = ['relax', 'bright', 'nightlight', 'movie'];
 
@@ -38,13 +55,24 @@ export function defaultItems(moods: Mood[]): MoodItem[] {
   return [...[...mine, ...presets].slice(0, MAX_ITEMS - 1), { kind: 'off' }];
 }
 
-export const itemKey = (i: MoodItem) => (i.kind === 'off' ? 'off' : `${i.kind}:${i.id}`);
+export const itemKey = (i: MoodItem) => (i.kind === 'off' ? 'off' : i.kind === 'sleep' ? `sleep:${i.targets.join('+')}:${i.fadeMin}` : `${i.kind}:${i.id}`);
 
 /**
  * A button as drawn: its name, a few dots of its colors, and the lights it sets (null = all off).
  * A mood from the Hue app has `scene` (its id) and `request`: one scene recall instead of a request per light.
+ * `off`: a path's auto-off. `sleep`: a sleep fade button (no lights; native code starts it).
  */
-export type MoodButton = { key: string; name: string; dots: string[]; lights: MoodLight[] | null; path: boolean; scene?: string; request?: [string, string] };
+export type MoodButton = {
+  key: string;
+  name: string;
+  dots: string[];
+  lights: MoodLight[] | null;
+  path: boolean;
+  scene?: string;
+  request?: [string, string];
+  off?: PathOff | null;
+  sleep?: { targets: string[]; fadeMin: number };
+};
 
 /** The widget's buttons, skipping moods that were deleted since. */
 export function moodButtons(items: MoodItem[], moods: Mood[], s: Snapshot, map: HomeMap | null): MoodButton[] {
@@ -55,6 +83,7 @@ export function moodButtons(items: MoodItem[], moods: Mood[], s: Snapshot, map: 
       if (!sc) return [];
       return [{ key: itemKey(i), name: sc.name, dots: sceneColors(sc), lights: sceneMoodLights(sc), path: false, scene: sc.id, request: sceneRequest(sc) }];
     }
+    if (i.kind === 'sleep') return [{ key: itemKey(i), name: i.name, dots: [], lights: [], path: false, sleep: { targets: i.targets, fadeMin: i.fadeMin } }];
     if (i.kind === 'preset') {
       const p = PRESETS.find((x) => x.id === i.id);
       if (!p) return [];
@@ -66,7 +95,7 @@ export function moodButtons(items: MoodItem[], moods: Mood[], s: Snapshot, map: 
     const lights = moodLights(s, m, map);
     if (m.path) {
       const tint = (PATH_TONES.find((t) => t.id === m.path!.tone) ?? PATH_TONES[0]).hex;
-      return [{ key: itemKey(i), name: m.name, dots: [tint, tint, tint], lights, path: true }];
+      return [{ key: itemKey(i), name: m.name, dots: [tint, tint, tint], lights, path: true, off: pathOffFor(s, m, map) }];
     }
     // A sweep shows its colors in order, a spotlight its color, a room glow one dot per room color.
     if (m.recipe) return [{ key: itemKey(i), name: m.name, dots: recipeColors(m.recipe), lights, path: false }];
@@ -77,9 +106,11 @@ export function moodButtons(items: MoodItem[], moods: Mood[], s: Snapshot, map: 
 
 /**
  * Whether the lights look like this button right now (its dot turns champagne on the widget):
- * every light it sets is on or off as it says, at about its brightness, color or white.
+ * every light it sets is on or off as it says, at about its brightness, color or white. A sleep
+ * fade button: while a sleep fade runs on its rooms (`fading`: the rooms and groups fading now).
  */
-export function isShowing(s: Snapshot, b: MoodButton): boolean {
+export function isShowing(s: Snapshot, b: MoodButton, fading: string[] | null = null): boolean {
+  if (b.sleep) return !!fading && b.sleep.targets.some((t) => fading.includes(t));
   const reachable = s.lights.filter((l) => l.reachable);
   if (!b.lights) return reachable.length > 0 && reachable.every((l) => !l.on);
   const scene = b.scene && s.scenes?.find((x) => x.id === b.scene);

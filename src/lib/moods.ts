@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
+import { HueHttp } from '../../modules/hue-http';
 import { hasTemperature, mirekFor, type Planned } from './actions';
 import { getBridge } from './hue/bridge';
 import { hexToXy, mirekToHex, mirekToKelvin } from './hue/color';
@@ -27,7 +29,41 @@ export const PATH_TONES: { id: PathTone; label: string; hex: string; kelvin: num
  * A path (map-aware mood): a dim trail from one room to another, worked out from the map each
  * time it's applied, so it follows changes to the map and to the lights. Rooms are map room ids.
  */
-export type PathRecipe = { from: string; to: string; brightness: number; tone: PathTone; others: 'leave' | 'off' };
+export type PathRecipe = {
+  from: string;
+  to: string;
+  brightness: number;
+  tone: PathTone;
+  others: 'leave' | 'off';
+  /** Minutes after it's lit, the path's lights go off (if still as the path left them). None: stays on. */
+  offAfter?: number;
+};
+
+/** "Turn off after" choices for a path, in minutes (0 = never). */
+export const PATH_OFF_AFTER = [0, 5, 10, 15, 30];
+
+/**
+ * A path's auto-off, for native code (PathOff.kt): the lights it lights and how bright, keyed by
+ * the mood. Null when the path stays on.
+ */
+export type PathOff = { key: string; min: number; lights: [string, number][] };
+
+export function pathOffFor(s: Snapshot, mood: Mood, map: HomeMap | null): PathOff | null {
+  if (!mood.path?.offAfter) return null;
+  const lights = (pathLights(s, mood.path, map) ?? []).filter((m) => m.on).map((m): [string, number] => [m.lightId, m.brightness ?? 100]);
+  return lights.length ? { key: mood.id, min: mood.path.offAfter, lights } : null;
+}
+
+/**
+ * After a path is lit from the app: sets its auto-off (an exact alarm in native code, so it
+ * happens with the phone locked), or drops one left from before when it now stays on.
+ */
+export function armPathOff(s: Snapshot, mood: Mood, map: HomeMap | null) {
+  if (!mood.path || Platform.OS !== 'android' || !HueHttp.schedulePathOff) return;
+  const off = pathOffFor(s, mood, map);
+  const done = off ? HueHttp.schedulePathOff(off.key, Date.now() + off.min * 60_000, JSON.stringify(off.lights)) : HueHttp.cancelPathOff?.(mood.id);
+  done?.catch((e) => console.warn('Path auto-off', e));
+}
 
 /** What happens to the lights a map-aware mood doesn't light: left as they are, or turned off. */
 export type Others = 'leave' | 'off';
@@ -192,7 +228,10 @@ export function moodLights(s: Snapshot, mood: Mood, map: HomeMap | null): MoodLi
 
 /** Puts every light of the mood back as it was saved. Lights gone from the bridge are skipped. */
 export function planMood(s: Snapshot, mood: Mood, map: HomeMap | null = null): Planned | null {
-  return planLights(s, moodLights(s, mood, map));
+  const plan = planLights(s, moodLights(s, mood, map));
+  if (!plan || !mood.path) return plan;
+  // A path that turns itself off: its alarm is set once the lights are sent.
+  return { ...plan, send: () => plan.send().finally(() => armPathOff(s, mood, map)) };
 }
 
 /** What to send a light to make it look like a mood light, given what it can do. */

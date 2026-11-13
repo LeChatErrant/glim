@@ -49,6 +49,17 @@ declare class HueHttpModule extends NativeModule<Events> {
   isTileAdded?(): boolean;
   /** Android 13+ system prompt to add the tile: 2 added, 1 already there, 0 declined, -1 not available. */
   requestAddTile?(): Promise<number>;
+  /**
+   * A night path's auto-off (PathOff.kt): at `at` (epoch ms) an exact alarm turns off the lights
+   * that still look like the path. `lights`: JSON [[lightId, brightness], ...]. Missing in older builds.
+   */
+  schedulePathOff?(key: string, at: number, lights: string): Promise<void>;
+  cancelPathOff?(key: string): Promise<void>;
+  /** What "sleep fade now" changes on the bridge, for native widget and tile taps (GlimSleep.kt). */
+  setSleepPool?(json: string | null): Promise<void>;
+  /** Notes shared with native code about fades stopped by hand: `sleepStopped`, `sleepPaused`. */
+  getSleepNotes?(key: string): string | null;
+  setSleepNotes?(key: string, value: string): void;
   /** Starts live sync (widgets follow the bridge's event stream) if enabled and paired. */
   startLive(): Promise<void>;
   setLiveEnabled(on: boolean): Promise<void>;

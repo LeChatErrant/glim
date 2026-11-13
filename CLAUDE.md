@@ -306,8 +306,8 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   them) light up, at least the nearest one in each room; never plugs. A path
   is stored as a recipe (`Mood.path`) and worked out at each apply, so it
   follows map changes. Options: warm white, amber or red, brightness, other
-  lights left or turned off. Not yet: auto-off after N minutes (needs a
-  bridge-side timer, with rituals), gradient sweep, spotlight, room glow,
+  lights left or turned off, turn off after never / 5 / 10 / 15 / 30 min
+  (see the Rituals entry). Not yet: gradient sweep, spotlight, room glow,
   the mood editor, the mood widget, scenes from the Hue app.
 - 2026-11-13: **Moods widget** (4×1, resizable): mood buttons, each its
   colors as glowing dots (a path gets the night path mark) and its name (two
@@ -391,8 +391,8 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   through `FastRoute.kt` (bridge or cloud, shared with `FastWidgetProvider`).
   State: reads `light` + `zigbee_connectivity` when the shade opens and after
   each tap; live sync nudges it on bridge events. Icons (room, all lights,
-  mood, sleep) are vector copies of `icons.tsx` paths. Sleep fade as a target
-  waits for the sleep fade ritual.
+  mood, sleep) are vector copies of `icons.tsx` paths. Sleep fade is a
+  target too (see the Rituals entry).
 - 2026-11-13: **Rituals** (Rituals tab, `src/app/(tabs)/rituals.tsx`). The
   bridge runs them, so they work with the phone off, and the tab reads them
   back from the bridge each time it opens (ones made in the Hue app show up
@@ -437,10 +437,46 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   crossing needs "Allow all the time", which only the maintainer can grant. Hue's
   `geofence_client` was looked at and not used: it only stores "at home",
   the phone still has to notice it, and the bridge would need a scene per
-  mood. Not done: path auto-off (a bridge timer recalls a scene, and a
-  path's lights cross rooms: it needs a scene per room; a `bridge_home`
-  scene is refused), sleep fade from a widget or the tile, "+5 min" on a
-  running fade.
+  mood.
+  **Path auto-off** (`PathRecipe.offAfter`, "Turn off after" on the path
+  sheet, shown on path cards): an exact alarm in Kotlin (`PathOff.kt`,
+  `USE_EXACT_ALARM`, `setExactAndAllowWhileIdle`: on time in Doze, with a
+  few seconds of network), set by whatever lit the path: the app
+  (`planMood` → `armPathOff`, also arriving home), a Moods widget tap
+  (`fastOffKey`/`fastOffMin`/`fastOffLights` with the batch) or the tile
+  (`extra.pathOff`; turning the tile off drops it). When it fires it reads
+  the lights and turns off only the ones still on at about the path's
+  brightness (±5): one turned up by hand or taken by another mood stays.
+  No answer: tries again a minute later, 3 times. Pending offs are kept in
+  `huelab_fast` and set again after a reboot or update. Chosen over a
+  bridge timer: a timer can only recall a scene, a scene is per room and
+  must list every light of it, a path crosses rooms, `bridge_home` scenes
+  are refused, and the bridge can't skip a light changed since.
+  **Sleep fade now from a widget or the tile** (`src/lib/rituals/sleepNow.ts`,
+  `GlimSleep.kt`): the bridge keeps one set of things for "now", made once
+  (`ensureSleepPool`) and changed at each start: the "Glim sleep now"
+  behavior, one "Glim after sleep" schedule behavior, and a level scene per
+  room or group used. JS writes their IDs and every room's lights to
+  `huelab_fast` (`setSleepPool`), so a tap starts a fade from Kotlin with
+  the same requests as the Rituals tab (fade on the coming minute, levels
+  read at the tap). A Moods widget button (`FAST_SLEEP`, moon icon) or the
+  tile (kind `sleep`) picks a sleep fade ritual's rooms and length (a 20 min
+  bedroom one when there is none); both show on while a fade runs, and a
+  tap then stops it and keeps the lights (`FAST_SLEEP_STOP`, the tile's
+  off). Notes about fades stopped by hand (the bridge still says
+  "started") and level resets paused for the night live in `huelab_fast`
+  on Android (`sleepNotes.ts`), so native stops and the app agree.
+  **"+5 min"** on a running fade (card action and the "Fading to dark"
+  sheet): the bridge can't change a fade under way, so the lights are held
+  where they are and "now" starts again on the coming minute, ending 5 min
+  after the old end (`fade_out_duration` in seconds); the level reset keeps
+  the levels from the start. A scheduled fade extended this way hands over
+  to "now" for the night.
+  Tested on the real lights (away, through Hue's cloud): the tile started a
+  fade, "+5 min" moved its end from 15:51 to 15:56, the tile stopped it and
+  the lights held at 42%; a widget button's fade ran to the end and the
+  light came back at 42%; a path lit from the widget went off 5 min later
+  with the screen off and the phone forced into deep Doze.
 - 2026-11-13: **Moods from the Hue app.** The bridge's scenes (made in the
   Hue app: "Base", "Lumineux"...) are moods in their own group, "From the Hue
   app", on the Moods tab (a card per mood with its room or group, its colors

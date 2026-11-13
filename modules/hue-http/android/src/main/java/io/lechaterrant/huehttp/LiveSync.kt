@@ -386,6 +386,10 @@ class LiveSyncService : Service() {
 /** Starts live sync after a reboot or an app update (both may start a foreground service). */
 class LiveSyncBoot : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
-    if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) LiveSync.start(context)
+    if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+      LiveSync.start(context)
+      // A path's auto-off set before the reboot or update: its alarm is gone.
+      PathOff.rearm(context)
+    }
   }
 }

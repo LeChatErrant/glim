@@ -1,18 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-import { getBridge } from '../hue/bridge';
-import {
-  createBehavior,
-  deleteBehavior,
-  listBehaviors,
-  SCRIPT,
-  updateBehavior,
-  type BehaviorInstance,
-  type Ref,
-  type When,
-} from '../hue/behaviors';
-import { fetchSnapshot, setLight, type Snapshot } from '../hue/client';
-import { pauseAfterSleep, putAfterSleep, removeAfterSleep, resumeAfterSleep, setAfterSleepEnabled } from './afterSleep';
+import { createBehavior, deleteBehavior, listBehaviors, SCRIPT, updateBehavior, type BehaviorInstance, type Ref, type When } from '../hue/behaviors';
+import type { Snapshot } from '../hue/client';
+import { putAfterSleep, removeAfterSleep, resumeAfterSleep, setAfterSleepEnabled } from './afterSleep';
+import { findSleepRun, GTS_SCRIPTS, NOW_NAME, type SleepRun } from './sleepNow';
 import { DAYS, type Clock, type Day } from './time';
 
 /**
@@ -51,13 +40,7 @@ export type SleepRitual = {
 
 export type BridgeRitual = WakeRitual | SleepRitual;
 
-/** A sleep fade running now: when it ends. */
-export type SleepRun = { endsAt: number; targets: string[]; fadeMin: number };
-
-const GTS_SCRIPTS: string[] = [SCRIPT.goToSleep, 'a5624529-bd7e-4bc8-9d2f-9200476f106e'];
-/** The behavior used for "Sleep fade now": one per bridge, reused, hidden from the list. */
-const NOW_NAME = 'Glim sleep now';
-const STOPPED_KEY = 'sleep-stopped';
+export { extendSleep, startSleepNow, stopSleepNow, type SleepRun } from './sleepNow';
 
 const timeOf = (w?: When): Clock => (w?.time_point?.time ? w.time_point.time.hour * 60 + w.time_point.time.minute : 7 * 60);
 const daysOf = (w?: When): Day[] => DAYS.filter((d) => w?.recurrence_days?.includes(d));
@@ -99,24 +82,7 @@ export async function loadBridgeRituals(): Promise<{ rituals: BridgeRitual[]; sl
   const all = await listBehaviors();
   const rituals = all.map(fromBehavior).filter(Boolean) as BridgeRitual[];
   await resumeAfterSleep((id) => !!rituals.find((r) => r.id === id)?.enabled).catch(() => null);
-  // A sleep fade is running, ours ("now") or a scheduled one.
-  const fadeOf = (b: BehaviorInstance) => Math.round((b.configuration.fade_out_duration?.seconds ?? 1800) / 60);
-  // Switching a behavior off stops its fade, but the bridge keeps saying "started": skip the ones stopped here.
-  const stopped = new Set<string>(JSON.parse((await AsyncStorage.getItem(STOPPED_KEY)) ?? '[]'));
-  const running = all.find(
-    (b) => GTS_SCRIPTS.includes(b.script_id) && b.state?.gts_state === 'started' && b.state?.fade_end_time && !stopped.has(b.state.fade_end_time) && Date.parse(b.state.fade_end_time) > Date.now(),
-  );
-  // "Now" waits for the coming minute: until then the bridge says "stopped".
-  const pending = all.find((b) => b.metadata?.name === NOW_NAME && b.enabled && b.state?.gts_state !== 'started');
-  let sleepRun: SleepRun | null = null;
-  if (running) sleepRun = { endsAt: Date.parse(running.state!.fade_end_time), targets: targetsOf(running), fadeMin: fadeOf(running) };
-  else if (pending) {
-    const at = timeOf(pending.configuration.when);
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Math.floor(at / 60), at % 60).getTime();
-    // Set for a time already past: the bridge never ran it (it was off at that minute).
-    if (start > Date.now() - 60_000) sleepRun = { endsAt: start + fadeOf(pending) * 60_000, targets: targetsOf(pending), fadeMin: fadeOf(pending) };
-  }
+  const sleepRun = await findSleepRun(all);
   return { rituals, sleepRun };
 }
 
@@ -173,65 +139,4 @@ export async function setBridgeRitualEnabled(id: string, enabled: boolean) {
 export async function deleteBridgeRitual(id: string) {
   await deleteBehavior(id);
   await removeAfterSleep(id);
-}
-
-const nowKey = async () => `sleep-now:${(await getBridge())?.id ?? 'none'}`;
-
-/**
- * Starts a sleep fade now, on the bridge: Hue's go-to-sleep, set for the coming minute (the bridge
- * works in whole minutes) and for once. It turns itself off when done.
- */
-export async function startSleepNow(s: Snapshot, targets: string[], fadeMin: number) {
-  const start = new Date(Date.now() + 60_000);
-  const configuration = {
-    end_state: 'turn_off',
-    fade_out_duration: { seconds: fadeMin * 60 },
-    style: 'basic',
-    when: when(start.getHours() * 60 + start.getMinutes(), []),
-    where: where(s, targets),
-  };
-  const all = await listBehaviors();
-  const saved = await AsyncStorage.getItem(await nowKey());
-  const existing = all.find((b) => b.id === saved) ?? all.find((b) => b.metadata?.name === NOW_NAME);
-  if (existing) {
-    await updateBehavior(existing.id, { enabled: true, configuration });
-  } else {
-    const id = await createBehavior({ script_id: SCRIPT.goToSleep, enabled: true, metadata: { name: NOW_NAME }, configuration });
-    await AsyncStorage.setItem(await nowKey(), id);
-  }
-  // A minute after the fade, each light gets back the level it has now (lights that are off: full).
-  const level = new Map(s.lights.map((l) => [l.id, l.on && l.brightness ? l.brightness : 100]));
-  await putAfterSleep(s, 'now', targets, start.getHours() * 60 + start.getMinutes() + fadeMin, [], true, (id) => level.get(id) ?? 100).catch(() => null);
-  // Fades start on the minute: tell the screen when it ends.
-  const begins = new Date(start.getFullYear(), start.getMonth(), start.getDate(), start.getHours(), start.getMinutes()).getTime();
-  return { endsAt: begins + fadeMin * 60_000, targets, fadeMin } satisfies SleepRun;
-}
-
-/**
- * Stops every sleep fade that is running or about to start, and keeps the lights where they are:
- * switching the behavior off doesn't stop a fade under way (tested), so each light of the fade is
- * set to the level it has reached, which ends the bridge's transition.
- */
-export async function stopSleepNow() {
-  const all = await listBehaviors();
-  const fading = all.filter((b) => GTS_SCRIPTS.includes(b.script_id) && b.state?.gts_state === 'started' && Date.parse(b.state?.fade_end_time ?? '') > Date.now());
-  const ends = all.map((b) => b.state?.fade_end_time).filter(Boolean) as string[];
-  await AsyncStorage.setItem(STOPPED_KEY, JSON.stringify(ends.slice(-20)));
-  const running = all.filter((b) => GTS_SCRIPTS.includes(b.script_id) && (b.metadata?.name === NOW_NAME ? b.enabled : b.state?.gts_state === 'started'));
-  for (const b of running) {
-    // The lights stay where they are: the level reset after the fade must not run tonight.
-    const end = Date.parse(b.state?.fade_end_time ?? '') || Date.now() + 2 * 3600_000;
-    await pauseAfterSleep(b.metadata?.name === NOW_NAME ? 'now' : b.id, end + 5 * 60_000);
-    if (b.metadata?.name === NOW_NAME) await updateBehavior(b.id, { enabled: false });
-    else {
-      // A scheduled fade: switching it off and on again stops tonight's run and keeps the schedule.
-      await updateBehavior(b.id, { enabled: false });
-      await updateBehavior(b.id, { enabled: true });
-    }
-  }
-  if (!fading.length) return;
-  const s = await fetchSnapshot();
-  const groups = new Set(fading.flatMap(targetsOf));
-  const ids = new Set([...s.rooms, ...(s.zones ?? [])].filter((g) => groups.has(g.id)).flatMap((g) => g.lightIds));
-  await Promise.all(s.lights.filter((l) => ids.has(l.id) && l.on && l.brightness !== null).map((l) => setLight(l.id, { brightness: Math.max(1, l.brightness!) })));
 }
