@@ -3,6 +3,7 @@ import { FlexWidget, OverlapWidget, SvgWidget, TextWidget, type TextWidgetStyle 
 import type { Room, Snapshot } from '../lib/hue/client';
 import { averageBrightness, isLit, lightsOf } from '../lib/lights';
 import { walledRooms } from '../lib/map/glow';
+import { hitAreas } from '../lib/map/hitAreas';
 import { capsWidth, labelSpot } from '../lib/map/labels';
 import { fitPlan, type Plan } from '../lib/map/map';
 import { iconSvg, jewelSvg, planToSvg } from '../lib/map/svg';
@@ -47,7 +48,8 @@ function clock(ts: number) {
  * here, from what the widget currently shows.
  */
 function fastToggle(path: string, on: boolean, extra: Record<string, string>) {
-  return { ...extra, fastPath: path, fastBody: JSON.stringify({ on: { on } }), target: on ? 'on' : 'off' };
+  // No fade (Hue's default is 0.4 s): a widget tap acts like a switch, the light answers at once.
+  return { ...extra, fastPath: path, fastBody: JSON.stringify({ on: { on }, dynamics: { duration: 0 } }), target: on ? 'on' : 'off' };
 }
 
 const shell = {
@@ -306,9 +308,16 @@ export function MapWidget({
   const f = fitPlan(plan, box.width, box.height, pad);
   const X = (u: number) => box.left + f.x(u);
   const Y = (v: number) => box.top + f.y(v);
-  const target = 40;
   const walled = walledRooms(plan);
   const outlines = plan.rooms.filter((r) => r.pts.length > 2);
+  const hitRooms = outlines.flatMap((r) => {
+    const room = snapshot.rooms.find((x) => x.id === r.hueRoomId);
+    return room?.groupedLightId ? [{ id: room.id, pts: r.pts.map((p) => ({ x: X(p.u), y: Y(p.v) })) }] : [];
+  });
+  const hitLights = plan.lights.flatMap((pl) => {
+    const l = lights.find((x) => x.id === pl.lightId);
+    return l ? [{ id: l.id, x: X(pl.u), y: Y(pl.v), roomId: l.roomId }] : [];
+  });
   const showLabels = box.height >= 200;
   const markers = plan.lights.map((l) => ({ x: X(l.u), y: Y(l.v) }));
   const clear = background === 'transparent';
@@ -344,41 +353,31 @@ export function MapWidget({
             </FlexWidget>
           );
         })}
-      {outlines
-        .filter((r) => r.hueRoomId)
-        .flatMap((r) => {
-          const room = snapshot.rooms.find((x) => x.id === r.hueRoomId);
-          if (!room?.groupedLightId) return [];
-          const xs = r.pts.map((p) => X(p.u));
-          const ys = r.pts.map((p) => Y(p.v));
-          const left = Math.min(...xs);
-          const top = Math.min(...ys);
-          const on = lightsOf(room, snapshot).some(isLit);
+      {/* Tap areas: rectangles that never overlap (see hitAreas), a light's around it, its room's elsewhere. */}
+      {hitAreas(box, hitRooms, hitLights).flatMap((a, i) => {
+        if (a.target.kind === 'light') {
+          const l = lights.find((x) => x.id === a.target.id);
+          if (!l) return [];
           return (
             <FlexWidget
-              key={r.id}
-              clickAction="FAST_TOGGLE_ROOM"
-              clickActionData={fastToggle(`grouped_light/${room.groupedLightId}`, !on, { roomId: room.id })}
-              accessibilityLabel={`${room.name}, ${on ? 'on' : 'off'}`}
-              style={{ marginLeft: Math.round(left), marginTop: Math.round(top), width: Math.round(Math.max(...xs) - left), height: Math.round(Math.max(...ys) - top) }}
+              key={`h${i}`}
+              clickAction="FAST_TOGGLE_LIGHT"
+              clickActionData={fastToggle(`light/${l.id}`, !l.on, { lightId: l.id })}
+              accessibilityLabel={`${l.name}, ${!l.reachable ? 'unreachable' : l.on ? 'on' : 'off'}`}
+              style={{ marginLeft: a.x, marginTop: a.y, width: a.w, height: a.h }}
             />
           );
-        })}
-      {plan.lights.flatMap((pl) => {
-        const l = lights.find((x) => x.id === pl.lightId);
-        if (!l) return [];
+        }
+        const room = snapshot.rooms.find((x) => x.id === a.target.id);
+        if (!room?.groupedLightId) return [];
+        const on = lightsOf(room, snapshot).some(isLit);
         return (
           <FlexWidget
-            key={pl.lightId}
-            clickAction="FAST_TOGGLE_LIGHT"
-            clickActionData={fastToggle(`light/${l.id}`, !l.on, { lightId: l.id })}
-            accessibilityLabel={`${l.name}, ${!l.reachable ? 'unreachable' : l.on ? 'on' : 'off'}`}
-            style={{
-              marginLeft: Math.round(Math.max(0, X(pl.u) - target / 2)),
-              marginTop: Math.round(Math.max(0, Y(pl.v) - target / 2)),
-              width: target,
-              height: target,
-            }}
+            key={`h${i}`}
+            clickAction="FAST_TOGGLE_ROOM"
+            clickActionData={fastToggle(`grouped_light/${room.groupedLightId}`, !on, { roomId: room.id })}
+            accessibilityLabel={`${room.name}, ${on ? 'on' : 'off'}`}
+            style={{ marginLeft: a.x, marginTop: a.y, width: a.w, height: a.h }}
           />
         );
       })}

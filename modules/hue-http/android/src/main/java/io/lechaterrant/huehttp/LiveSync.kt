@@ -157,6 +157,8 @@ class LiveSyncService : Service() {
         )
         conn = c
         backoff = MIN_BACKOFF_MS
+        // The bridge answers (screen just turned on, or reconnected): have a connection ready for taps.
+        Thread { BridgeClient.warm(config) }.start()
         c.inputStream.bufferedReader().use { reader ->
           while (alive && screenOn) {
             val line = reader.readLine() ?: break

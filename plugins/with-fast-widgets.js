@@ -28,6 +28,12 @@ module.exports = function withFastWidgets(config, { widgets }) {
       const night = path.join(cfg.modRequest.platformProjectRoot, 'app/src/main/res/layout-night');
       fs.mkdirSync(night, { recursive: true });
       fs.writeFileSync(path.join(night, 'rn_widget.xml'), widgetLayout(true));
+      // Tap feedback: the library flashes a grey ripple over the whole tap area, a big rectangle
+      // on the Map widget. A small ivory glow under the finger instead, whatever the area's shape.
+      fs.writeFileSync(path.join(layout, 'rn_widget_clickable.xml'), CLICKABLE);
+      const drawable = path.join(cfg.modRequest.platformProjectRoot, 'app/src/main/res/drawable');
+      fs.mkdirSync(drawable, { recursive: true });
+      fs.writeFileSync(path.join(drawable, 'glim_touch.xml'), TOUCH);
       return cfg;
     },
   ]);
@@ -61,14 +67,43 @@ const widgetLayout = (dark) => `<?xml version="1.0" encoding="utf-8"?>
         android:scaleType="matrix"
         android:visibility="${dark ? 'visible' : 'gone'}" />
 
+    <!-- Transparent background: the tap glow (glim_touch) is drawn on it. -->
     <FrameLayout
         android:id="@+id/rn_widget_clickable_container"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:background="@android:color/transparent" />
 
     <FrameLayout
         android:id="@+id/rn_widget_collection_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 </FrameLayout>
+`;
+
+// The library's rn_widget_clickable.xml, with the tap glow instead of its ripple.
+const CLICKABLE = `<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by plugins/with-fast-widgets.js: react-native-android-widget's rn_widget_clickable.xml with glim_touch. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rn_widget_clickable_positioner"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <FrameLayout
+        android:id="@+id/rn_widget_clickable_area"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/glim_touch"
+        android:clickable="true"
+        android:focusable="true" />
+</FrameLayout>
+`;
+
+// No mask and no content: an unbounded ripple, a round glow of a fixed size around the finger,
+// drawn on the nearest parent with a background (the clickable container).
+const TOUCH = `<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by plugins/with-fast-widgets.js. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#40F2E8D8"
+    android:radius="30dp" />
 `;

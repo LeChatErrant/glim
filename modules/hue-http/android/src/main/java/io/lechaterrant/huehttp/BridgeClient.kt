@@ -80,6 +80,9 @@ object BridgeClient {
       // Identity is checked by CN + pin in the trust manager; the URL host is an IP.
       conn.hostnameVerifier = HostnameVerifier { _, _ -> true }
     }
+    // No disconnect() on success: reading the answer to the end hands the connection back to the
+    // pool, so the next request skips the TCP and TLS handshakes (~15 ms instead of 130-430 ms on
+    // a bridge, which keeps idle connections for minutes). That's most of a widget tap's delay.
     try {
       conn.requestMethod = method
       conn.connectTimeout = timeoutMs
@@ -93,9 +96,30 @@ object BridgeClient {
       val status = conn.responseCode
       val stream = if (status >= 400) conn.errorStream else conn.inputStream
       val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
+      // Without a pin (pairing) the trust manager is a fresh one each time: nothing to reuse.
+      if (pin.isEmpty()) conn.disconnect()
       return BridgeResponse(status, text, trust.seenPin, trust.seenCn)
-    } finally {
+    } catch (e: Exception) {
       conn.disconnect()
+      throw e
+    }
+  }
+
+  /**
+   * Opens a pooled connection to the bridge ahead of a tap (screen on, live sync started), so the
+   * first widget tap doesn't pay for the handshakes. Best effort.
+   */
+  fun warm(config: FastConfig.Config) {
+    try {
+      request(
+        url = "https://${config.ip}/clip/v2/resource/bridge",
+        headers = mapOf("hue-application-key" to config.appKey),
+        bridgeId = config.id,
+        pin = config.pin,
+        timeoutMs = 3000,
+      )
+    } catch (_: Exception) {
+      // Away from home or bridge down: the tap will find out.
     }
   }
 

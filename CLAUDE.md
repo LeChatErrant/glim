@@ -377,6 +377,20 @@ feature.**
   WorkManager + JS path took ~1.2 s. New widget actions that change lights
   should use `FAST_*`. Bridge credentials for this live in app-private
   SharedPreferences (`huelab_fast`), synced from JS at pairing and app start.
+  Bridge connections stay pooled (no `disconnect()`; the bridge keeps idle
+  ones for minutes), and live sync opens one when the screen turns on, so a
+  tap skips the TCP + TLS handshakes (~15 ms instead of 130 to 430 ms).
+  Widget toggles send `dynamics.duration: 0` (no fade).
+- **Map widget tap areas** (`src/lib/map/hitAreas.ts`): the widget library
+  stacks tap areas sorted by id *as text* (`0-10` before `0-2`), so
+  overlapping areas are unreliable. The plan is cut into non-overlapping
+  rectangles on an 8 dp grid: each light owns ~26 dp around it (split with
+  neighbours, kept in its room), the rest follows each room's real outline.
+  Tap feedback is a small round glow (`glim_touch`, written by the plugin
+  over the library's `rn_widget_clickable.xml`), not a rectangle ripple.
+- **Widget redraws flicker**, so `task-handler.tsx` skips a redraw identical
+  to one made in the last 15 s, and holds a tapped state for 4 s (the bridge
+  reports a room's lights one by one), then checks the real state once.
 - **Live sync** (`modules/hue-http/.../LiveSync.kt`): foreground service on
   `/eventstream/clip/v2`, started from JS at app start, on widget taps, after
   boot and after an app update. It broadcasts `APPWIDGET_UPDATE` (widgets

@@ -58,7 +58,8 @@ export function MapWidgetConfig({ widgetInfo, renderWidget, setResult }: WidgetC
 
   const save = async () => {
     await saveWidgetSettings(widgetInfo.widgetId, settings);
-    renderWidget(await render(widgetInfo, { snapshot, stale: false }));
+    const widget = await render(widgetInfo, { snapshot, stale: false });
+    if (widget) renderWidget(widget);
     setResult('ok');
   };
 
