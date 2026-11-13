@@ -304,6 +304,17 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   color, white in white mode); the tapped one is held for 4 s.
   `registerWidgetConfigurationScreen` takes one screen: `WidgetConfig.tsx`
   picks the screen by widget name.
+- 2026-11-13: **Light widget (1×1) and Light grid (4×1, 4×2).** Light: one
+  room or one light, picked when the widget is added (its configuration is
+  required; with nothing picked it shows a dashed "Set up"), drawn as one
+  big jewel (a light's holds its type icon) and its name in small capitals;
+  the whole widget is the toggle. Grid: rooms and lights in the order
+  picked (up to 8; default: the rooms, then lights in no room), tiles like
+  the Rooms widget (lights get their icon jewel). Both tap with
+  `FAST_TOGGLE_ROOM` / `FAST_TOGGLE_LIGHT`, follow live sync, and keep their
+  picks per widget (`src/widgets/tiles.ts`, `TilesWidgetConfig.tsx`). Not
+  yet: the "updating" arc from the design canvas (it would cost one more
+  redraw, and redraws flicker).
 
 ## Vocabulary
 

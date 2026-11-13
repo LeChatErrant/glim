@@ -10,9 +10,10 @@ import { weatherIcon } from '../ui/icons';
 import { sendMapOutside } from './outside';
 import { defaultItems, forgetMoodsWidgetSettings, isShowing, loadMoodsWidgetSettings, moodButtons, type MoodButton } from './moodButtons';
 import { forgetWidgetSettings, loadWidgetSettings, widgetPlan } from './settings';
-import { MapWidget, MoodsWidget, NotPaired, RoomsWidget } from './widgets';
+import { defaultTiles, forgetTilesWidgetSettings, loadTilesWidgetSettings, resolveTiles } from './tiles';
+import { GridWidget, LightWidget, MapWidget, MoodsWidget, NotPaired, RoomsWidget } from './widgets';
 
-export const WIDGET_NAMES = ['Rooms', 'Map', 'Moods'] as const;
+export const WIDGET_NAMES = ['Rooms', 'Map', 'Moods', 'Light', 'Grid'] as const;
 
 /** A state to draw, and whether it is only the last known one (bridge unreachable). */
 export type State = { snapshot: Snapshot | null; stale: boolean };
@@ -108,6 +109,18 @@ export async function render(info: WidgetInfo, state: State, force = true) {
     if (alreadyDrawn(info, drawKey(info, [shown(snapshot, stale), stale, buttons.map((b) => [b.key, b.name, b.dots, b.showing])]), force)) return null;
     return <MoodsWidget snapshot={snapshot} buttons={buttons} width={info.width} height={info.height} stale={stale} />;
   }
+  if (info.widgetName === 'Light' || info.widgetName === 'Grid') {
+    const settings = await loadTilesWidgetSettings(info.widgetId);
+    // A Light widget shows its one item; with none picked (or it was deleted), it asks to be set up.
+    const items = settings.items ?? (info.widgetName === 'Grid' && snapshot ? defaultTiles(snapshot) : []);
+    const tiles = snapshot ? resolveTiles(items, snapshot) : [];
+    if (alreadyDrawn(info, drawKey(info, [shown(snapshot, stale), stale, items]), force)) return null;
+    return info.widgetName === 'Light' ? (
+      <LightWidget snapshot={snapshot} tile={tiles[0] ?? null} width={info.width} height={info.height} stale={stale} />
+    ) : (
+      <GridWidget snapshot={snapshot} tiles={tiles} width={info.width} height={info.height} stale={stale} />
+    );
+  }
   if (alreadyDrawn(info, drawKey(info, [shown(snapshot, stale), stale]), force)) return null;
   return <RoomsWidget snapshot={snapshot} width={info.width} height={info.height} stale={stale} />;
 }
@@ -194,7 +207,11 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
       break;
     }
     case 'WIDGET_DELETED':
-      await Promise.all([forgetWidgetSettings(widgetInfo.widgetId), forgetMoodsWidgetSettings(widgetInfo.widgetId)]);
+      await Promise.all([
+        forgetWidgetSettings(widgetInfo.widgetId),
+        forgetMoodsWidgetSettings(widgetInfo.widgetId),
+        forgetTilesWidgetSettings(widgetInfo.widgetId),
+      ]);
       break;
     default:
       break;

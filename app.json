@@ -76,6 +76,30 @@
               "resizeMode": "horizontal|vertical",
               "updatePeriodMillis": 1800000,
               "widgetFeatures": "reconfigurable|configuration_optional"
+            },
+            {
+              "name": "Light",
+              "label": "Light or room",
+              "description": "One room or one light. Tap to turn it on or off",
+              "minWidth": "50dp",
+              "minHeight": "50dp",
+              "targetCellWidth": 1,
+              "targetCellHeight": 1,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000,
+              "widgetFeatures": "reconfigurable"
+            },
+            {
+              "name": "Grid",
+              "label": "Light grid",
+              "description": "Rooms and lights you pick. Tap one to turn it on or off",
+              "minWidth": "250dp",
+              "minHeight": "50dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 1,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000,
+              "widgetFeatures": "reconfigurable|configuration_optional"
             }
           ],
           "fonts": [
@@ -92,7 +116,9 @@
           "widgets": [
             "Rooms",
             "Map",
-            "Moods"
+            "Moods",
+            "Light",
+            "Grid"
           ]
         }
       ],

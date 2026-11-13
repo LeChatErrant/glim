@@ -1,17 +1,18 @@
 import { FlexWidget, OverlapWidget, SvgWidget, TextWidget, type TextWidgetStyle } from 'react-native-android-widget';
 
-import type { Room, Snapshot } from '../lib/hue/client';
+import type { Snapshot } from '../lib/hue/client';
 import { averageBrightness, isLit, lightsOf } from '../lib/lights';
 import { walledRooms } from '../lib/map/glow';
 import { hitAreas } from '../lib/map/hitAreas';
 import { capsWidth, labelSpot } from '../lib/map/labels';
 import { fitPlan, type Plan } from '../lib/map/map';
-import { iconSvg, jewelSvg, planToSvg } from '../lib/map/svg';
+import { iconSvg, jewelSvg, lightJewelSvg, planToSvg } from '../lib/map/svg';
 import { moodRequests } from '../lib/moods';
 import { GLASS, type WidgetBackground } from '../lib/weather/scene';
 import { iconPath, type IconName } from '../ui/icons';
 import { color, font } from '../ui/theme';
 import type { MoodButton } from './moodButtons';
+import type { Tile } from './tiles';
 
 // Nocturne on the home screen: near-black ground, ivory text, hairlines, one champagne accent.
 // The only saturated colors are the lights. Canvas: "Widgets & tiles" page, WidgetCatalog board.
@@ -100,30 +101,79 @@ function StaleBadge({ snapshot }: { snapshot: Snapshot }) {
   );
 }
 
-/** One room tile: jewel and level on top, name below. Tap toggles the room. */
-function RoomTile({ room, snapshot, stale, width }: { room: Room; snapshot: Snapshot; stale: boolean; width: number }) {
+/** How a tile shows a room or a light, and what a tap on it does. */
+type TileLook = {
+  name: string;
+  on: boolean;
+  unreachable: boolean;
+  /** Color of the jewel and the tint of the tile. */
+  c: string;
+  /** "62%", "ON", "OFF", or empty when unreachable (the jewel says it). */
+  level: string;
+  /** The jewel, drawn at `px`: a room's plain jewel, or a light's holding its type icon. */
+  jewel: (px: number, stale: boolean) => string;
+  /** The jewel holds an icon (a light): drawn a little bigger so it reads. */
+  icon: boolean;
+  click: { clickAction: string; clickActionData?: Record<string, string> };
+  label: string;
+};
+
+function tileLook(tile: Tile, snapshot: Snapshot): TileLook {
+  if (tile.light) {
+    const l = tile.light;
+    const on = isLit(l);
+    const level = !l.reachable ? '' : !l.on ? 'OFF' : l.brightness === null ? 'ON' : `${l.brightness}%`;
+    return {
+      name: l.name,
+      on,
+      unreachable: !l.reachable,
+      c: l.color,
+      level,
+      // The jewel takes about half the square, its glow the rest.
+      jewel: (px, stale) => lightJewelSvg(l, { size: Math.round(px * 0.5), px, ground: GROUND, stale }),
+      icon: true,
+      click: { clickAction: 'FAST_TOGGLE_LIGHT', clickActionData: fastToggle(`light/${l.id}`, !l.on, { lightId: l.id }) },
+      label: `${l.name}, ${!l.reachable ? 'unreachable' : on ? `on${l.brightness === null ? '' : `, ${l.brightness}%`}` : 'off'}`,
+    };
+  }
+  const room = tile.room;
   const lights = lightsOf(room, snapshot);
   const lit = lights.filter(isLit);
   const on = lit.length > 0;
   const unreachable = lights.length > 0 && lights.every((l) => !l.reachable);
   const c = lit[0]?.color ?? color.champagne;
   const avg = averageBrightness(lit);
-  const level = unreachable ? '' : !on ? 'OFF' : avg === null ? 'ON' : `${avg}%`;
   const plug = lights.length > 0 && lights.every((l) => l.kind === 'onoff');
-  const live = on && !stale;
+  return {
+    name: room.name,
+    on,
+    unreachable,
+    c,
+    level: unreachable ? '' : !on ? 'OFF' : avg === null ? 'ON' : `${avg}%`,
+    jewel: (px, stale) => jewelSvg({ color: c, on, plug, unreachable, stale, ground: GROUND, px }),
+    icon: false,
+    click: room.groupedLightId
+      ? { clickAction: 'FAST_TOGGLE_ROOM', clickActionData: fastToggle(`grouped_light/${room.groupedLightId}`, !on, { roomId: room.id }) }
+      : { clickAction: 'OPEN_APP' },
+    label: `${room.name}, ${unreachable ? 'unreachable' : on ? `on${avg === null ? '' : `, ${avg}%`}` : 'off'}`,
+  };
+}
+
+/** One tile: jewel and level on top, name below. Tap toggles the room or light. */
+function GridTile({ look, stale, width }: { look: TileLook; stale: boolean; width: number }) {
+  const live = look.on && !stale;
   return (
     <FlexWidget
-      clickAction={room.groupedLightId ? 'FAST_TOGGLE_ROOM' : 'OPEN_APP'}
-      clickActionData={room.groupedLightId ? fastToggle(`grouped_light/${room.groupedLightId}`, !on, { roomId: room.id }) : undefined}
-      accessibilityLabel={`${room.name}, ${unreachable ? 'unreachable' : on ? `on${avg === null ? '' : `, ${avg}%`}` : 'off'}`}
+      {...look.click}
+      accessibilityLabel={look.label}
       style={{
         width,
         height: 'match_parent',
         marginHorizontal: 3,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: live ? tint(c, 0.24) : line(stale ? 0.07 : 0.1),
-        backgroundColor: live ? tint(c, 0.08) : 'rgba(0, 0, 0, 0)',
+        borderColor: live ? tint(look.c, 0.24) : line(stale ? 0.07 : 0.1),
+        backgroundColor: live ? tint(look.c, 0.08) : 'rgba(0, 0, 0, 0)',
         paddingLeft: 7,
         paddingRight: 10,
         paddingTop: 6,
@@ -132,11 +182,11 @@ function RoomTile({ room, snapshot, stale, width }: { room: Room; snapshot: Snap
       }}
     >
       <FlexWidget style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: 'match_parent' }}>
-        <SvgWidget svg={jewelSvg({ color: c, on, plug, unreachable, stale, ground: GROUND })} style={{ width: 24, height: 24 }} />
-        <TextWidget text={level} style={caps(9, live ? LEVEL : MUTED)} />
+        <SvgWidget svg={look.jewel(look.icon ? 28 : 24, stale)} style={look.icon ? { width: 28, height: 28, marginLeft: -2, marginVertical: -2 } : { width: 24, height: 24 }} />
+        <TextWidget text={look.level} style={caps(9, live ? LEVEL : MUTED)} />
       </FlexWidget>
       <TextWidget
-        text={room.name}
+        text={look.name}
         maxLines={1}
         truncate="END"
         style={{ fontFamily: font.displayRegular, fontSize: 14, color: live ? IVORY : SECONDARY, marginLeft: 5 }}
@@ -145,21 +195,35 @@ function RoomTile({ room, snapshot, stale, width }: { room: Room; snapshot: Snap
   );
 }
 
+/** Tiles in balanced rows, about 80 dp wide and at least 44 dp tall; extra tiles don't fit and are left out. */
+function TileRows({ tiles, snapshot, width, height, stale, top = 0 }: { tiles: Tile[]; snapshot: Snapshot; width: number; height: number; stale: boolean; top?: number }) {
+  const maxCols = Math.max(2, Math.floor((width - 8) / 80));
+  const maxRows = Math.max(1, Math.floor((height - 8 - top) / 50));
+  const shown = tiles.slice(0, maxCols * maxRows);
+  const rowCount = Math.ceil(shown.length / maxCols);
+  const cols = Math.ceil(shown.length / rowCount);
+  const rows = Array.from({ length: rowCount }, (_, i) => shown.slice(i * cols, i * cols + cols));
+  // Explicit widths: flex weights only share the space left after each tile's content.
+  const tileWidth = Math.floor((width - 10) / cols) - 6;
+  return (
+    <>
+      {rows.map((row, i) => (
+        <FlexWidget key={i} style={{ flexDirection: 'row', width: 'match_parent', flex: 1, marginVertical: 3 }}>
+          {row.map((t) => (
+            <GridTile key={t.key} look={tileLook(t, snapshot)} stale={stale} width={tileWidth} />
+          ))}
+        </FlexWidget>
+      ))}
+    </>
+  );
+}
+
 /** Grid of room tiles. Tap a tile to toggle the room. */
 export function RoomsWidget({ snapshot, width, height, stale }: { snapshot: Snapshot | null; width: number; height: number } & Freshness) {
   if (!snapshot) return <NotPaired />;
   if (!snapshot.rooms.length) return <SetupCard title="No rooms yet" hint="Create rooms in Glim" />;
   const top = stale ? 22 : 0;
-  // Balanced rows, about 80 dp per tile, at least 44 dp tall; extra rooms don't fit and are left out.
-  const maxCols = Math.max(2, Math.floor((width - 8) / 80));
-  const maxRows = Math.max(1, Math.floor((height - 8 - top) / 50));
-  const rooms = snapshot.rooms.slice(0, maxCols * maxRows);
-  const rowCount = Math.ceil(rooms.length / maxCols);
-  const cols = Math.ceil(rooms.length / rowCount);
-  const rows = Array.from({ length: rowCount }, (_, i) => rooms.slice(i * cols, i * cols + cols));
-  // Explicit widths: flex weights only share the space left after each tile's content.
-  const tileWidth = Math.floor((width - 10) / cols) - 6;
-
+  const tiles = snapshot.rooms.map((room): Tile => ({ key: room.id, room }));
   return (
     <FlexWidget style={{ ...shell, borderColor: line(stale ? 0.07 : 0.09), padding: 4 }}>
       {stale && (
@@ -167,13 +231,70 @@ export function RoomsWidget({ snapshot, width, height, stale }: { snapshot: Snap
           <StaleBadge snapshot={snapshot} />
         </FlexWidget>
       )}
-      {rows.map((row, i) => (
-        <FlexWidget key={i} style={{ flexDirection: 'row', width: 'match_parent', flex: 1, marginVertical: 3 }}>
-          {row.map((room) => (
-            <RoomTile key={room.id} room={room} snapshot={snapshot} stale={stale} width={tileWidth} />
-          ))}
+      <TileRows tiles={tiles} snapshot={snapshot} width={width} height={height} stale={stale} top={top} />
+    </FlexWidget>
+  );
+}
+
+/** Rooms and lights picked by the user, in their order (4×1: 4 tiles, 4×2: 8). Tap a tile to toggle it. */
+export function GridWidget({ snapshot, tiles, width, height, stale }: { snapshot: Snapshot | null; tiles: Tile[]; width: number; height: number } & Freshness) {
+  if (!snapshot) return <NotPaired />;
+  if (!tiles.length) return <SetupCard title="Nothing to show" hint="Long-press to pick rooms and lights" />;
+  const top = stale ? 22 : 0;
+  return (
+    <FlexWidget style={{ ...shell, borderColor: line(stale ? 0.07 : 0.09), padding: 4 }}>
+      {stale && (
+        <FlexWidget style={{ paddingLeft: 10, paddingTop: 4, height: top }}>
+          <StaleBadge snapshot={snapshot} />
         </FlexWidget>
-      ))}
+      )}
+      <TileRows tiles={tiles} snapshot={snapshot} width={width} height={height} stale={stale} top={top} />
+    </FlexWidget>
+  );
+}
+
+/**
+ * One room or light (1×1): one big jewel and its name in small capitals. The whole widget is the
+ * toggle. Offline: muted, with a small cloud-off mark in place of nothing.
+ */
+export function LightWidget({ snapshot, tile, width, height, stale }: { snapshot: Snapshot | null; tile: Tile | null; width: number; height: number } & Freshness) {
+  if (!snapshot || !tile) {
+    return (
+      <FlexWidget
+        clickAction="OPEN_APP"
+        style={{ ...shell, backgroundColor: 'rgba(7, 7, 8, 0.6)', borderColor: line(0.3), borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', padding: 6 }}
+      >
+        <SvgWidget svg={iconSvg('plan', color.champagne, 20)} style={{ width: 20, height: 20 }} />
+        <TextWidget text={snapshot ? 'SET UP' : 'PAIR'} style={{ ...caps(8, MUTED), marginTop: 7 }} />
+      </FlexWidget>
+    );
+  }
+  const look = tileLook(tile, snapshot);
+  const live = look.on && !stale;
+  // The jewel and its glow: as big as the cell allows, leaving room for the name.
+  const px = Math.max(28, Math.min(48, Math.min(width - 16, height - 34)));
+  return (
+    <FlexWidget
+      {...look.click}
+      accessibilityLabel={look.label}
+      style={{
+        ...shell,
+        borderColor: live ? tint(look.c, 0.2) : line(stale ? 0.07 : 0.09),
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 6,
+      }}
+    >
+      <SvgWidget svg={look.jewel(px, stale)} style={{ width: px, height: px }} />
+      <FlexWidget style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+        {stale && <SvgWidget svg={iconSvg('cloudOff', color.secondary, 9)} style={{ width: 9, height: 9, marginRight: 3 }} />}
+        <TextWidget
+          text={look.name.toUpperCase()}
+          maxLines={1}
+          truncate="END"
+          style={{ ...caps(8.5, live ? IVORY : SECONDARY), letterSpacing: 8.5 * 0.14, textAlign: 'center' }}
+        />
+      </FlexWidget>
     </FlexWidget>
   );
 }

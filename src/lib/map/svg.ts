@@ -151,9 +151,24 @@ function jewel(p: PlacedLight, x: number, y: number, size: number, ground: strin
   return out.join('');
 }
 
-/** A small jewel on its own (room tiles), centered in a `box` px square. */
-export function jewelSvg(opts: { color: string; on: boolean; plug: boolean; unreachable?: boolean; stale?: boolean; box?: number; ground?: string }) {
+/**
+ * One light's marker on its own (widget tiles): the map's jewel, holding the icon of what the
+ * light is, with its glow. `size` is the jewel, `px` the square drawn (room for the glow).
+ */
+export function lightJewelSvg(light: Light, opts: { size: number; px: number; ground?: string; stale?: boolean }) {
+  const { size, px, ground = color.ground, stale = false } = opts;
+  const c = light.color;
+  const glow =
+    `<radialGradient id="j0" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="${c}" stop-opacity="0.85"/>` +
+    `<stop offset="0.4" stop-color="${c}" stop-opacity="0.35"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></radialGradient>`;
+  const body = jewel({ light } as PlacedLight, px / 2, px / 2, size, ground, stale, 0);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 ${px} ${px}"><defs>${glow}</defs>${body}</svg>`;
+}
+
+/** A small jewel on its own (room tiles), centered in a `box` px square, drawn at `px` (default: `box`). */
+export function jewelSvg(opts: { color: string; on: boolean; plug: boolean; unreachable?: boolean; stale?: boolean; box?: number; px?: number; ground?: string }) {
   const { box = 24, ground = color.ground } = opts;
+  const px = opts.px ?? box;
   const c = box / 2;
   const size = 9;
   const parts: string[] = [];
@@ -182,7 +197,7 @@ export function jewelSvg(opts: { color: string; on: boolean; plug: boolean; unre
   } else {
     parts.push(shape(0, `fill="none" stroke="${opts.stale ? STALE.hollow : hairline(0.55)}" stroke-width="1"`));
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${box}" height="${box}" viewBox="0 0 ${box} ${box}">${parts.join('')}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 ${box} ${box}">${parts.join('')}</svg>`;
 }
 
 /** Small line icons for widgets (24 px grid, stroked). */
