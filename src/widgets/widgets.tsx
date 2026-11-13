@@ -7,9 +7,11 @@ import { hitAreas } from '../lib/map/hitAreas';
 import { capsWidth, labelSpot } from '../lib/map/labels';
 import { fitPlan, type Plan } from '../lib/map/map';
 import { iconSvg, jewelSvg, planToSvg } from '../lib/map/svg';
+import { moodRequests } from '../lib/moods';
 import { GLASS, type WidgetBackground } from '../lib/weather/scene';
 import { iconPath, type IconName } from '../ui/icons';
 import { color, font } from '../ui/theme';
+import type { MoodButton } from './moodButtons';
 
 // Nocturne on the home screen: near-black ground, ivory text, hairlines, one champagne accent.
 // The only saturated colors are the lights. Canvas: "Widgets & tiles" page, WidgetCatalog board.
@@ -416,5 +418,118 @@ export function MapWidget({
       )}
       {weather ? <WeatherCorner weather={weather} shadow={clear} /> : []}
     </OverlapWidget>
+  );
+}
+
+/**
+ * A mood's colors as a row of small glowing dots; a path gets the night path mark instead (a
+ * dashed trail through three glowing dots). Drawn as SVG: widgets can't blur a view.
+ */
+function moodDotsSvg(dots: string[], path: boolean, stale: boolean) {
+  const h = 14;
+  const a = stale ? 0.5 : 1;
+  if (path) {
+    const c = dots[0] ?? color.champagne;
+    const pts = [
+      [6, 10],
+      [22, 4],
+      [40, 9],
+    ];
+    const glow = pts.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="5" fill="url(#g)"/><circle cx="${x}" cy="${y}" r="2" fill="${c}" opacity="${a}"/>`).join('');
+    return (
+      `<svg xmlns="http://www.w3.org/2000/svg" width="46" height="${h}" viewBox="0 0 46 ${h}">` +
+      `<defs><radialGradient id="g"><stop offset="0" stop-color="${c}" stop-opacity="${0.6 * a}"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></radialGradient></defs>` +
+      `<path d="M6 10 Q14 2 22 4 T40 9" fill="none" stroke="${color.champagne}" stroke-opacity="${0.6 * a}" stroke-width="1" stroke-dasharray="2 3" stroke-linecap="round"/>` +
+      `${glow}</svg>`
+    );
+  }
+  const shown = dots.slice(0, 5);
+  const w = Math.max(14, shown.length * 10 + 4);
+  const defs = shown.map((c, i) => `<radialGradient id="g${i}"><stop offset="0" stop-color="${c}" stop-opacity="${0.55 * a}"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></radialGradient>`).join('');
+  const body = shown.map((c, i) => `<circle cx="${7 + i * 10}" cy="7" r="6" fill="url(#g${i})"/><circle cx="${7 + i * 10}" cy="7" r="3" fill="${c}" opacity="${a}"/>`).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs>${defs}</defs>${body}</svg>`;
+}
+
+/** The power mark for "All off". */
+const powerSvg = (c: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"><path d="${iconPath('power')}"/></svg>`;
+
+export type MoodTile = MoodButton & { showing: boolean };
+
+/** One mood button: its colors on top, its name below. Champagne edge while the lights look like it. */
+function MoodButtonTile({ b, snapshot, stale, width, lines }: { b: MoodTile; snapshot: Snapshot; stale: boolean; width: number; lines: 1 | 2 }) {
+  const off = b.lights === null;
+  const home = snapshot.homeGroupId;
+  const batch = b.lights?.length ? JSON.stringify(moodRequests(snapshot, b.lights)) : null;
+  const click = off
+    ? home
+      ? { clickAction: 'FAST_TOGGLE_ALL', clickActionData: fastToggle(`grouped_light/${home}`, false, { all: 'home' }) }
+      : { clickAction: 'TOGGLE_ALL', clickActionData: { target: 'off' } }
+    : batch
+      ? { clickAction: 'FAST_APPLY_MOOD', clickActionData: { fastBatch: batch, moodKey: b.key } }
+      : { clickAction: 'OPEN_APP' };
+  const live = b.showing && !stale;
+  const dotSvg = off ? powerSvg(live ? color.champagne : color.secondary) : moodDotsSvg(b.dots, b.path, stale);
+  const dotW = off ? 14 : b.path ? 46 : Math.max(14, Math.min(5, b.dots.length) * 10 + 4);
+  return (
+    <FlexWidget
+      {...click}
+      accessibilityLabel={`${b.name}${live ? ', on now' : ''}`}
+      style={{
+        width,
+        height: 'match_parent',
+        marginHorizontal: 3,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: live ? tint(color.champagne, 0.55) : line(stale ? 0.07 : 0.1),
+        backgroundColor: live ? tint(color.champagne, 0.06) : 'rgba(0, 0, 0, 0)',
+        paddingHorizontal: 11,
+        paddingTop: 9,
+        paddingBottom: 9,
+        justifyContent: 'space-between',
+      }}
+    >
+      <SvgWidget svg={dotSvg} style={{ width: dotW, height: 14 }} />
+      <TextWidget
+        text={b.name}
+        maxLines={lines}
+        truncate="END"
+        style={{ fontFamily: font.displayRegular, fontSize: lines === 2 ? 13 : 14, color: live ? (color.champagne as Hex) : stale ? SECONDARY : IVORY }}
+      />
+    </FlexWidget>
+  );
+}
+
+/** How many mood buttons a widget of this size fits: about 76 dp wide and 52 dp tall each. */
+export function moodSlots(width: number, height: number) {
+  const cols = Math.max(1, Math.min(4, Math.floor((width - 8) / 76)));
+  const rows = Math.max(1, Math.min(4, Math.floor((height - 8) / 52)));
+  return { cols, rows };
+}
+
+/** Mood buttons: tap one to apply it. "All off" stays the last button when they don't all fit. */
+export function MoodsWidget({ snapshot, buttons, width, height, stale }: { snapshot: Snapshot | null; buttons: MoodTile[]; width: number; height: number } & Freshness) {
+  if (!snapshot) return <NotPaired />;
+  if (!buttons.length) return <SetupCard title="No moods yet" hint="Long-press to pick moods" />;
+  const { cols: maxCols, rows: maxRows } = moodSlots(width, height);
+  const cap = maxCols * maxRows;
+  const offAt = buttons.findIndex((b) => b.lights === null);
+  const fits = buttons.length <= cap ? buttons : offAt >= 0 ? [...buttons.filter((b) => b.lights !== null).slice(0, cap - 1), buttons[offAt]] : buttons.slice(0, cap);
+  const rowCount = Math.ceil(fits.length / maxCols);
+  const cols = Math.ceil(fits.length / rowCount);
+  const rows = Array.from({ length: rowCount }, (_, i) => fits.slice(i * cols, i * cols + cols));
+  const tileWidth = Math.floor((width - 10) / cols) - 6;
+  // Long names ("Warm white & lagoon") wrap on a second line when the tiles are tall enough.
+  const lines = (height - 8) / rowCount - 6 >= 64 ? 2 : 1;
+  return (
+    <FlexWidget style={{ ...shell, borderColor: line(stale ? 0.07 : 0.09), padding: 4 }}>
+      {rows.map((row, i) => (
+        <FlexWidget key={i} style={{ flexDirection: 'row', width: 'match_parent', flex: 1, marginVertical: 3 }}>
+          {row.map((b) => (
+            <MoodButtonTile key={b.key} b={b} snapshot={snapshot} stale={stale} width={tileWidth} lines={lines} />
+          ))}
+        </FlexWidget>
+      ))}
+    </FlexWidget>
   );
 }

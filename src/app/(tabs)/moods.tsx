@@ -30,7 +30,8 @@ import { PillButton } from '../../ui/controls';
 import { Icon } from '../../ui/icons';
 import { ColorDot } from '../../ui/LightControls';
 import { MoodDots } from '../../ui/MoodChips';
-import { Choice, PathPreview, PathSheet } from '../../ui/PathSheet';
+import { PathPreview, PathSheet } from '../../ui/PathSheet';
+import { Choice } from '../../ui/scan/parts';
 import { Display, Label, Txt } from '../../ui/text';
 import { color, hairline, TAB_BAR_SPACE } from '../../ui/theme';
 
@@ -165,11 +166,11 @@ export default function MoodsScreen() {
         <Label tone="label">Presets</Label>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, alignItems: 'center', paddingRight: 8 }}>
           <Label size={9}>For</Label>
-          <Choice title="Whole home" on={presetTarget === null} onPress={() => setPresetTarget(null)} />
+          <Choice label="Whole home" chosen={presetTarget === null} onPress={() => setPresetTarget(null)} />
           {[...(snapshot?.rooms ?? []), ...(snapshot?.zones ?? [])]
             .filter((g) => g.lightIds.length)
             .map((g) => (
-              <Choice key={g.id} title={g.name} on={presetTarget === g.id} onPress={() => setPresetTarget(g.id)} />
+              <Choice key={g.id} label={g.name} chosen={presetTarget === g.id} onPress={() => setPresetTarget(g.id)} />
             ))}
         </ScrollView>
         {PRESET_CATEGORIES.map((c) => (

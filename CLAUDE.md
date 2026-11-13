@@ -291,6 +291,19 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   lights left or turned off. Not yet: auto-off after N minutes (needs a
   bridge-side timer, with rituals), gradient sweep, spotlight, room glow,
   the mood editor, the mood widget, scenes from the Hue app.
+- 2026-11-13: **Moods widget** (4×1, resizable): mood buttons, each its
+  colors as glowing dots (a path gets the night path mark) and its name (two
+  lines when the tile is tall enough). Up to 8, picked in order on its
+  configuration screen (long-press → Settings): my moods, paths, presets
+  (whole home), All off. Default: my moods and paths, then Relax, Bright,
+  Nightlight, Movie, All off last; a small widget keeps All off as its last
+  button. Tap = `FAST_APPLY_MOOD`: the tap carries `fastBatch` (one
+  [path, body] per light, built at render) and Kotlin sends it at once, the
+  first request finding the route, the rest 4 at a time. A button has a
+  champagne edge while the lights look like it (on/off, brightness ±4,
+  color, white in white mode); the tapped one is held for 4 s.
+  `registerWidgetConfigurationScreen` takes one screen: `WidgetConfig.tsx`
+  picks the screen by widget name.
 
 ## Vocabulary
 
@@ -405,6 +418,8 @@ feature.**
   **Never send a duration with `on: false`:** Hue then dims the light to its
   minimum on the way out, and it comes back on at ~0% (2026-11-13: every
   widget "off" did this for a day, the glows on the map shrank to nothing).
+- A tap may carry several requests: `fastBatch`, a JSON array of [path, body]
+  (moods, one request per light; `moodRequests` in `src/lib/moods.ts`).
 - **Map widget tap areas** (`src/lib/map/hitAreas.ts`): the widget library
   stacks tap areas sorted by id *as text* (`0-10` before `0-2`), so
   overlapping areas are unreliable. The plan is cut into non-overlapping

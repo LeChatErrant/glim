@@ -4,13 +4,15 @@ import { planAll, planToggleLight, planToggleRoom, type Planned } from '../lib/a
 import { getBridge } from '../lib/hue/bridge';
 import { cachedSnapshot, fetchSnapshot, saveCachedSnapshot, type Snapshot } from '../lib/hue/client';
 import { loadMap } from '../lib/map/map';
+import { loadMoods, planLights } from '../lib/moods';
 import { outsideNow } from '../lib/weather/source';
 import { weatherIcon } from '../ui/icons';
 import { sendMapOutside } from './outside';
+import { defaultItems, forgetMoodsWidgetSettings, isShowing, loadMoodsWidgetSettings, moodButtons, type MoodButton } from './moodButtons';
 import { forgetWidgetSettings, loadWidgetSettings, widgetPlan } from './settings';
-import { MapWidget, NotPaired, RoomsWidget } from './widgets';
+import { MapWidget, MoodsWidget, NotPaired, RoomsWidget } from './widgets';
 
-export const WIDGET_NAMES = ['Rooms', 'Map'] as const;
+export const WIDGET_NAMES = ['Rooms', 'Map', 'Moods'] as const;
 
 /** A state to draw, and whether it is only the last known one (bridge unreachable). */
 export type State = { snapshot: Snapshot | null; stale: boolean };
@@ -29,6 +31,18 @@ function withExpected(snapshot: Snapshot | null): Snapshot | null {
   for (const [id, e] of expected) if (e.until <= now) expected.delete(id);
   if (!expected.size) return snapshot;
   return { ...snapshot, lights: snapshot.lights.map((l) => (expected.has(l.id) ? { ...l, on: expected.get(l.id)!.on } : l)) };
+}
+
+/**
+ * The mood just tapped on a Moods widget, shown as on while the bridge catches up (lights report
+ * one by one, so the real state only matches the mood after a moment).
+ */
+let tappedMood: { key: string; until: number } | null = null;
+
+/** The buttons a Moods widget shows, for this state. */
+async function moodsWidgetButtons(widgetId: number, snapshot: Snapshot): Promise<MoodButton[]> {
+  const [moods, map, settings] = await Promise.all([loadMoods(), loadMap(), loadMoodsWidgetSettings(widgetId)]);
+  return moodButtons(settings.items ?? defaultItems(moods), moods, snapshot, map);
 }
 
 /**
@@ -85,6 +99,14 @@ export async function render(info: WidgetInfo, state: State, force = true) {
         weather={weather}
       />
     );
+  }
+  if (info.widgetName === 'Moods') {
+    const held = tappedMood && tappedMood.until > Date.now() ? tappedMood.key : null;
+    const buttons = snapshot
+      ? (await moodsWidgetButtons(info.widgetId, snapshot)).map((b) => ({ ...b, showing: held ? b.key === held : isShowing(snapshot, b) }))
+      : [];
+    if (alreadyDrawn(info, drawKey(info, [shown(snapshot, stale), stale, buttons.map((b) => [b.key, b.name, b.dots, b.showing])]), force)) return null;
+    return <MoodsWidget snapshot={snapshot} buttons={buttons} width={info.width} height={info.height} stale={stale} />;
   }
   if (alreadyDrawn(info, drawKey(info, [shown(snapshot, stale), stale]), force)) return null;
   return <RoomsWidget snapshot={snapshot} width={info.width} height={info.height} stale={stale} />;
@@ -143,7 +165,14 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
         plan = planToggleRoom(cached, data.roomId, target);
       } else if (cached && clickAction?.endsWith('TOGGLE_ALL') && target !== undefined) {
         plan = planAll(cached, target);
+      } else if (cached && clickAction?.endsWith('APPLY_MOOD') && typeof data.moodKey === 'string') {
+        const b = (await moodsWidgetButtons(widgetInfo.widgetId, cached)).find((x) => x.key === data.moodKey);
+        if (b?.lights) {
+          plan = planLights(cached, b.lights);
+          tappedMood = { key: b.key, until: Date.now() + HOLD_MS };
+        }
       }
+      if (clickAction?.endsWith('TOGGLE_ALL') && target === false) tappedMood = { key: 'off', until: Date.now() + HOLD_MS };
       if (plan) {
         const until = Date.now() + HOLD_MS;
         for (const l of plan.next.lights) if (cached?.lights.find((c) => c.id === l.id)?.on !== l.on) expected.set(l.id, { on: l.on, until });
@@ -165,7 +194,7 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
       break;
     }
     case 'WIDGET_DELETED':
-      await forgetWidgetSettings(widgetInfo.widgetId);
+      await Promise.all([forgetWidgetSettings(widgetInfo.widgetId), forgetMoodsWidgetSettings(widgetInfo.widgetId)]);
       break;
     default:
       break;

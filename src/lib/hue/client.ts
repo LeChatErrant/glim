@@ -163,7 +163,7 @@ export async function saveCachedSnapshot(snapshot: Snapshot) {
  */
 export type LightState = { on?: boolean; brightness?: number; xy?: { x: number; y: number }; mirek?: number; effect?: string; speed?: number };
 
-function stateBody(state: LightState) {
+export function stateBody(state: LightState) {
   const body: Record<string, unknown> = {};
   if (state.on !== undefined) body.on = { on: state.on };
   if (state.brightness !== undefined) body.dimming = { brightness: state.brightness };

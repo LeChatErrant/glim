@@ -4,7 +4,7 @@ import { hasTemperature, mirekFor, type Planned } from './actions';
 import { getBridge } from './hue/bridge';
 import { hexToXy, mirekToHex, mirekToKelvin } from './hue/color';
 import { EFFECTS, effectLabel, hasEffect } from './effects';
-import { setLight, type Light, type LightState, type Snapshot } from './hue/client';
+import { setLight, stateBody, type Light, type LightState, type Snapshot } from './hue/client';
 import { findRoute, lightsAlongRoute } from './map/route';
 import type { HomeMap } from './map/map';
 import { colorName, kelvinName } from './palette';
@@ -120,21 +120,30 @@ export function planMood(s: Snapshot, mood: Mood, map: HomeMap | null = null): P
   return planLights(s, moodLights(s, mood, map));
 }
 
+/** What to send a light to make it look like a mood light, given what it can do. */
+export function moodLightState(m: MoodLight, l: Light): LightState {
+  if (!m.on) return { on: false };
+  const brightness = l.brightness !== null ? m.brightness : undefined;
+  if (m.effect && l.effects?.includes(m.effect)) return { on: true, brightness, effect: m.effect };
+  // A mood without an effect stops one that's running.
+  const stop = hasEffect(l.effect) ? { effect: 'no_effect' } : {};
+  if (m.hex && l.kind === 'color') return { on: true, brightness, xy: hexToXy(m.hex), ...stop };
+  if (m.kelvin && hasTemperature(l)) return { on: true, brightness, mirek: mirekFor(l, m.kelvin), ...stop };
+  return { on: true, brightness, ...stop };
+}
+
+/** A mood as ready-made bridge requests, [path, body] per light (widget taps, sent from native code). */
+export function moodRequests(s: Snapshot, lights: MoodLight[]): [string, string][] {
+  const byId = new Map(s.lights.map((l) => [l.id, l]));
+  return lights.filter((m) => byId.has(m.lightId)).map((m) => [`light/${m.lightId}`, JSON.stringify(stateBody(moodLightState(m, byId.get(m.lightId)!)))]);
+}
+
 /** Sets each light as listed. Lights gone from the bridge are skipped. */
 export function planLights(s: Snapshot, lights: MoodLight[]): Planned | null {
   const byId = new Map(s.lights.map((l) => [l.id, l]));
   const steps = lights.filter((m) => byId.has(m.lightId));
   if (!steps.length) return null;
-  const state = (m: MoodLight, l: Light): LightState => {
-    if (!m.on) return { on: false };
-    const brightness = l.brightness !== null ? m.brightness : undefined;
-    if (m.effect && l.effects?.includes(m.effect)) return { on: true, brightness, effect: m.effect };
-    // A mood without an effect stops one that's running.
-    const stop = hasEffect(l.effect) ? { effect: 'no_effect' } : {};
-    if (m.hex && l.kind === 'color') return { on: true, brightness, xy: hexToXy(m.hex), ...stop };
-    if (m.kelvin && hasTemperature(l)) return { on: true, brightness, mirek: mirekFor(l, m.kelvin), ...stop };
-    return { on: true, brightness, ...stop };
-  };
+  const state = moodLightState;
   return {
     next: {
       ...s,

@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import Svg, { Circle, Defs, G, Path, Polyline, RadialGradient, Stop } from 'react-native-svg';
 
 import type { Snapshot } from '../lib/hue/client';
@@ -8,6 +8,7 @@ import { findRoute, type Route } from '../lib/map/route';
 import { PATH_TONES, pathLights, type PathRecipe, type PathTone } from '../lib/moods';
 import { PillButton, Slider } from './controls';
 import { Field, ModalSheet } from './ModalSheet';
+import { Choice } from './scan/parts';
 import { Label, Txt } from './text';
 import { color, hairline } from './theme';
 
@@ -63,7 +64,7 @@ export function PathSheet({
   const roomChoices = (pick: string, onPick: (id: string) => void, label: string) => (
     <Choices label={label}>
       {rooms.map((r) => (
-        <Choice key={r.id} title={mapRoomName(map, snapshot, r.id)} on={pick === r.id} onPress={() => onPick(r.id)} />
+        <Choice key={r.id} label={mapRoomName(map, snapshot, r.id)} chosen={pick === r.id} onPress={() => onPick(r.id)} />
       ))}
     </Choices>
   );
@@ -81,7 +82,7 @@ export function PathSheet({
       {roomChoices(path.to, (to) => set({ to }), 'To')}
       <Choices label="Light">
         {PATH_TONES.map((t) => (
-          <Choice key={t.id} title={t.label} dot={t.hex} on={path.tone === t.id} onPress={() => set({ tone: t.id as PathTone })} />
+          <Choice key={t.id} label={t.label} dot={t.hex} chosen={path.tone === t.id} onPress={() => set({ tone: t.id as PathTone })} />
         ))}
       </Choices>
       <View style={{ gap: 8 }}>
@@ -89,8 +90,8 @@ export function PathSheet({
         <Slider value={path.brightness} min={1} max={60} tint={tone.hex} ground={color.sheet} label="Path brightness" onChange={(brightness) => set({ brightness })} onCommit={(brightness) => set({ brightness })} />
       </View>
       <Choices label="Other lights">
-        <Choice title="Leave as they are" on={path.others === 'leave'} onPress={() => set({ others: 'leave' })} />
-        <Choice title="Turn off" on={path.others === 'off'} onPress={() => set({ others: 'off' })} />
+        <Choice label="Leave as they are" chosen={path.others === 'leave'} onPress={() => set({ others: 'leave' })} />
+        <Choice label="Turn off" chosen={path.others === 'off'} onPress={() => set({ others: 'off' })} />
       </Choices>
       <Field label="Name" value={name ?? pathName(map, snapshot, path)} onChange={setName} />
       <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -110,33 +111,6 @@ function Choices({ label, children }: { label: string; children: ReactNode }) {
         {children}
       </ScrollView>
     </View>
-  );
-}
-
-/** A pill to pick one option among a few: champagne outline when picked. */
-export function Choice({ title, on, onPress, dot }: { title: string; on: boolean; onPress: () => void; dot?: string }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="radio"
-      accessibilityState={{ selected: on }}
-      style={({ pressed }) => ({
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        height: 38,
-        paddingHorizontal: 14,
-        borderRadius: 19,
-        borderWidth: 1,
-        borderColor: on ? color.champagne : hairline(0.16),
-        opacity: pressed ? 0.6 : 1,
-      })}
-    >
-      {dot && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot, boxShadow: `0 0 8px 1px ${dot}88` }} />}
-      <Txt size={13} tone={on ? 'champagne' : 'ivory'} style={{ lineHeight: 17 }}>
-        {title}
-      </Txt>
-    </Pressable>
   );
 }
 

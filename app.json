@@ -64,6 +64,18 @@
               "resizeMode": "horizontal|vertical",
               "updatePeriodMillis": 1800000,
               "widgetFeatures": "reconfigurable|configuration_optional"
+            },
+            {
+              "name": "Moods",
+              "label": "Moods",
+              "description": "Your moods as buttons. Tap one to apply it",
+              "minWidth": "250dp",
+              "minHeight": "50dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 1,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000,
+              "widgetFeatures": "reconfigurable|configuration_optional"
             }
           ],
           "fonts": [
@@ -79,7 +91,8 @@
         {
           "widgets": [
             "Rooms",
-            "Map"
+            "Map",
+            "Moods"
           ]
         }
       ],
