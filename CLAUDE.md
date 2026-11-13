@@ -211,6 +211,17 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   around: blue at noon, orange at golden hour, navy at night; duller under
   clouds), and the weather happens inside it. Settings → "Weather on the map"
   off brings back the plain black map and hides location and Weather control.
+  2026-11-13: **the dark takes the hour, around a pebble** (options:
+  <https://claude.ai/artifact/LdU2LisqWsR3mFPsv3UYoo>, "Glim dark edge",
+  picked A2 Pebble). Pure black around a noon sky read as night, and the edge
+  hugged every wall. Past the band is now a deep shade of the hour's far
+  color (`sky.beyond`: navy at noon, plum at golden hour, near black at
+  night; fog keeps its own), reaching the whole Map tab (only fog still
+  fades back to black behind the text). The band is drawn around the
+  house's convex hull (`pebble`: notches and gaps filled, corners rounded),
+  with a small clear zone then a long smootherstep fade (`darkReach`), the
+  same on the widget. Rejected: a calm rounded-rectangle edge, a cast house
+  shadow, ground grain (round 1), and the oval (round 2).
 - 2026-11-12: **The outside is calm, and the widget plays it smoothly.**
   Everything moves slowly (snow, fireflies, leaves); lightning is rare
   and uneven (app: 10 to 30 s apart, near or far). The Map widget no longer

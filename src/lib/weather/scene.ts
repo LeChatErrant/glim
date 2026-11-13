@@ -1,7 +1,7 @@
 import type { Light } from '../hue/client';
 import { placeLights, walledRooms } from '../map/glow';
 import type { Plan } from '../map/map';
-import { clamp, dim, mix, rgba, rng, smooth, type RGB, type Sky } from './sky';
+import { clamp, dim, mix, rgba, rng, type RGB, type Sky } from './sky';
 
 // The outside drawn as SVG pieces. The app shows the static pieces with SvgXml and moves the
 // particle layers with Animated (Outside.tsx); the map widget gets still images and animated
@@ -98,8 +98,8 @@ export function svg(w: number, h: number, body: string) {
 /** The light of the hour around the house: near the walls, and further out. */
 const ambience = (sky: Sky) => ({ near: sky.near, far: sky.far });
 
-/** The dark past the band around the house: the screen's own `ink`, or the fog itself. */
-export const beyondInk = (sky: Sky, ink: string) => (sky.beyond ? rgba(sky.beyond) : ink);
+/** The dark past the band around the house: a deep shade of the hour's sky (black at night), or the fog itself. */
+export const beyondInk = (sky: Sky) => rgba(sky.beyond);
 
 /** An outdoor room's floor on the plan (theme `floorOutdoor`). */
 const OUTDOOR_FLOOR: RGB = [7, 7, 8];
@@ -371,20 +371,41 @@ function inside(p: Pt, pts: Pt[]) {
 }
 
 /**
- * How far we see past the walls, in dp, from the home's size: a clear zone (`clear`), then the
- * dark comes in over `fade`. The house is the light we see by; the garden is only around it.
+ * How far we see past the walls, in dp, from the home's size: a small clear zone (`clear`), then
+ * the dark comes in over a long `fade`. The house is the light we see by; the garden is only
+ * around it.
  */
 export function darkReach(geom: HouseGeom) {
   const side = geom.box ? Math.min(geom.box.w, geom.box.h) : 200;
-  return { clear: clamp(0.22 * side, 16, 80), fade: clamp(0.5 * side, 40, 150) };
+  return { clear: clamp(0.11 * side, 8, 40), fade: clamp(1.1 * side, 88, 330) };
 }
 
 /**
- * The dark all around: whatever the hour, we see a clear zone around the house, then the
- * outside dies away in a long soft fade (gentle at first, a long tail), rounding off corners and
- * filling small notches on the way. Drawn as a mask of the rooms' outlines stroked wider and
- * wider, each stroke's opacity worked out so the dark grows smoothly with the distance; many
- * steps, so daylight shows no bands. `ink` is the screen's own black.
+ * The house's outer shape, the "pebble" the band is drawn around: the convex hull of every
+ * room's corners, so notches and gaps between rooms don't show in the edge of the dark.
+ */
+function pebble(shapes: Pt[][]): Pt[] {
+  const p = shapes.flat().sort((a, b) => a.x - b.x || a.y - b.y);
+  if (p.length < 3) return p;
+  const cross = (o: Pt, a: Pt, b: Pt) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const half = (pts: Pt[]) => {
+    const h: Pt[] = [];
+    for (const q of pts) {
+      while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], q) <= 0) h.pop();
+      h.push(q);
+    }
+    return h.slice(0, -1);
+  };
+  return [...half(p), ...half([...p].reverse())];
+}
+
+/**
+ * The dark all around: whatever the hour, we see a little clear zone around the house, then the
+ * outside dies away in a long soft fade (slow at both ends), around the house's pebble shape
+ * (corners rounded off, notches filled). Drawn as a mask of the pebble stroked wider and wider,
+ * each stroke's opacity worked out so the dark grows smoothly with the distance; many steps, so
+ * daylight shows no bands. No blur: the widget's SVG renderer has none. `ink`: the dark's color
+ * (`beyondInk`).
  */
 export function darknessSvg(geom: HouseGeom, steps: number, area: Box, ink: string) {
   const mask = bandMask(geom, steps, area, 'dk', true);
@@ -402,12 +423,13 @@ const areaAttrs = (a: Box) => `x="${n(a.x)}" y="${n(a.y)}" width="${n(a.w)}" hei
 export function bandMask(geom: HouseGeom, steps: number, area: Box, id: string, dark = false) {
   const shapes = [...geom.indoor, ...geom.outdoor];
   if (!shapes.length) return '';
-  const d = shapes.map(poly).join('');
+  const d = poly(pebble(shapes));
   const { clear, fade } = darkReach(geom);
   const reach = clear + fade;
+  // Smootherstep: no visible start or end to the fade.
   const darkAt = (x: number) => {
-    const t = Math.max(0, x - clear) / fade;
-    return Math.max(1e-4, 1 - Math.exp(-2.4 * Math.pow(t, 1.3)) * (1 - smooth(0.7, 1, t)));
+    const t = Math.min(1, Math.max(0, x - clear) / fade);
+    return Math.max(1e-4, t * t * t * (t * (t * 6 - 15) + 10));
   };
   // Each stroke paints `near` over what is under it, with the opacity that leaves exactly the
   // dark wanted at its distance (the products telescope). Swapping the two colors inverts it.
@@ -605,8 +627,8 @@ const argb = (c: RGB, a = 1) => `#${[Math.round(clamp(a, 0, 1) * 255), ...c].map
  * plan itself is drawn on top by the widget (its floors cover the inside). What moves is
  * smooth vector animations the launcher plays on its own, each on its own period.
  */
-export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, opts: { u: number; radius: number; ink: string; background?: WidgetBackground }): WidgetOutside {
-  const { u, radius, ink, background = 'black' } = opts;
+export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, opts: { u: number; radius: number; background?: WidgetBackground }): WidgetOutside {
+  const { u, radius, background = 'black' } = opts;
   const black = background === 'black';
   const area = { x: -8, y: -8, w: W + 16, h: H + 16 };
   const areas = outdoorAreas(geom, u);
@@ -631,7 +653,7 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
     (puddles && `<g opacity="0.85">${puddles}</g>`) +
     (sky.wet ? areas.map((a, i) => glossSvg(a, a.box.x + a.box.w / 2, u, i)).join('') : '') +
     (mist && `<g opacity="0.8">${mist}</g>`) +
-    (black ? darknessSvg(geom, 40, area, beyondInk(sky, ink)) : '') +
+    (black ? darknessSvg(geom, 40, area, beyondInk(sky)) : '') +
     // The spill fades with the band (in fog on black, it glows out into the mist).
     (black && sky.weather === 'fog' ? spillSvg(sky, geom, u) : `<defs>${bandMask(geom, 40, area, 'nr')}</defs>${spillSvg(sky, geom, u, 'nr')}`);
 

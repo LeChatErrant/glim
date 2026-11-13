@@ -76,16 +76,18 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
         width,
         height,
         houseSvg(sky, geom, u, false) +
-          darknessSvg(geom, 64, area, beyondInk(sky, color.ground)) +
+          darknessSvg(geom, 64, area, beyondInk(sky)) +
           // The lamps' spill fades with the band, except in fog, where it glows out into the mist.
           (sky.weather === 'fog' ? spillSvg(sky, geom, u) : `<defs>${bandMask(geom, 64, area, 'nr')}</defs>${spillSvg(sky, geom, u, 'nr')}`),
       ),
     [sky, width, height, geom], // eslint-disable-line react-hooks/exhaustive-deps
   );
   // Fog lights up what lies past the house: fade it back to the screen's black over the
-  // headline and the numbers under the map, so their text stays readable.
+  // headline and the numbers under the map, so their text stays readable. (Other weathers'
+  // deep sky shade is dark enough for text: it reaches the whole screen.)
+  const fog = sky.weather === 'fog';
   const shade = useMemo(() => {
-    if (!sky.beyond) return '';
+    if (!fog) return '';
     const o = (y: number) => clamp(y / height, 0, 1).toFixed(3);
     const top = mapBox.y;
     const bottom = mapBox.y + mapBox.h;
@@ -99,7 +101,7 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
         `<stop offset="${o(bottom + 20)}" stop-color="${g}" stop-opacity="0.94"/><stop offset="1" stop-color="${g}" stop-opacity="1"/></linearGradient></defs>` +
         `<rect x="0" y="0" width="${width}" height="${height}" fill="url(#sh)"/>`,
     );
-  }, [sky.beyond, width, height, mapBox]);
+  }, [fog, width, height, mapBox]);
   // Wisps are drawn wider than the screen, so their edge never slides into view as they drift.
   const fogW = width + 2 * FOG_MARGIN;
   const fogLow = useMemo(() => fogSvg(sky, fogW, height, u, 0), [sky, fogW, height]);

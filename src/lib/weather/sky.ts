@@ -36,8 +36,11 @@ export type Sky = {
   washA: number;
   /** The light of fog and overcast: fog banks, the wisps of a pearl sky, mist on outdoor floors. */
   fog: RGB;
-  /** What lies past the band around the house: null is the screen's own black (fog: the fog). */
-  beyond: RGB | null;
+  /**
+   * What lies past the band around the house: a deep shade of the hour's far color (navy at
+   * noon, plum at golden hour, near black at night), or the fog's own color.
+   */
+  beyond: RGB;
 };
 
 type Key = { near: RGB; far: RGB; wash: RGB; washA: number };
@@ -209,7 +212,7 @@ export function skyAt(weather: WeatherKind, clockHour: number, sun: SunTimes = D
     wash: key('wash'),
     washA: (a.washA + (b.washA - a.washA) * t) * (1 - cloud * 0.85),
     fog,
-    beyond: weather === 'fog' ? dim(mist, 0.16) : null,
+    beyond: weather === 'fog' ? dim(mist, 0.16) : dim(ground[1], 0.2 + 0.14 * day),
   };
 }
 
