@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { getBridge } from '../hue/bridge';
+import { savedDataChanged } from '../savedData';
 import { apply, normalizingTransform } from './geometry';
 
 /** A point on the floor in meters. In a saved map: map coordinates (first wall along +x). */
@@ -69,6 +70,7 @@ export async function saveMap(map: HomeMap) {
     rotation = raw ? (JSON.parse(raw) as HomeMap).rotation : undefined;
   }
   await AsyncStorage.setItem(k, JSON.stringify({ ...map, rotation, updatedAt: Date.now() }));
+  savedDataChanged();
 }
 
 /** Turns the map on screen (degrees clockwise, kept in 0–360). */

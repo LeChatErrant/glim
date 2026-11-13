@@ -1,5 +1,10 @@
 package io.lechaterrant.huehttp
 
+import android.app.StatusBarManager
+import android.content.ComponentName
+import android.graphics.drawable.Icon
+import android.os.Build
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.records.Field
@@ -29,6 +34,17 @@ class CloudConfigRecord : Record {
   // Epoch milliseconds.
   @Field val expiresAt: Double = 0.0
   @Field val preferCloud: Boolean = false
+}
+
+class TileRecord : Record {
+  @Field val kind: String = ""
+  @Field val icon: String = "home"
+  @Field val label: String = ""
+  @Field val sub: String = ""
+  @Field val lights: List<String> = emptyList()
+  // JSON [[path, body], ...].
+  @Field val on: String = "[]"
+  @Field val off: String = "[]"
 }
 
 class FxRecord : Record {
@@ -76,6 +92,38 @@ class HueHttpModule : Module() {
     AsyncFunction("setCloudConfig") { c: CloudConfigRecord? ->
       val context = appContext.reactContext ?: return@AsyncFunction
       FastConfig.saveCloud(context, c?.let { FastConfig.Cloud(it.accessToken, it.expiresAt.toLong(), it.preferCloud) })
+    }
+
+    // What the Quick Settings tile does (GlimTile.kt). Null: nothing chosen.
+    AsyncFunction("setTileConfig") { t: TileRecord? ->
+      val context = appContext.reactContext ?: return@AsyncFunction
+      GlimTile.save(context, t?.let { GlimTile.Config(it.kind, it.icon, it.label, it.sub, it.lights, it.on, it.off) })
+    }
+
+    // Whether the tile is in the user's Quick Settings (as last seen by the tile itself).
+    Function("isTileAdded") {
+      appContext.reactContext?.let { GlimTile.added(it) } ?: false
+    }
+
+    // Android 13+: the system's "Add tile to Quick Settings?" prompt. Resolves with its result
+    // (StatusBarManager.TILE_ADD_REQUEST_RESULT_*: 2 added, 1 already there, 0 declined), or -1
+    // where it isn't available.
+    AsyncFunction("requestAddTile") { promise: Promise ->
+      val context = appContext.reactContext
+      if (context == null || Build.VERSION.SDK_INT < 33) {
+        promise.resolve(-1)
+        return@AsyncFunction
+      }
+      val bar = context.getSystemService(StatusBarManager::class.java)
+      bar.requestAddTileService(
+        ComponentName(context, GlimTileService::class.java),
+        "Glim",
+        Icon.createWithResource(context, R.drawable.glim_tile_home),
+        { it.run() },
+      ) { result ->
+        if (result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED || result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED) GlimTile.setAdded(context, true)
+        promise.resolve(result)
+      }
     }
 
     // Live sync of widgets with the bridge (foreground service). Started at app start, while it's allowed.

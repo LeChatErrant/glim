@@ -1,5 +1,7 @@
 import { NativeModule, requireNativeModule } from 'expo';
 
+import type { TileConfig } from './HueHttp.types';
+
 export type HueHttpRequest = {
   url: string;
   method?: 'GET' | 'PUT' | 'POST' | 'DELETE';
@@ -38,6 +40,15 @@ declare class HueHttpModule extends NativeModule<Events> {
     low: WidgetFx[];
     high: WidgetFx[];
   }): Promise<void>;
+  /**
+   * What the Quick Settings tile does (GlimTile.kt): `on` / `off` are JSON [[path, body], ...].
+   * Null: nothing chosen. Missing in builds older than the tile.
+   */
+  setTileConfig?(config: TileConfig | null): Promise<void>;
+  /** Whether the tile is in Quick Settings, as the tile last saw it. Missing in older builds. */
+  isTileAdded?(): boolean;
+  /** Android 13+ system prompt to add the tile: 2 added, 1 already there, 0 declined, -1 not available. */
+  requestAddTile?(): Promise<number>;
   /** Starts live sync (widgets follow the bridge's event stream) if enabled and paired. */
   startLive(): Promise<void>;
   setLiveEnabled(on: boolean): Promise<void>;

@@ -37,6 +37,9 @@ const PATHS = {
   star: 'm12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9Z',
   rotate: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4v4.5H15',
   fit: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
+  // Quick Settings tile set (also drawn natively: modules/hue-http/.../res/drawable/glim_tile_*.xml).
+  room: 'M10 20H4V4h16v16h-6M13.5 11.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z',
+  allLights: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3ZM2.5 9.5H4M20 9.5h1.5M4.4 3.4l1.1 1.1M19.6 3.4l-1.1 1.1',
 };
 
 export type IconName = keyof typeof PATHS;

@@ -5,6 +5,7 @@ import { getBridge } from '../lib/hue/bridge';
 import { cachedSnapshot, fetchSnapshot, saveCachedSnapshot, type Snapshot } from '../lib/hue/client';
 import { loadMap } from '../lib/map/map';
 import { loadMoods, planLights } from '../lib/moods';
+import { syncTile } from '../lib/tile';
 import { outsideNow } from '../lib/weather/source';
 import { weatherIcon } from '../ui/icons';
 import { sendMapOutside } from './outside';
@@ -137,6 +138,8 @@ async function fresh(): Promise<State> {
 /** Re-renders every placed widget that would change. Called by the app after it changes lights. */
 export async function refreshAllWidgets(snapshot?: Snapshot | null, stale = false) {
   const state: State = { snapshot: snapshot === undefined ? await cachedSnapshot() : snapshot, stale };
+  // The Quick Settings tile's requests follow the lights (and a paired bridge) too.
+  syncTile(state.snapshot);
   for (const widgetName of WIDGET_NAMES) {
     for (const info of await getWidgetInfo(widgetName)) {
       const widget = await render(info, state, false);

@@ -5,6 +5,7 @@ import { AppState } from 'react-native';
 import { HueHttp } from '../../../modules/hue-http';
 import type { Connection } from '../../ui/controls';
 import { refreshAllWidgets } from '../../widgets/task-handler';
+import { syncTile } from '../tile';
 import type { Planned } from '../actions';
 import { getBridge } from './bridge';
 import { cachedSnapshot, fetchSnapshot, saveCachedSnapshot, type Snapshot } from './client';
@@ -116,6 +117,8 @@ let subscribed = false;
 function listenToBridge() {
   if (subscribed) return;
   subscribed = true;
+  // The Quick Settings tile's requests, in case the lights changed since (refreshAllWidgets keeps them up to date).
+  syncTile();
   // Back from the background: the lights may have changed meanwhile.
   AppState.addEventListener('change', async (s) => {
     if (s !== 'active') return;

@@ -336,6 +336,23 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   sent to the lights (only the ones that changed), "Put back" restores how
   they were. Widget dots: the sweep's colors in order, the spotlight's
   color, the room glow's colors.
+- 2026-11-13: **Quick Settings tile** (Android). One "Glim" tile; Settings →
+  Quick Settings tile (`src/ui/settings/QuickTile.tsx`, with a preview and
+  Android 13's "Add tile" prompt) picks what it controls: All lights, a room,
+  a group, or a mood (my moods, paths, presets). Tap toggles: a room or the
+  home through its grouped light (on without fade, off without duration); a
+  mood applies, and while it shows (same test as the Moods widget's champagne
+  edge) a tap turns the lights it lit off. Label = the target's name;
+  subtitle = "3 lights on" / "Off", or "Mood" / "Path". Long-press opens
+  `glim://settings?section=tile`. Native like widget taps: `GlimTile.kt`
+  (TileService, declared in the `hue-http` module's manifest, no plugin
+  needed) sends the requests JS wrote in `huelab_fast` (`src/lib/tile.ts`,
+  `setTileConfig`; rewritten when the target, moods, map or lights change)
+  through `FastRoute.kt` (bridge or cloud, shared with `FastWidgetProvider`).
+  State: reads `light` + `zigbee_connectivity` when the shade opens and after
+  each tap; live sync nudges it on bridge events. Icons (room, all lights,
+  mood, sleep) are vector copies of `icons.tsx` paths. Sleep fade as a target
+  waits for the sleep fade ritual.
 
 ## Vocabulary
 

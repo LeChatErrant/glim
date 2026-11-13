@@ -9,6 +9,7 @@ import { findRoute, lightsAlongRoute } from './map/route';
 import type { FloorPoint, HomeMap, MapLight } from './map/map';
 import { glowRooms, spotWeights, sweepPositions } from './map/spread';
 import { colorName, kelvinName } from './palette';
+import { savedDataChanged } from './savedData';
 import { tintAt, tintHex, whiteFor, type Tint } from './tints';
 
 /** How one light looks in a mood. Off lights stay off; color lights keep a color or a white. */
@@ -69,6 +70,7 @@ export async function loadMoods(): Promise<Mood[]> {
 
 async function save(list: Mood[]) {
   await AsyncStorage.setItem(await key(), JSON.stringify(list));
+  savedDataChanged();
   return list;
 }
 

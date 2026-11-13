@@ -16,5 +16,28 @@
         <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
       </intent-filter>
     </receiver>
+    <!-- Quick Settings tile (GlimTile.kt): a room, the whole home or a mood. -->
+    <service
+      android:name="io.lechaterrant.huehttp.GlimTileService"
+      android:exported="true"
+      android:label="Glim"
+      android:icon="@drawable/glim_tile_home"
+      android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+      <intent-filter>
+        <action android:name="android.service.quicksettings.action.QS_TILE" />
+      </intent-filter>
+      <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE" android:value="true" />
+    </service>
+    <!-- Long-press on the tile: its section in Settings. -->
+    <activity
+      android:name="io.lechaterrant.huehttp.GlimTilePrefsActivity"
+      android:exported="true"
+      android:excludeFromRecents="true"
+      android:noHistory="true"
+      android:theme="@android:style/Theme.NoDisplay">
+      <intent-filter>
+        <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+      </intent-filter>
+    </activity>
   </application>
 </manifest>

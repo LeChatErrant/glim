@@ -52,9 +52,11 @@ object LiveSync {
     }
   }
 
-  /** Redraws every widget of the app (their JS task fetches the fresh state) and tells the app. */
+  /** Redraws every widget of the app (their JS task fetches the fresh state) and the tile, and tells the app. */
   fun notifyChange(context: Context) {
     listener?.invoke()
+    // The Quick Settings tile reads the lights again if the shade is open.
+    GlimTile.refresh(context)
     val manager = AppWidgetManager.getInstance(context)
     for (info in manager.installedProviders) {
       val provider = info.provider
