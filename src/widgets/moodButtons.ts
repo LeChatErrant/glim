@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { hasTemperature, mirekFor } from '../lib/actions';
-import { gamutHex, mirekToHex } from '../lib/hue/color';
+import { mirekToHex, readbackHexes } from '../lib/hue/color';
 import type { Snapshot } from '../lib/hue/client';
 import type { HomeMap } from '../lib/map/map';
 import { PRESETS, presetLights } from '../lib/moodPresets';
@@ -82,8 +82,8 @@ export function isShowing(s: Snapshot, b: MoodButton): boolean {
     if (!m.on) return true;
     if (m.brightness !== undefined && l.brightness !== null && Math.abs(l.brightness - m.brightness) > 4) return false;
     if (m.effect && l.effects?.includes(m.effect)) return l.effect === m.effect;
-    // Compared as the bridge reads it back: clamped to the light's gamut (a pure red comes back orange-red).
-    if (m.hex && l.kind === 'color') return !l.mirek && near(l.color, gamutHex(m.hex));
+    // Compared as the bridge can read it back: as sent, or clamped to the gamut (a pure red comes back orange-red).
+    if (m.hex && l.kind === 'color') return !l.mirek && readbackHexes(m.hex).some((h) => near(l.color, h));
     // A white: the light must be in white mode (a color light showing a color isn't), near that white.
     if (m.kelvin && hasTemperature(l)) return !!l.mirek && Math.abs(l.mirek - mirekFor(l, m.kelvin)) <= 12;
     return true;

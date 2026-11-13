@@ -349,6 +349,10 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   sent to the lights (only the ones that changed), "Put back" restores how
   they were. Widget dots: the sweep's colors in order, the spotlight's
   color, the room glow's colors.
+  The Moods widget's "showing" check (champagne edge) accepts a color as
+  the bridge can report it back: as sent through xy (echoed right after a
+  command) or clamped to gamut C once the light took it (a pure red reads
+  back orange-red); `readbackHexes` in `src/lib/hue/color.ts`.
 - 2026-11-13: **Quick Settings tile** (Android). One "Glim" tile; Settings →
   Quick Settings tile (`src/ui/settings/QuickTile.tsx`, with a preview and
   Android 13's "Add tile" prompt) picks what it controls: All lights, a room,

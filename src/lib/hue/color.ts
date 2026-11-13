@@ -114,15 +114,22 @@ const GAMUT_C: [number, number][] = [
 ];
 
 /**
- * How a color comes back from a color light: the bridge clamps colors outside the light's gamut
- * to its nearest edge, so a pure red reads back a little orange. Used to tell whether a light
- * shows a color it was sent (gamut C; older lights differ a little).
+ * How a color sent to a color light can come back, to tell whether the light shows it: as sent
+ * through xy (right after a command the bridge echoes what it got), and clamped to the gamut's
+ * nearest edge (once the light took it: a pure red reads back orange-red). Gamut C; older lights
+ * differ a little.
  */
+export function readbackHexes(hex: string): string[] {
+  const { x, y } = hexToXy(hex);
+  return [...new Set([hex, xyToHex(x, y), gamutHex(hex)])];
+}
+
+/** A color clamped to Hue's gamut C, as the bridge reports it once the light took it. */
 export function gamutHex(hex: string): string {
   const { x, y } = hexToXy(hex);
   const [a, b, c] = GAMUT_C;
   const side = (p: [number, number], q: [number, number]) => (q[0] - p[0]) * (y - p[1]) - (q[1] - p[1]) * (x - p[0]);
-  if (side(a, b) >= 0 && side(b, c) >= 0 && side(c, a) >= 0) return hex;
+  if (side(a, b) >= 0 && side(b, c) >= 0 && side(c, a) >= 0) return xyToHex(x, y);
   let best: [number, number] = [x, y];
   let d = Infinity;
   for (const [p, q] of [[a, b], [b, c], [c, a]] as const) {
