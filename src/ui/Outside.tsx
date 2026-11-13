@@ -5,7 +5,6 @@ import { SvgXml } from 'react-native-svg';
 import type { Light } from '../lib/hue/client';
 import { fitPlan, type Plan, type PlanView } from '../lib/map/map';
 import {
-  beyondInk,
   darknessSvg,
   fireflies,
   fogSvg,
@@ -20,7 +19,6 @@ import {
   ripples,
   sparklePoints,
   spillSvg,
-  bandMask,
   svg,
   svgBox,
   terraceFx,
@@ -63,7 +61,9 @@ const FILL = { position: 'absolute' as const, left: 0, top: 0, right: 0, bottom:
 
 export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, twist = 0, active }: Props) {
   // Screen geometry at the plain fit; the house layer then follows zoom, pan and twist.
-  const geom = useMemo(() => offset(houseGeom(plan, fitPlan(plan, mapBox.w, mapBox.h, PAD), lights), mapBox.x, mapBox.y), [plan, mapBox, lights]);
+  // mapBox is a new object on every render: depend on its numbers, or every render redraws.
+  const { x: mx, y: my, w: mw, h: mh } = mapBox;
+  const geom = useMemo(() => offset(houseGeom(plan, fitPlan(plan, mw, mh, PAD), lights), mx, my), [plan, mx, my, mw, mh, lights]);
 
   const ground = useMemo(
     () => svg(width, height, groundSvg(sky, width, height, geom, u)),
@@ -76,9 +76,10 @@ export function OutsideBack({ sky, width, height, plan, lights, mapBox, view, tw
         width,
         height,
         houseSvg(sky, geom, u, false) +
-          darknessSvg(geom, 64, area, beyondInk(sky)) +
-          // The lamps' spill fades with the band, except in fog, where it glows out into the mist.
-          (sky.weather === 'fog' ? spillSvg(sky, geom, u) : `<defs>${bandMask(geom, 64, area, 'nr')}</defs>${spillSvg(sky, geom, u, 'nr')}`),
+          // The lamps' spill fades under the dark, except in fog, where it glows out into the mist.
+          (sky.weather === 'fog'
+            ? darknessSvg(geom, area, sky.beyond, { cell: 4 }) + spillSvg(sky, geom, u)
+            : spillSvg(sky, geom, u) + darknessSvg(geom, area, sky.beyond, { cell: 4 })),
       ),
     [sky, width, height, geom], // eslint-disable-line react-hooks/exhaustive-deps
   );

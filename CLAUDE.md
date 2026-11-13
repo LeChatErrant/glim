@@ -221,7 +221,14 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   house's convex hull (`pebble`: notches and gaps filled, corners rounded),
   with a small clear zone then a long smootherstep fade (`darkReach`), the
   same on the widget. Rejected: a calm rounded-rectangle edge, a cast house
-  shadow, ground grain (round 1), and the oval (round 2).
+  shadow, ground grain (round 1), and the oval (round 2). Later the same day:
+  the dark is **one small image** (`src/lib/weather/field.ts`: a value every
+  4 dp in the app, 2 dp on the widget, a palette PNG the renderer stretches
+  and smooths), not 64 ever-wider strokes: those banded on the widget and
+  made the Map tab slow to show. The lamps' spill sits under it instead of
+  behind a second mask. The dark ends deeper (`sky.beyond` at 12 to 22% of
+  the far color), and on the widget the fade ends near the card's corners,
+  so it is seen to arrive.
 - 2026-11-12: **The outside is calm, and the widget plays it smoothly.**
   Everything moves slowly (snow, fireflies, leaves); lightning is rare
   and uneven (app: 10 to 30 s apart, near or far). The Map widget no longer

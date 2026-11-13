@@ -1,6 +1,7 @@
 import type { Light } from '../hue/client';
 import { placeLights, walledRooms } from '../map/glow';
 import type { Plan } from '../map/map';
+import { darkField, distToConvex, fieldImage, fieldPng, type Field } from './field';
 import { clamp, dim, mix, rgba, rng, type RGB, type Sky } from './sky';
 
 // The outside drawn as SVG pieces. The app shows the static pieces with SvgXml and moves the
@@ -92,14 +93,12 @@ function ellipseBlob(id: string, cx: number, cy: number, rx: number, ry: number,
 }
 
 export function svg(w: number, h: number, body: string) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${n(w)}" height="${n(h)}" viewBox="0 0 ${n(w)} ${n(h)}">${body}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${n(w)}" height="${n(h)}" viewBox="0 0 ${n(w)} ${n(h)}">${body}</svg>`;
 }
 
 /** The light of the hour around the house: near the walls, and further out. */
 const ambience = (sky: Sky) => ({ near: sky.near, far: sky.far });
 
-/** The dark past the band around the house: a deep shade of the hour's sky (black at night), or the fog itself. */
-export const beyondInk = (sky: Sky) => rgba(sky.beyond);
 
 /** An outdoor room's floor on the plan (theme `floorOutdoor`). */
 const OUTDOOR_FLOOR: RGB = [7, 7, 8];
@@ -262,7 +261,7 @@ function outdoorSvg(sky: Sky, geom: HouseGeom, u: number, sparkle: boolean) {
 
 /** An SVG showing only `box` of a drawing laid out in screen coordinates. */
 export function svgBox(box: Box, body: string) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${n(box.w)}" height="${n(box.h)}" viewBox="${n(box.x)} ${n(box.y)} ${n(box.w)} ${n(box.h)}">${body}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${n(box.w)}" height="${n(box.h)}" viewBox="${n(box.x)} ${n(box.y)} ${n(box.w)} ${n(box.h)}">${body}</svg>`;
 }
 
 /** Shallow puddles on a wet outdoor floor, holding the area's lights (they tremble in the app). */
@@ -373,11 +372,23 @@ function inside(p: Pt, pts: Pt[]) {
 /**
  * How far we see past the walls, in dp, from the home's size: a small clear zone (`clear`), then
  * the dark comes in over a long `fade`. The house is the light we see by; the garden is only
- * around it.
+ * around it. `card`: a widget's card, too small for the whole fade: the fade then ends near its
+ * corners, so the dark is seen to arrive.
  */
-export function darkReach(geom: HouseGeom) {
+export function darkReach(geom: HouseGeom, card?: Box) {
   const side = geom.box ? Math.min(geom.box.w, geom.box.h) : 200;
-  return { clear: clamp(0.11 * side, 8, 40), fade: clamp(1.1 * side, 88, 330) };
+  const base = { clear: clamp(0.11 * side, 8, 40), fade: clamp(1.1 * side, 88, 330) };
+  const shape = pebble([...geom.indoor, ...geom.outdoor]);
+  if (!card || shape.length < 3) return base;
+  const corners = [
+    { x: card.x, y: card.y },
+    { x: card.x + card.w, y: card.y },
+    { x: card.x, y: card.y + card.h },
+    { x: card.x + card.w, y: card.y + card.h },
+  ];
+  const reach = Math.min(base.clear + base.fade, 0.9 * Math.max(...corners.map((c) => distToConvex(c, shape))));
+  const clear = Math.min(base.clear, reach * 0.15);
+  return { clear, fade: Math.max(16, reach - clear) };
 }
 
 /**
@@ -399,18 +410,39 @@ function pebble(shapes: Pt[][]): Pt[] {
   return [...half(p), ...half([...p].reverse())];
 }
 
+/** The last few fields worked out (the app redraws often, the house rarely moves). */
+const fields: { key: string; field: Field }[] = [];
+
+/**
+ * How dark it is around the house, as a grid (`cell` dp): clear on the pebble and a little past
+ * it, then a smootherstep fade (no visible start or end). Null with no rooms.
+ */
+function houseField(geom: HouseGeom, area: Box, cell: number, card?: Box): Field | null {
+  const shape = pebble([...geom.indoor, ...geom.outdoor]);
+  if (shape.length < 3) return null;
+  const key = JSON.stringify([shape.map((p) => [Math.round(p.x), Math.round(p.y)]), area, cell, card]);
+  const hit = fields.find((f) => f.key === key);
+  if (hit) return hit.field;
+  const { clear, fade } = darkReach(geom, card);
+  const field = darkField(shape, area, cell, (d) => {
+    const t = clamp((d - clear) / fade, 0, 1);
+    return t * t * t * (t * (t * 6 - 15) + 10);
+  });
+  fields.unshift({ key, field });
+  fields.length = Math.min(fields.length, 6);
+  return field;
+}
+
 /**
  * The dark all around: whatever the hour, we see a little clear zone around the house, then the
  * outside dies away in a long soft fade (slow at both ends), around the house's pebble shape
- * (corners rounded off, notches filled). Drawn as a mask of the pebble stroked wider and wider,
- * each stroke's opacity worked out so the dark grows smoothly with the distance; many steps, so
- * daylight shows no bands. No blur: the widget's SVG renderer has none. `ink`: the dark's color
- * (`beyondInk`).
+ * (corners rounded off, notches filled), into `ink` (`sky.beyond`). Drawn as one small image
+ * the renderer stretches: smooth, no bands, and cheap to draw (the widget's SVG renderer has no
+ * blur, and dozens of wide strokes made the Map tab slow). `cell`: dp per value.
  */
-export function darknessSvg(geom: HouseGeom, steps: number, area: Box, ink: string) {
-  const mask = bandMask(geom, steps, area, 'dk', true);
-  if (!mask) return '';
-  return `<defs>${mask}</defs><rect ${areaAttrs(area)} fill="${ink}" mask="url(#dk)"/>`;
+export function darknessSvg(geom: HouseGeom, area: Box, ink: RGB, opts: { cell: number; card?: Box }) {
+  const f = houseField(geom, area, opts.cell, opts.card);
+  return f ? fieldImage(f, fieldPng(f, { as: 'alpha', color: ink })) : '';
 }
 
 const areaAttrs = (a: Box) => `x="${n(a.x)}" y="${n(a.y)}" width="${n(a.w)}" height="${n(a.h)}"`;
@@ -420,29 +452,11 @@ const areaAttrs = (a: Box) => `x="${n(a.x)}" y="${n(a.y)}" width="${n(a.w)}" hei
  * out with the dark (`dark` true: the other way round, white where the dark is). Drawing through
  * it lets the outside fade into a see-through widget instead of into black.
  */
-export function bandMask(geom: HouseGeom, steps: number, area: Box, id: string, dark = false) {
-  const shapes = [...geom.indoor, ...geom.outdoor];
-  if (!shapes.length) return '';
-  const d = poly(pebble(shapes));
-  const { clear, fade } = darkReach(geom);
-  const reach = clear + fade;
-  // Smootherstep: no visible start or end to the fade.
-  const darkAt = (x: number) => {
-    const t = Math.min(1, Math.max(0, x - clear) / fade);
-    return Math.max(1e-4, t * t * t * (t * (t * 6 - 15) + 10));
-  };
-  // Each stroke paints `near` over what is under it, with the opacity that leaves exactly the
-  // dark wanted at its distance (the products telescope). Swapping the two colors inverts it.
-  const [far, near] = dark ? ['#fff', '#000'] : ['#000', '#fff'];
-  const out: string[] = [];
-  let beyond = 1;
-  for (let i = steps; i >= 1; i--) {
-    const want = darkAt(((i - 0.5) / steps) * reach);
-    if (want / beyond < 0.9995) out.push(`<g opacity="${(1 - want / beyond).toFixed(3)}"><path d="${d}" fill="${near}" stroke="${near}" stroke-width="${n((2 * reach * i) / steps)}" stroke-linejoin="round"/></g>`);
-    beyond = want;
-  }
+export function bandMask(geom: HouseGeom, area: Box, id: string, opts: { cell: number; card?: Box; dark?: boolean }) {
+  const f = houseField(geom, area, opts.cell, opts.card);
+  if (!f) return '';
   const at = areaAttrs(area);
-  return `<mask id="${id}" maskUnits="userSpaceOnUse" ${at}><rect ${at} fill="${far}"/>${out.join('')}<path d="${d}" fill="${near}"/></mask>`;
+  return `<mask id="${id}" maskUnits="userSpaceOnUse" ${at}><rect ${at} fill="${opts.dark ? '#fff' : '#000'}"/>${fieldImage(f, fieldPng(f, { as: 'grey', invert: !opts.dark }))}</mask>`;
 }
 
 /**
@@ -631,6 +645,8 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
   const { u, radius, background = 'black' } = opts;
   const black = background === 'black';
   const area = { x: -8, y: -8, w: W + 16, h: H + 16 };
+  // The dark, 2 dp per value, its fade fitted to the card.
+  const dark = { cell: 2, card: { x: 0, y: 0, w: W, h: H } };
   const areas = outdoorAreas(geom, u);
   const fx = terraceFx(sky, areas, u);
   const clip = `<defs><clipPath id="wc"><rect x="0" y="0" width="${n(W)}" height="${n(H)}" rx="${n(radius)}" ry="${n(radius)}"/></clipPath></defs>`;
@@ -653,9 +669,13 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
     (puddles && `<g opacity="0.85">${puddles}</g>`) +
     (sky.wet ? areas.map((a, i) => glossSvg(a, a.box.x + a.box.w / 2, u, i)).join('') : '') +
     (mist && `<g opacity="0.8">${mist}</g>`) +
-    (black ? darknessSvg(geom, 40, area, beyondInk(sky)) : '') +
-    // The spill fades with the band (in fog on black, it glows out into the mist).
-    (black && sky.weather === 'fog' ? spillSvg(sky, geom, u) : `<defs>${bandMask(geom, 40, area, 'nr')}</defs>${spillSvg(sky, geom, u, 'nr')}`);
+    // The spill fades with the band: under the dark on black (in fog it glows out into the mist,
+    // over it), through the band's mask on see-through backgrounds.
+    (black
+      ? sky.weather === 'fog'
+        ? darknessSvg(geom, area, sky.beyond, dark) + spillSvg(sky, geom, u)
+        : spillSvg(sky, geom, u) + darknessSvg(geom, area, sky.beyond, dark)
+      : `<defs>${bandMask(geom, area, 'nr', dark)}</defs>${spillSvg(sky, geom, u, 'nr')}`);
 
   const high: WidgetFx[] = [];
   fx.splashes.forEach((p) => high.push({ kind: 'splash', x: p.x, y: p.y, w: 20 * u, h: 10 * u }));
@@ -668,7 +688,7 @@ export function widgetOutside(sky: Sky, W: number, H: number, geom: HouseGeom, o
   const ground = black
     ? groundSvg(sky, W, H, geom, u)
     : (background === 'glass' ? `<rect x="0" y="0" width="${n(W)}" height="${n(H)}" fill="${GLASS}"/>` : '') +
-      `<defs>${bandMask(geom, 40, area, 'gb')}${background === 'transparent' ? edgeMask(W, H, 28, 'ge') : ''}</defs>` +
+      `<defs>${bandMask(geom, area, 'gb', dark)}${background === 'transparent' ? edgeMask(W, H, 28, 'ge') : ''}</defs>` +
       (background === 'transparent' ? `<g mask="url(#ge)"><g mask="url(#gb)">${groundSvg(sky, W, H, geom, u)}</g></g>` : `<g mask="url(#gb)">${groundSvg(sky, W, H, geom, u)}</g>`);
   return { ground: still(ground), over: still(over), low, high };
 }

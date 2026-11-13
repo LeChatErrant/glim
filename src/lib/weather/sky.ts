@@ -212,7 +212,7 @@ export function skyAt(weather: WeatherKind, clockHour: number, sun: SunTimes = D
     wash: key('wash'),
     washA: (a.washA + (b.washA - a.washA) * t) * (1 - cloud * 0.85),
     fog,
-    beyond: weather === 'fog' ? dim(mist, 0.16) : dim(ground[1], 0.2 + 0.14 * day),
+    beyond: weather === 'fog' ? dim(mist, 0.16) : dim(ground[1], 0.12 + 0.1 * day),
   };
 }
 
