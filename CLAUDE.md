@@ -594,6 +594,15 @@ Two canvases:
   as 4-point stars linked by constellation lines, astrolabe light dial). The
   maintainer likes Celestial and wants to keep the idea within reach (a future
   theme or variant), but it is not the target now.
+  2026-11-13: **Celestial round 1** on the real plan and lights, next to
+  today's screenshots: <https://claude.ai/artifact/C4F5gyYNLsVGmbtGkL4feQ>
+  ("Glim Celestial, round 1"). Map tab A Star chart (navy, star trails, a
+  24 h ring with daylight arc and "now"), B Constellation (walls fade to
+  dots, lights linked per room), C Starlit Nocturne (today's look, jewels
+  with a cross of light, an optional hour ring); markers (sparkle, jewel +
+  flare, compass) and constellation lines; the Map widget in A and C; the
+  light screen as an astrolabe or a moon whose phase is the brightness.
+  Nothing built until the maintainer picks; round 2 adds the weather.
 
 Goal: luxury, about light, that anyone likes. **The map is the main
 feature.**
