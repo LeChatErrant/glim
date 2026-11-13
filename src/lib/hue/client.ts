@@ -53,6 +53,26 @@ export type Zone = {
   lightIds: string[];
 };
 
+/** One light in a bridge scene: what the scene sets it to. */
+export type SceneLight = { lightId: string; on: boolean; brightness?: number; xy?: { x: number; y: number }; mirek?: number; effect?: string };
+
+/**
+ * A scene stored on the bridge (made in the Hue app): shown in Glim as a mood "from the Hue app".
+ * `living`: a dynamic scene that plays its palette (recalled with `dynamic_palette`).
+ */
+export type BridgeScene = {
+  id: string;
+  name: string;
+  /** Its room or zone. */
+  groupId: string;
+  lights: SceneLight[];
+  /** The palette of a dynamic scene, as display colors; empty for plain scenes. */
+  palette: string[];
+  living: boolean;
+  /** What the bridge says now: 'inactive' once any of its lights changed since it was recalled. */
+  active: 'inactive' | 'static' | 'dynamic_palette';
+};
+
 export type Snapshot = {
   rooms: Room[];
   /** Groups (Hue zones). Missing in old cached snapshots. */
@@ -60,6 +80,8 @@ export type Snapshot = {
   lights: Light[];
   /** Grouped light for every light on the bridge ("all off"). Missing in old cached snapshots. */
   homeGroupId?: string | null;
+  /** Scenes made in the Hue app (not Glim's own ritual scenes). Missing in old cached snapshots. */
+  scenes?: BridgeScene[];
   fetchedAt: number;
 };
 
@@ -77,16 +99,59 @@ export async function call(path: string, method: 'GET' | 'PUT' | 'POST' | 'DELET
   return json.data ?? [];
 }
 
+/** Scenes Glim makes behind the scenes for rituals (day rhythm, the level after a sleep fade). */
+export const isGlimScene = (name: string) => /^Glim (rhythm |after sleep)/.test(name);
+
+function toScene(x: Resource): BridgeScene {
+  const lights = ((x.actions ?? []) as { target: { rid: string; rtype: string }; action: Record<string, any> }[])
+    .filter((a) => a.target?.rtype === 'light')
+    .map(({ target, action: a }): SceneLight => {
+      // A gradient light's scene color is its first point.
+      const xy = a.color?.xy ?? a.gradient?.points?.[0]?.color?.xy;
+      const effect = a.effects_v2?.action?.effect ?? a.effects?.effect;
+      return {
+        lightId: target.rid,
+        on: a.on?.on ?? true,
+        brightness: a.dimming?.brightness !== undefined ? Math.round(a.dimming.brightness) : undefined,
+        xy: xy && !a.color_temperature?.mirek ? xy : undefined,
+        mirek: a.color_temperature?.mirek ?? undefined,
+        effect: effect && effect !== 'no_effect' ? effect : undefined,
+      };
+    });
+  const palette = [
+    ...((x.palette?.color ?? []) as { color: { xy: { x: number; y: number } } }[]).map((c) => xyToHex(c.color.xy.x, c.color.xy.y)),
+    ...((x.palette?.color_temperature ?? []) as { color_temperature: { mirek: number } }[]).map((c) => mirekToHex(c.color_temperature.mirek)),
+  ];
+  return {
+    id: x.id,
+    name: x.metadata?.name ?? 'Mood',
+    groupId: x.group?.rid ?? '',
+    lights,
+    palette,
+    // The Hue app plays a scene's palette when it's set to (auto_dynamic); otherwise it's a still look.
+    living: palette.length > 0 && !!x.auto_dynamic,
+    active: x.status?.active ?? 'inactive',
+  };
+}
+
+/** Recalls a bridge scene: one request for all its lights. A living one plays its palette. */
+export const sceneRecallBody = (scene: BridgeScene) => ({ recall: { action: scene.living ? 'dynamic_palette' : 'active' } });
+
+export function recallScene(scene: BridgeScene) {
+  return call(`scene/${scene.id}`, 'PUT', sceneRecallBody(scene));
+}
+
 const SNAPSHOT_KEY = 'snapshot';
 
 export async function fetchSnapshot(): Promise<Snapshot> {
-  const [lightsRaw, devices, rooms, connectivity, homes, zones] = await Promise.all([
+  const [lightsRaw, devices, rooms, connectivity, homes, zones, scenes] = await Promise.all([
     call('light'),
     call('device'),
     call('room'),
     call('zigbee_connectivity'),
     call('bridge_home').catch(() => []),
     call('zone').catch(() => []),
+    call('scene').catch(() => []),
   ]);
   const deviceById = new Map(devices.map((d) => [d.id, d]));
   const roomByDevice = new Map<string, string>();
@@ -142,6 +207,7 @@ export async function fetchSnapshot(): Promise<Snapshot> {
       lightIds: z.children.filter((c: { rtype: string }) => c.rtype === 'light').map((c: { rid: string }) => c.rid),
     })),
     homeGroupId: homes[0]?.services?.find((x: { rtype: string }) => x.rtype === 'grouped_light')?.rid ?? null,
+    scenes: scenes.filter((x) => !isGlimScene(x.metadata?.name ?? '')).map(toScene),
     fetchedAt: Date.now(),
   };
   await AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));

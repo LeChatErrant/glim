@@ -111,13 +111,35 @@ object GlimTile {
       if ((l.optJSONObject("owner")?.optString("rid") ?: "") !in down) byId[l.getString("id")] = l
     }
     if (c.kind == "mood") {
-      val showing = moodShowing(byId, FastRoute.parseBatch(c.on))
+      val requests = FastRoute.parseBatch(c.on)
+      // A mood from the Hue app is a scene recall: the bridge knows whether it's still showing
+      // (its status turns "inactive" once any of its lights changes). A still one also counts
+      // when its lights look like it, like the app's test.
+      requests.firstOrNull { it.first.startsWith("scene/") }?.let { (path, _) ->
+        val scene = FastRoute.get(context, path)?.optJSONObject(0)
+        val active = scene?.optJSONObject("status")?.optString("active")
+        if (active != null && active != "inactive") return Shown(true, null)
+        return Shown(scene != null && sceneLooksLike(byId, scene), null)
+      }
+      val showing = moodShowing(byId, requests)
       return Shown(showing, null)
     }
     val reachable = c.lights.mapNotNull { byId[it] }
     if (reachable.isEmpty()) return Shown(false, if (c.lights.isEmpty()) "No lights" else "Unreachable")
     val on = reachable.count { it.optJSONObject("on")?.optBoolean("on") == true }
     return Shown(on > 0, if (on == 0) "Off" else if (on == 1) "1 light on" else "$on lights on")
+  }
+
+  /** Whether the lights look like a still scene: its actions read as light requests. */
+  private fun sceneLooksLike(byId: Map<String, JSONObject>, scene: JSONObject): Boolean {
+    if (scene.optBoolean("auto_dynamic") && (scene.optJSONObject("palette")?.optJSONArray("color")?.length() ?: 0) > 0) return false
+    val actions = scene.optJSONArray("actions") ?: return false
+    val requests = (0 until actions.length()).mapNotNull { i ->
+      val a = actions.getJSONObject(i)
+      val rid = a.optJSONObject("target")?.optString("rid") ?: return@mapNotNull null
+      "light/$rid" to (a.optJSONObject("action") ?: JSONObject()).toString()
+    }
+    return moodShowing(byId, requests)
   }
 
   /**

@@ -3,6 +3,7 @@ import { getWidgetInfo, requestWidgetUpdateById, type WidgetInfo, type WidgetTas
 import { planAll, planToggleLight, planToggleRoom, type Planned } from '../lib/actions';
 import { getBridge } from '../lib/hue/bridge';
 import { cachedSnapshot, fetchSnapshot, saveCachedSnapshot, type Snapshot } from '../lib/hue/client';
+import { planScene } from '../lib/hueMoods';
 import { loadMap } from '../lib/map/map';
 import { loadMoods, planLights } from '../lib/moods';
 import { syncTile } from '../lib/tile';
@@ -183,8 +184,9 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
         plan = planAll(cached, target);
       } else if (cached && clickAction?.endsWith('APPLY_MOOD') && typeof data.moodKey === 'string') {
         const b = (await moodsWidgetButtons(widgetInfo.widgetId, cached)).find((x) => x.key === data.moodKey);
+        const scene = b?.scene && cached.scenes?.find((x) => x.id === b.scene);
         if (b?.lights) {
-          plan = planLights(cached, b.lights);
+          plan = scene ? planScene(cached, scene) : planLights(cached, b.lights);
           tappedMood = { key: b.key, until: Date.now() + HOLD_MS };
         }
       }

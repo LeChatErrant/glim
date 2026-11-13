@@ -30,7 +30,7 @@ let drawn = '';
 const polls: number[] = [];
 let timer: ReturnType<typeof setInterval> | null = null;
 let interval = 0;
-/** Through Hue's cloud, polls are slower: each one is six requests to Hue's servers. */
+/** Through Hue's cloud, polls are slower: each one is seven requests to Hue's servers. */
 const CLOUD_POLL_MS = 10_000;
 let lastFetch = 0;
 

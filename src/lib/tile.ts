@@ -5,6 +5,7 @@ import { HueHttp, type TileConfig } from '../../modules/hue-http';
 import { moodButtons, type MoodItem } from '../widgets/moodButtons';
 import { getBridge } from './hue/bridge';
 import { cachedSnapshot, type Snapshot } from './hue/client';
+import { hueMoodPlace } from './hueMoods';
 import { loadMap, type HomeMap } from './map/map';
 import { loadMoods, moodRequests, type Mood } from './moods';
 import { onSavedDataChange } from './savedData';
@@ -14,7 +15,7 @@ import { onSavedDataChange } from './savedData';
  * and that target turned into ready-made bridge requests for native taps (GlimTile.kt in
  * modules/hue-http), written whenever the target, the moods, the map or the lights change.
  */
-export type TileTarget = { kind: 'home' } | { kind: 'room' | 'group'; id: string } | { kind: 'mood'; item: Extract<MoodItem, { kind: 'mood' | 'preset' }> };
+export type TileTarget = { kind: 'home' } | { kind: 'room' | 'group'; id: string } | { kind: 'mood'; item: Extract<MoodItem, { kind: 'mood' | 'preset' | 'scene' }> };
 
 const key = async () => `tile:${(await getBridge())?.id ?? 'none'}`;
 
@@ -51,9 +52,11 @@ export function tileConfig(t: TileTarget, s: Snapshot, moods: Mood[], map: HomeM
         kind: 'mood',
         icon: 'mood',
         label: b.name,
-        sub: b.path ? 'Path' : 'Mood',
+        // A mood from the Hue app says where it is ("Salon"): its name alone is often in every room.
+        sub: b.path ? 'Path' : b.scene ? sceneSub(s, b.scene) : 'Mood',
         lights: b.lights.map((l) => l.lightId),
-        on: JSON.stringify(moodRequests(s, b.lights)),
+        // A mood from the Hue app is one scene recall (GlimTile asks the bridge whether it's showing).
+        on: JSON.stringify(b.request ? [b.request] : moodRequests(s, b.lights)),
         // Tapped while it shows: the lights it turned on go off.
         off: JSON.stringify(lit.map((l) => [`light/${l.lightId}`, JSON.stringify(OFF)])),
       };
@@ -65,6 +68,11 @@ export function tileConfig(t: TileTarget, s: Snapshot, moods: Mood[], map: HomeM
   }
   return lightsTile('home', 'All lights', s.lights.map((l) => l.id), s.homeGroupId);
 }
+
+const sceneSub = (s: Snapshot, id: string) => {
+  const sc = s.scenes?.find((x) => x.id === id);
+  return sc ? hueMoodPlace(s, sc) : 'Mood';
+};
 
 let last = '';
 

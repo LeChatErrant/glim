@@ -8,6 +8,7 @@ import { hasEffect } from '../../lib/effects';
 import { roomIsOn, type Light } from '../../lib/hue/client';
 import { kelvinTint } from '../../lib/hue/color';
 import { useHome } from '../../lib/hue/useHome';
+import { hueMoodsFor, planScene } from '../../lib/hueMoods';
 import { isLit, lightLevel, lightsOf } from '../../lib/lights';
 import { loadMoods, planMood, type Mood } from '../../lib/moods';
 import { formatKelvin, loadRecentColors, near, type Swatch } from '../../lib/palette';
@@ -200,7 +201,16 @@ export default function RoomSheet() {
 
         {room && lights.length > 0 && (
           <View style={{ marginTop: 16 }}>
-            <MoodChips targetId={room.id} lights={lights} moods={moods} onChange={setMoods} onApply={(m) => act((s) => planMood(s, m))} />
+            <MoodChips
+              targetId={room.id}
+              lights={lights}
+              moods={moods}
+              onChange={setMoods}
+              onApply={(m) => act((s) => planMood(s, m))}
+              hueMoods={hueMoodsFor(snapshot, room.id)}
+              place={room.name}
+              onApplyHue={(sc) => act((s) => planScene(s, sc))}
+            />
           </View>
         )}
 

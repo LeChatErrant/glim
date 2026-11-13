@@ -580,7 +580,8 @@ export type MoodTile = MoodButton & { showing: boolean };
 function MoodButtonTile({ b, snapshot, stale, width, lines }: { b: MoodTile; snapshot: Snapshot; stale: boolean; width: number; lines: 1 | 2 }) {
   const off = b.lights === null;
   const home = snapshot.homeGroupId;
-  const batch = b.lights?.length ? JSON.stringify(moodRequests(snapshot, b.lights)) : null;
+  // A mood from the Hue app is one scene recall; the others, a request per light.
+  const batch = b.request ? JSON.stringify([b.request]) : b.lights?.length ? JSON.stringify(moodRequests(snapshot, b.lights)) : null;
   const click = off
     ? home
       ? { clickAction: 'FAST_TOGGLE_ALL', clickActionData: fastToggle(`grouped_light/${home}`, false, { all: 'home' }) }

@@ -4,6 +4,7 @@ import { Platform, View } from 'react-native';
 
 import { HueHttp } from '../../../modules/hue-http';
 import type { Snapshot } from '../../lib/hue/client';
+import { hueMoodPlace, hueMoods } from '../../lib/hueMoods';
 import { useHome } from '../../lib/hue/useHome';
 import { loadMap, type HomeMap } from '../../lib/map/map';
 import { PRESET_CATEGORIES, PRESETS } from '../../lib/moodPresets';
@@ -62,6 +63,7 @@ export function QuickTile() {
   const own = data.moods.filter((m) => !m.path && !m.recipe);
   const onMap = data.moods.filter((m) => m.path || m.recipe);
   const zones = snapshot.zones ?? [];
+  const fromHue = hueMoods(snapshot);
 
   return (
     <Section title="Quick Settings tile">
@@ -85,6 +87,9 @@ export function QuickTile() {
       </Group>
       {!!own.length && <Group title="My moods">{own.map((m) => chip({ kind: 'mood', item: { kind: 'mood', id: m.id } }, m.name))}</Group>}
       {!!onMap.length && <Group title="On your map">{onMap.map((m) => chip({ kind: 'mood', item: { kind: 'mood', id: m.id } }, m.name))}</Group>}
+      {!!fromHue.length && (
+        <Group title="From the Hue app">{fromHue.map((sc) => chip({ kind: 'mood', item: { kind: 'scene', id: sc.id } }, `${sc.name} · ${hueMoodPlace(snapshot, sc)}`))}</Group>
+      )}
       {morePresets ? (
         PRESET_CATEGORIES.map((c) => (
           <Group key={c} title={c}>

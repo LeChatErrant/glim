@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 
-import type { Light } from '../lib/hue/client';
+import type { BridgeScene, Light } from '../lib/hue/client';
 import { addMood, captureLights, deleteMood, moodLightColor, suggestName, updateMood, type Mood } from '../lib/moods';
 import { PillButton } from './controls';
+import { HueMoodPill } from './HueMoods';
 import { Icon } from './icons';
 import { Field, ModalSheet } from './ModalSheet';
 import { Label, Txt } from './text';
@@ -60,7 +61,8 @@ export function MoodDots({ mood, size = 8 }: { mood: Mood; size?: number }) {
 
 /**
  * The moods of a room or a group: tap to apply, long-press to update, rename or delete, and
- * "Save" keeps the lights as they are now (one red, one blue...) as a new mood.
+ * "Save" keeps the lights as they are now (one red, one blue...) as a new mood. Its moods from the
+ * Hue app (bridge scenes) follow; long-press one to keep it as my mood.
  */
 export function MoodChips({
   targetId,
@@ -68,6 +70,9 @@ export function MoodChips({
   moods,
   onChange,
   onApply,
+  hueMoods = [],
+  place = '',
+  onApplyHue,
 }: {
   targetId: string;
   /** The lights of the room or group, as they are now. */
@@ -75,6 +80,11 @@ export function MoodChips({
   moods: Mood[];
   onChange: (moods: Mood[]) => void;
   onApply: (m: Mood) => void;
+  /** Its moods from the Hue app. */
+  hueMoods?: BridgeScene[];
+  /** The room or group's name. */
+  place?: string;
+  onApplyHue?: (scene: BridgeScene) => void;
 }) {
   const [naming, setNaming] = useState<{ mood?: Mood; name: string } | null>(null);
   const mine = moods.filter((m) => m.targetId === targetId);
@@ -122,6 +132,9 @@ export function MoodChips({
         </Pressable>
         {mine.map((m) => (
           <MoodPill key={m.id} mood={m} onPress={() => onApply(m)} onLongPress={() => options(m)} />
+        ))}
+        {hueMoods.map((sc) => (
+          <HueMoodPill key={sc.id} scene={sc} place={place} onPress={() => onApplyHue?.(sc)} onKept={onChange} />
         ))}
       </ScrollView>
       {naming && (

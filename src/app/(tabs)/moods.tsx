@@ -7,6 +7,7 @@ import { effectLabel } from '../../lib/effects';
 import { mirekToHex } from '../../lib/hue/color';
 import type { Snapshot } from '../../lib/hue/client';
 import { useHome } from '../../lib/hue/useHome';
+import { planScene } from '../../lib/hueMoods';
 import { loadMap, type HomeMap } from '../../lib/map/map';
 import { PRESET_CATEGORIES, PRESETS, presetLights, type Preset } from '../../lib/moodPresets';
 import {
@@ -31,6 +32,7 @@ import {
 import { addFavorite, colorName, kelvinName } from '../../lib/palette';
 import { PillButton } from '../../ui/controls';
 import { Icon } from '../../ui/icons';
+import { HueMoodsSection } from '../../ui/HueMoods';
 import { ColorDot } from '../../ui/LightControls';
 import { KIND_TITLES, MapMoodSheet, type MapMoodKind } from '../../ui/MapMoodSheet';
 import { MoodDots } from '../../ui/MoodChips';
@@ -156,6 +158,8 @@ export default function MoodsScreen() {
             ))}
         </View>
       ))}
+
+      <HueMoodsSection snapshot={snapshot} onApply={(sc) => act((s) => planScene(s, sc))} onKept={setMoods} />
 
       <View style={{ marginTop: 32, gap: 10 }}>
         <Label tone="label">On your map</Label>

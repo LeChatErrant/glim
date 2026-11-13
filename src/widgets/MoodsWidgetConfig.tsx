@@ -6,6 +6,7 @@ import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { WidgetPreview, type WidgetConfigurationScreenProps } from 'react-native-android-widget';
 
 import { cachedSnapshot, type Snapshot } from '../lib/hue/client';
+import { hueMoodPlace, hueMoods } from '../lib/hueMoods';
 import { loadMap, type HomeMap } from '../lib/map/map';
 import { PRESET_CATEGORIES, PRESETS } from '../lib/moodPresets';
 import { isMapAware, loadMoods, type Mood } from '../lib/moods';
@@ -54,6 +55,7 @@ export function MoodsWidgetConfig({ widgetInfo, renderWidget, setResult }: Widge
   const buttons = snapshot ? moodButtons(items, moods, snapshot, map).map((b) => ({ ...b, showing: isShowing(snapshot, b) })) : [];
   const own = moods.filter((m) => !isMapAware(m));
   const paths = moods.filter(isMapAware);
+  const fromHue = hueMoods(snapshot);
 
   const save = async () => {
     await saveMoodsWidgetSettings(widgetInfo.widgetId, { items });
@@ -85,6 +87,11 @@ export function MoodsWidgetConfig({ widgetInfo, renderWidget, setResult }: Widge
       {!!paths.length && (
         <Section title="On your map">
           {paths.map((m) => chip({ kind: 'mood', id: m.id }, m.name))}
+        </Section>
+      )}
+      {!!fromHue.length && (
+        <Section title="From the Hue app">
+          {fromHue.map((sc) => chip({ kind: 'scene', id: sc.id }, `${sc.name} · ${hueMoodPlace(snapshot, sc)}`))}
         </Section>
       )}
       {PRESET_CATEGORIES.map((c) => (
