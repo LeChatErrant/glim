@@ -190,6 +190,35 @@ object FastConfig {
 /** CLIP v2 through Hue's cloud (Remote API). Publicly trusted certificate: default TLS checks. */
 object CloudClient {
   private const val BASE = "https://api.meethue.com/route/clip/v2/resource/"
+  private const val STREAM = "https://api.meethue.com/route/eventstream/clip/v2"
+
+  /** Hue's cloud answered the event stream with an error status (the body never holds the token). */
+  class StreamRefused(val status: Int, message: String) : java.io.IOException(message)
+
+  /**
+   * The bridge's event stream, relayed by Hue's cloud. Same events as on the home network. The
+   * caller reads `inputStream` and disconnects. Throws [StreamRefused] on an HTTP error.
+   */
+  fun openStream(accessToken: String, appKey: String): HttpURLConnection {
+    val conn = URL(STREAM).openConnection() as HttpURLConnection
+    conn.connectTimeout = 8000
+    conn.readTimeout = 5 * 60_000
+    conn.setRequestProperty("Authorization", "Bearer $accessToken")
+    conn.setRequestProperty("hue-application-key", appKey)
+    conn.setRequestProperty("Accept", "text/event-stream")
+    val status = try {
+      conn.responseCode
+    } catch (e: Exception) {
+      conn.disconnect()
+      throw e
+    }
+    if (status != 200) {
+      val body = try { conn.errorStream?.bufferedReader()?.use { it.readText().take(200) } ?: "" } catch (_: Exception) { "" }
+      conn.disconnect()
+      throw StreamRefused(status, "Cloud event stream: HTTP $status $body")
+    }
+    return conn
+  }
 
   fun request(path: String, method: String, body: String?, accessToken: String, appKey: String, timeoutMs: Int = 8000): BridgeResponse {
     val conn = URL(BASE + path).openConnection() as HttpURLConnection

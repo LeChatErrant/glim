@@ -137,6 +137,17 @@ async function refresh(bridgeId: string, account: CloudAccount): Promise<CloudAc
   return p;
 }
 
+/**
+ * The account with a token good for a while: renewed when it has less than 2 days left. Native
+ * code (widget taps, live sync away from home) uses the token without being able to renew it, and
+ * the app may not run for days.
+ */
+export async function freshCloud(bridgeId: string): Promise<CloudAccount | null> {
+  const account = await getCloud(bridgeId);
+  if (!account || account.expiresAt - Date.now() > 2 * 24 * 3600_000) return account;
+  return refresh(bridgeId, account).catch(() => getCloud(bridgeId));
+}
+
 async function remote(bridge: BridgeConfig, accessToken: string, path: string, method: string, body?: string) {
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), 10_000);

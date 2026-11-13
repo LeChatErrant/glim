@@ -168,8 +168,8 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   to the cloud in Kotlin (token synced to `huelab_fast`). Polls slow to 10 s
   on the cloud. The server is its own small Expo project in `server/`:
   exporting API routes from the app itself fails, because Expo Router
-  evaluates every app screen in Node. Not yet: live sync (event stream) away
-  from home; widgets redraw on taps and every 30 min there.
+  evaluates every app screen in Node. Live sync away from home: see
+  2026-11-13.
 - 2026-10-27: Settings is the 5th tab (`src/app/(tabs)/settings.tsx`), one
   component per section in `src/ui/settings/`, each mounted with one line.
   **Bridge** (`Bridge.tsx`): the bridge's name, model, software, address
@@ -360,6 +360,22 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   the bridge can report it back: as sent through xy (echoed right after a
   command) or clamped to gamut C once the light took it (a pure red reads
   back orange-red); `readbackHexes` in `src/lib/hue/color.ts`.
+- 2026-11-13: **Live sync away from home.** Hue's cloud doesn't relay the
+  event stream (tested on the real account: `GET
+  https://api.meethue.com/route/eventstream/clip/v2` with the bearer token
+  and app key answers 404), so on the cloud the live sync service *polls*:
+  `light` and `zigbee_connectivity` every 15 s while the screen is on, and
+  redraws widgets, the tile and the app only when what they show changed
+  (on, level, color, white, effect, reachability). It still asks for the
+  cloud stream every 30 min, in case Hue adds it. The service picks its route
+  itself: the cloud when the app is on the cloud route or the bridge doesn't
+  answer (and a Hue account is connected), and while there it tries the
+  bridge every 30 s (and when the screen turns on), going back to its event
+  stream as soon as it answers; a change of route redraws once. A token Hue
+  refuses waits for the app to write a renewed one. The app now renews the
+  cloud token when it has less than 2 days left (`freshCloud`), since native
+  code can't. Tested on mobile data, Wi-Fi off: a room turned off and on in
+  the Hue app showed on the widgets 5 to 15 s later.
 - 2026-11-13: **Quick Settings tile** (Android). One "Glim" tile; Settings →
   Quick Settings tile (`src/ui/settings/QuickTile.tsx`, with a preview and
   Android 13's "Add tile" prompt) picks what it controls: All lights, a room,
@@ -554,7 +570,8 @@ feature.**
 - **Live sync** (`modules/hue-http/.../LiveSync.kt`): foreground service on
   `/eventstream/clip/v2`, started from JS at app start, on widget taps, after
   boot and after an app update. It broadcasts `APPWIDGET_UPDATE` (widgets
-  refetch in JS) and emits `onChange` to the running app.
+  refetch in JS) and emits `onChange` to the running app. Away from home it
+  polls through Hue's cloud instead (no event stream there, see 2026-11-13).
 - `modules/ar-scan/`: local Expo module (Kotlin + ARCore). Camera view, floor
   detection, reticle cast on the floor, right-angle snapping, AR overlay of
   outlines and light markers. JS owns the scan logic (`src/app/scan.tsx`).

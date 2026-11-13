@@ -19,12 +19,16 @@ import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import java.net.HttpURLConnection
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Keeps widgets (and the open app) in sync with the bridge, whatever changed the lights: a
  * physical switch, the Hue app, a ritual. A foreground service listens to the bridge's event
- * stream while the screen is on, and redraws the widgets when something changes. With the screen
- * off it disconnects; turning the screen on reconnects and redraws at once (catch-up).
+ * stream while the screen is on, and redraws the widgets when something changes. Away from home
+ * (the bridge doesn't answer, or the app is on the cloud route) it follows the same events
+ * through Hue's cloud. With the screen off it disconnects; turning the screen on reconnects and
+ * redraws at once (catch-up).
  */
 object LiveSync {
   private const val PREFS = "huelab_fast"
@@ -79,6 +83,17 @@ class LiveSyncService : Service() {
   @Volatile private var screenOn = true
   @Volatile private var conn: HttpURLConnection? = null
   private var thread: Thread? = null
+  /** Following the lights through Hue's cloud (away from home) rather than the bridge. */
+  @Volatile private var onCloud = false
+  /** The route just changed: reconnect at once, without the backoff. */
+  @Volatile private var switching = false
+  /** Whether Hue's cloud serves the event stream (else a poll), and when it last refused it. */
+  @Volatile private var cloudStream = true
+  private var streamRefusedAt = 0L
+  /** A cloud token Hue refused: wait until the app writes a renewed one. */
+  @Volatile private var refusedToken: String? = null
+  /** The route of the last connection (true: the cloud), null before the first one. */
+  private var lastRoute: Boolean? = null
 
   private val redraw = Runnable { LiveSync.notifyChange(this) }
 
@@ -89,6 +104,7 @@ class LiveSyncService : Service() {
           screenOn = false
           // Closing the socket does network I/O: not on the main thread.
           conn?.let { c -> Thread { c.disconnect() }.start() }
+          synchronized(lock) { lock.notifyAll() }
         }
         Intent.ACTION_SCREEN_ON -> {
           screenOn = true
@@ -118,7 +134,9 @@ class LiveSyncService : Service() {
       addAction(Intent.ACTION_SCREEN_OFF)
     }
     if (Build.VERSION.SDK_INT >= 33) registerReceiver(screen, filter, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(screen, filter)
+    onCloud = FastConfig.loadCloud(this)?.preferCloud == true
     thread = Thread(::loop, "HueLiveSync").apply { isDaemon = true; start() }
+    Thread(::probeLoop, "HueLiveSyncProbe").apply { isDaemon = true; start() }
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
@@ -150,33 +168,176 @@ class LiveSyncService : Service() {
         stopSelf()
         return
       }
-      try {
-        val c = BridgeClient.openStream(
-          url = "https://${config.ip}/eventstream/clip/v2",
-          headers = mapOf("hue-application-key" to config.appKey, "Accept" to "text/event-stream"),
+      val cloud = FastConfig.loadCloud(this)
+      if (cloud == null) onCloud = false
+      val ok = if (onCloud && cloud != null) followCloud(config, cloud) else followBridge(config, cloud != null)
+      if (ok) backoff = MIN_BACKOFF_MS
+      if (alive && screenOn && !switching) {
+        synchronized(lock) { lock.wait(backoff) }
+        if (!ok) backoff = (backoff * 2).coerceAtMost(MAX_BACKOFF_MS)
+      }
+      switching = false
+    }
+  }
+
+  /**
+   * The bridge's own event stream, on the home network. False if it couldn't connect. When it
+   * doesn't answer and a Hue account is connected, switches to the cloud (away from home).
+   */
+  private fun followBridge(config: FastConfig.Config, hasCloud: Boolean): Boolean {
+    val c = try {
+      BridgeClient.openStream(
+        url = "https://${config.ip}/eventstream/clip/v2",
+        headers = mapOf("hue-application-key" to config.appKey, "Accept" to "text/event-stream"),
+        bridgeId = config.id,
+        pin = config.pin,
+      )
+    } catch (e: Exception) {
+      // Away from home, or the bridge is rebooting.
+      if (hasCloud && alive && screenOn) {
+        Log.i(TAG, "Bridge doesn't answer: following the lights through Hue's cloud")
+        onCloud = true
+        switching = true
+      }
+      return false
+    }
+    // The bridge answers (screen just turned on, or reconnected): have a connection ready for taps.
+    Thread { BridgeClient.warm(config) }.start()
+    connected(cloud = false)
+    read(c)
+    return true
+  }
+
+  /**
+   * Away from home: the bridge's events relayed by Hue's cloud, or, if the cloud refuses the
+   * stream, a light poll that redraws only when something changed. Meanwhile the bridge is tried
+   * now and then, and live sync goes back to it as soon as it answers.
+   */
+  private fun followCloud(config: FastConfig.Config, cloud: FastConfig.Cloud): Boolean {
+    if (cloud.accessToken == refusedToken) return false
+    if (!cloudStream && System.currentTimeMillis() - streamRefusedAt < STREAM_RETRY_MS) return pollCloud(config, cloud)
+    val c = try {
+      CloudClient.openStream(cloud.accessToken, config.appKey)
+    } catch (e: CloudClient.StreamRefused) {
+      Log.w(TAG, e.message ?: "Cloud event stream refused")
+      when {
+        // Token no longer valid: wait for the app to renew it (it writes the new one to prefs).
+        e.status == 401 || e.status == 403 -> refusedToken = cloud.accessToken
+        e.status == 429 || e.status >= 500 -> {}
+        else -> {
+          cloudStream = false
+          streamRefusedAt = System.currentTimeMillis()
+          return pollCloud(config, cloud)
+        }
+      }
+      return false
+    } catch (e: Exception) {
+      Log.w(TAG, "Cloud event stream: no answer", e)
+      return false
+    }
+    Log.i(TAG, "Following the lights through Hue's cloud (event stream)")
+    cloudStream = true
+    connected(cloud = true)
+    read(c)
+    return true
+  }
+
+  /** Light state and reachability through the cloud, every few seconds while the screen is on. */
+  private fun pollCloud(config: FastConfig.Config, cloud: FastConfig.Cloud): Boolean {
+    Log.i(TAG, "Following the lights through Hue's cloud (polling)")
+    connected(cloud = true)
+    var last: String? = null
+    while (alive && screenOn && onCloud && !switching) {
+      val now = FastConfig.loadCloud(this) ?: return false
+      if (now.accessToken != cloud.accessToken) return true
+      val sig = try {
+        val lights = CloudClient.request("light", "GET", null, now.accessToken, config.appKey)
+        val links = CloudClient.request("zigbee_connectivity", "GET", null, now.accessToken, config.appKey)
+        if (lights.status == 401) {
+          refusedToken = now.accessToken
+          return false
+        }
+        if (lights.status != 200) null else signature(lights.body, links.body.takeIf { links.status == 200 })
+      } catch (e: Exception) {
+        null
+      }
+      if (sig != null) {
+        if (last != null && sig != last) scheduleRedraw(DEBOUNCE_MS)
+        last = sig
+      }
+      synchronized(lock) { if (alive && screenOn && onCloud && !switching) lock.wait(POLL_MS) }
+    }
+    return true
+  }
+
+  /** What widgets show of the lights: on, level, color, white, effect, reachability. */
+  private fun signature(lights: String, links: String?): String {
+    val out = StringBuilder()
+    val data = JSONObject(lights).optJSONArray("data") ?: JSONArray()
+    for (i in 0 until data.length()) {
+      val l = data.getJSONObject(i)
+      out.append(l.optString("id")).append(':')
+        .append(l.optJSONObject("on")?.optBoolean("on")).append(',')
+        .append(l.optJSONObject("dimming")?.optDouble("brightness")).append(',')
+        .append(l.optJSONObject("color")?.optJSONObject("xy")?.toString()).append(',')
+        .append(l.optJSONObject("color_temperature")?.opt("mirek")).append(',')
+        .append(l.optJSONObject("effects_v2")?.optJSONObject("status")?.optString("effect")).append(';')
+    }
+    links?.let { raw ->
+      val list = JSONObject(raw).optJSONArray("data") ?: JSONArray()
+      for (i in 0 until list.length()) list.getJSONObject(i).let { out.append(it.optString("id")).append('=').append(it.optString("status")).append(';') }
+    }
+    return out.toString()
+  }
+
+  /** After a change of route (left home, came back), the lights may have changed in between: redraw. */
+  private fun connected(cloud: Boolean) {
+    if (lastRoute != null && lastRoute != cloud) scheduleRedraw(0)
+    lastRoute = cloud
+  }
+
+  /** Reads an event stream until it ends, the screen turns off or the route changes. */
+  private fun read(c: HttpURLConnection) {
+    conn = c
+    try {
+      c.inputStream.bufferedReader().use { reader ->
+        while (alive && screenOn) {
+          val line = reader.readLine() ?: break
+          // Light state, reachability or the rooms changed: redraw once the burst settles.
+          if (line.startsWith("data:") && RELEVANT.containsMatchIn(line)) scheduleRedraw(DEBOUNCE_MS)
+        }
+      }
+    } catch (e: Exception) {
+      // Network lost, bridge rebooting, screen turned off or route switched mid-read: the loop retries.
+    } finally {
+      c.disconnect()
+      conn = null
+    }
+  }
+
+  /** While on the cloud: is the bridge reachable again (back home)? Then go back to it. */
+  private fun probeLoop() {
+    while (alive) {
+      synchronized(lock) { lock.wait(PROBE_MS) }
+      if (!alive || !onCloud || !screenOn) continue
+      val config = FastConfig.load(this) ?: continue
+      val home = try {
+        BridgeClient.request(
+          url = "https://${config.ip}/clip/v2/resource/bridge",
+          headers = mapOf("hue-application-key" to config.appKey),
           bridgeId = config.id,
           pin = config.pin,
-        )
-        conn = c
-        backoff = MIN_BACKOFF_MS
-        // The bridge answers (screen just turned on, or reconnected): have a connection ready for taps.
-        Thread { BridgeClient.warm(config) }.start()
-        c.inputStream.bufferedReader().use { reader ->
-          while (alive && screenOn) {
-            val line = reader.readLine() ?: break
-            // Light state, reachability or the rooms changed: redraw once the burst settles.
-            if (line.startsWith("data:") && RELEVANT.containsMatchIn(line)) scheduleRedraw(DEBOUNCE_MS)
-          }
-        }
-      } catch (e: Exception) {
-        // Away from home, bridge rebooting, screen turned off mid-read: retry below.
-      } finally {
-        conn?.disconnect()
-        conn = null
+          timeoutMs = 1500,
+        ).status == 200
+      } catch (_: Exception) {
+        false
       }
-      if (alive && screenOn) {
-        synchronized(lock) { lock.wait(backoff) }
-        backoff = (backoff * 2).coerceAtMost(MAX_BACKOFF_MS)
+      if (home && onCloud) {
+        Log.i(TAG, "Bridge answers again: back to its own event stream")
+        onCloud = false
+        switching = true
+        conn?.disconnect()
+        synchronized(lock) { lock.notifyAll() }
       }
     }
   }
@@ -207,11 +368,17 @@ class LiveSyncService : Service() {
   companion object {
     @Volatile var running = false
       private set
+    private const val TAG = "HueLiveSync"
     private const val CHANNEL_ID = "live_sync"
     private const val NOTIFICATION_ID = 7301
     private const val DEBOUNCE_MS = 450L
     private const val MIN_BACKOFF_MS = 2_000L
     private const val MAX_BACKOFF_MS = 60_000L
+    /** Away from home: how often the bridge is tried, and the poll's pace if the cloud has no stream. */
+    private const val PROBE_MS = 30_000L
+    private const val POLL_MS = 15_000L
+    /** After the cloud refused the stream, poll this long before asking for it again. */
+    private const val STREAM_RETRY_MS = 30 * 60_000L
     private val RELEVANT = Regex("\"type\"\\s*:\\s*\"(light|grouped_light|zigbee_connectivity|room|zone|device)\"")
   }
 }

@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { HueHttp } from '../../../modules/hue-http';
 import type { BridgeConfig } from './bridge';
-import { cloudRequest, getCloud, watchCloud } from './cloud';
+import { cloudRequest, freshCloud, getCloud, watchCloud } from './cloud';
 
 /**
  * How requests reach the bridge: straight to it on the home network ("local"), or through Hue's
@@ -40,10 +40,10 @@ function setRoute(next: Route, bridgeId: string) {
   syncNativeCloud(bridgeId).catch(() => null);
 }
 
-/** Widget taps are sent from native code: give it the cloud token and the route to try first. */
+/** Widget taps and live sync run in native code: give it the cloud token and the route to try first. */
 export async function syncNativeCloud(bridgeId: string) {
   await loaded;
-  const account = await getCloud(bridgeId);
+  const account = await freshCloud(bridgeId);
   await HueHttp.setCloudConfig?.(account ? { accessToken: account.accessToken, expiresAt: account.expiresAt, preferCloud: route === 'cloud' } : null);
 }
 
