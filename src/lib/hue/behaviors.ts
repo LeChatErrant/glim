@@ -14,7 +14,7 @@ export const SCRIPT = {
   wakeUp: 'ff8957e3-2eb9-4699-a0c8-ad2cb3ede704',
   /** Fades lights out, starting at the set time. Config: end_state 'turn_off', fade_out_duration, style 'basic'. */
   goToSleep: '7e571ac6-f363-42e1-809a-4cbf6523ed72',
-  /** Recalls scenes at a time. Config: when, what: [{ group, recall: scene }]. */
+  /** Recalls scenes at a time. Config: when_extended: { start_at: { time_point }, recurrence_days? }, what: [{ group, recall: scene }], where. */
   schedule: '7238c707-8693-4f19-9095-ccdc1444d228',
 } as const;
 

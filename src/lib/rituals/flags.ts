@@ -1,7 +1,8 @@
 /**
- * Pieces built but not yet tested on the phone (it was away): they stay off until they are.
- * - Arriving and leaving home: the geofence and its location permission moment.
+ * Switches for pieces that wait on a test. Both passed on 2026-11-13 and are on:
+ * - Arriving and leaving home (geofence logic tested with simulated crossings on the real lights;
+ *   a real crossing needs "Allow all the time", granted by the maintainer).
  * - After sleep: the level reset a minute after a sleep fade (lights otherwise come back at ~1%).
  */
-export const ARRIVE_READY = false;
-export const AFTER_SLEEP_READY = false;
+export const ARRIVE_READY = true;
+export const AFTER_SLEEP_READY = true;

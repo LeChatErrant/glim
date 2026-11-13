@@ -15,6 +15,9 @@ import { DAYS, type Clock, type Day } from './time';
  */
 type Refs = { behavior: string; scenes: string[] };
 
+/** What a plug does in the level scene (it has no level). */
+const PLUG_ACTION = { dynamics: { duration: 0 } };
+
 const key = async () => `after-sleep:${(await getBridge())?.id ?? 'none'}`;
 
 async function load(): Promise<Record<string, Refs>> {
@@ -57,10 +60,10 @@ export async function putAfterSleep(s: Snapshot, ritualId: string, targets: stri
     for (const t of targets) {
       const g = group(s, t);
       if (!g) continue;
-      // The bridge wants every light of the room in the scene; plugs have no level and are left out of it by an empty action.
+      // The bridge wants every light of the room in the scene, with something to do (an empty action is refused).
       const actions: SceneAction[] = s.lights
         .filter((l) => g.lightIds.includes(l.id))
-        .map((l) => ({ target: { rid: l.id, rtype: 'light' }, action: l.brightness !== null ? { dimming: { brightness: Math.max(1, Math.min(100, levels(l.id))) } } : {} }) as SceneAction);
+        .map((l) => ({ target: { rid: l.id, rtype: 'light' }, action: l.brightness !== null ? { dimming: { brightness: Math.max(1, Math.min(100, levels(l.id))) } } : PLUG_ACTION }) as SceneAction);
       const scene = await createScene('Glim after sleep', g.ref, actions);
       scenes.push(scene);
       what.push({ group: g.ref, recall: { rid: scene, rtype: 'scene' } });
@@ -72,8 +75,9 @@ export async function putAfterSleep(s: Snapshot, ritualId: string, targets: stri
       enabled,
       metadata: { name: 'Glim after sleep' },
       configuration: {
-        when: { time_point: { type: 'time', time }, ...(days.length ? { recurrence_days: shift(days, at >= 1440 ? 1 : 0) } : {}) },
+        when_extended: { start_at: { time_point: { type: 'time', time } }, ...(days.length ? { recurrence_days: shift(days, at >= 1440 ? 1 : 0) } : {}) },
         what,
+        where: what.map((w) => ({ group: w.group })),
       },
     });
     const all = await load();

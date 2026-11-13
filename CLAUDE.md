@@ -380,12 +380,13 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   way (tested): Stop also sets each light to the level it has reached.
   Go-to-sleep leaves lights off at their lowest level, so they came back on at
   ~1% (tested): each sleep fade gets a second behavior, "Glim after sleep"
-  (`afterSleep.ts`, Hue's Schedule script `7238c707…`), a minute after the
-  fade, recalling a scene with only a brightness per light (a light accepts a
-  brightness while off and keeps it, tested): "now" puts back each light's
-  level from the start, scheduled ones 100%. A fade stopped by hand pauses it
-  for that night. Built, **off** until tested on the bridge
-  (`AFTER_SLEEP_READY`): until then a sleep fade leaves lights at ~1%. **Day rhythm** = a bridge
+  (`afterSleep.ts`, Hue's Schedule script `7238c707…`: config
+  `when_extended.start_at`, `what`, `where`; plain `when` is refused), a
+  minute after the fade, recalling a scene with only a brightness per light
+  (a light accepts a brightness while off and keeps it; plugs get a no-op
+  `dynamics`, an empty action is refused): "now" puts back each light's level
+  from the start, scheduled ones 100%. A fade stopped by hand pauses it for
+  that night. Tested end to end: 5 min fade from 70%, back on at 70%. **Day rhythm** = a bridge
   smart scene per room or group, one scene per point of the curve (made
   behind the scenes, named "Glim rhythm 7:00"), 30 min fades between points;
   presets Natural, Night owl, Early bird, points draggable. The bridge takes
@@ -397,15 +398,16 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   light of the hour. Widget fast taps don't (plain `on`). Rhythms are stored
   per bridge on the phone with the IDs of what they made; one whose smart
   scenes were deleted elsewhere shows as off. **Arriving / leaving home**
-  (built, **off** until tested on the phone: `ARRIVE_READY` in
-  `src/lib/rituals/flags.ts`) = a geofence on the phone (`src/lib/rituals/arrive.ts`, expo-location +
+  = a geofence on the phone (`src/lib/rituals/arrive.ts`, expo-location +
   expo-task-manager; fine and background location, "Allow all the time",
   explained in a permission moment). Arriving applies a mood (paths too) or
   turns a room, group or the whole home on, optionally only after sunset
   (computed on the phone, `sun.ts`) and within active hours; leaving turns
   everything off. The home circle is set from the phone's position while
   home (precise, kept on the phone; not the weather's ~1 km location); the
-  first event after setting it only records the side. Hue's
+  first event after setting it only records the side. Tested with simulated
+  crossings on the real lights (arrive, leave, sunset, hours); a real
+  crossing needs "Allow all the time", which only the maintainer can grant. Hue's
   `geofence_client` was looked at and not used: it only stores "at home",
   the phone still has to notice it, and the bridge would need a scene per
   mood. Not done: path auto-off (a bridge timer recalls a scene, and a
