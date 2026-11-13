@@ -371,11 +371,16 @@ function AllButton({ snapshot, pill, shadow = false }: { snapshot: Snapshot; pil
  * the outside drawn (`outside`), the plan sits further in, so the clear zone around the house
  * and its fade have room.
  */
-export function mapWidgetBox(width: number, height: number, outside = false) {
+/** Height of the Map widget's mood strip (a row of pills). */
+const STRIP_H = 48;
+
+export function mapWidgetBox(width: number, height: number, outside = false, strip = false) {
   const wide = width / height >= 1.6;
+  // Tall: the mood strip takes a row above the bottom bar. Wide: it sits in the side panel.
+  const below = 58 + (strip && !wide ? STRIP_H : 0);
   const box = wide
     ? { left: 9, top: 8, width: Math.round(width * 0.52), height: height - 16 }
-    : { left: 12, top: 10, width: width - 24, height: height - 10 - 58 };
+    : { left: 12, top: 10, width: width - 24, height: height - 10 - below };
   return { wide, box, pad: outside ? (wide ? 22 : 30) : 6, radius: 24 };
 }
 
@@ -414,6 +419,7 @@ export function MapWidget({
   outside = false,
   background = 'black',
   weather,
+  moods = [],
 }: {
   snapshot: Snapshot | null;
   plan: Plan | null;
@@ -425,11 +431,13 @@ export function MapWidget({
   background?: WidgetBackground;
   /** Shown top left when the weather is on. */
   weather?: WidgetWeather | null;
+  /** The mood strip: 0 to 3 mood buttons along the bottom (or in the side panel). */
+  moods?: MoodTile[];
 } & Freshness) {
   if (!snapshot) return <NotPaired />;
   if (!plan) return <SetupCard title="Tap to set up" hint="Map · scan or draw your home" />;
   const lights = snapshot.lights;
-  const { wide, box, pad } = mapWidgetBox(width, height, outside);
+  const { wide, box, pad } = mapWidgetBox(width, height, outside, moods.length > 0);
   const f = fitPlan(plan, box.width, box.height, pad);
   const X = (u: number) => box.left + f.x(u);
   const Y = (v: number) => box.top + f.y(v);
@@ -518,8 +526,31 @@ export function MapWidget({
           }}
         >
           <HomeTitle snapshot={snapshot} stale={stale} size={22} shadow={clear} />
+          {moods.length ? (
+            <FlexWidget style={{ flexDirection: 'column', width: 'match_parent' }}>
+              {moods.slice(0, Math.max(1, Math.floor((height - 20 - 46 - 40) / 38))).map((b) => (
+                <MoodStripPill key={b.key} b={b} snapshot={snapshot} stale={stale} shadow={clear} width={width - (box.left + box.width + 14) - 12} />
+              ))}
+            </FlexWidget>
+          ) : (
+            []
+          )}
           <AllButton snapshot={snapshot} pill={false} shadow={clear} />
         </FlexWidget>
+      ) : (
+        []
+      )}
+      {!wide && moods.length ? (
+        <FlexWidget style={{ marginLeft: 12, marginTop: height - 52 - STRIP_H + 8, width: width - 24, height: STRIP_H - 6, flexDirection: 'row' }}>
+          {moods.slice(0, 3).map((b) => (
+            <MoodStripPill key={b.key} b={b} snapshot={snapshot} stale={stale} shadow={clear} width={Math.floor((width - 24) / Math.min(3, moods.length)) - 6} />
+          ))}
+        </FlexWidget>
+      ) : (
+        []
+      )}
+      {wide ? (
+        []
       ) : (
         <FlexWidget
           style={{
@@ -580,8 +611,8 @@ const powerSvg = (c: string) =>
 
 export type MoodTile = MoodButton & { showing: boolean };
 
-/** One mood button: its colors on top, its name below. Champagne edge while the lights look like it. */
-function MoodButtonTile({ b, snapshot, stale, width, lines }: { b: MoodTile; snapshot: Snapshot; stale: boolean; width: number; lines: 1 | 2 }) {
+/** What tapping a mood button does: start a sleep fade, all off, or apply the mood (natively when it can). */
+function moodClick(b: MoodTile, snapshot: Snapshot) {
   const off = b.lights === null;
   const home = snapshot.homeGroupId;
   // A mood from the Hue app is one scene recall; the others, a request per light.
@@ -605,9 +636,26 @@ function MoodButtonTile({ b, snapshot, stale, width, lines }: { b: MoodTile; sna
             : { fastBatch: batch, moodKey: b.key },
         }
       : { clickAction: 'OPEN_APP' };
+  return click;
+}
+
+/** A mood button's mark: its colors as dots, the night path mark, a moon (sleep fade) or power (All off). */
+function moodMark(b: MoodTile, stale: boolean, compact = false) {
   const live = b.showing && !stale;
-  const dotSvg = b.sleep ? moonSvg(live ? color.champagne : color.secondary) : off ? powerSvg(live ? color.champagne : color.secondary) : moodDotsSvg(b.dots, b.path, stale);
-  const dotW = off || b.sleep ? 14 : b.path ? 46 : Math.max(14, Math.min(5, b.dots.length) * 10 + 4);
+  const off = b.lights === null;
+  // Compact (the Map widget's strip): a path shows its one color, so its name has room.
+  const path = b.path && !compact;
+  const dots = compact ? b.dots.slice(0, b.path ? 1 : 3) : b.dots;
+  const svg = b.sleep ? moonSvg(live ? color.champagne : color.secondary) : off ? powerSvg(live ? color.champagne : color.secondary) : moodDotsSvg(dots, path, stale);
+  const width = off || b.sleep ? 14 : path ? 46 : Math.max(14, Math.min(5, dots.length) * 10 + 4);
+  return { svg, width };
+}
+
+/** One mood button: its colors on top, its name below. Champagne edge while the lights look like it. */
+function MoodButtonTile({ b, snapshot, stale, width, lines }: { b: MoodTile; snapshot: Snapshot; stale: boolean; width: number; lines: 1 | 2 }) {
+  const click = moodClick(b, snapshot);
+  const live = b.showing && !stale;
+  const { svg: dotSvg, width: dotW } = moodMark(b, stale);
   return (
     <FlexWidget
       {...click}
@@ -667,6 +715,39 @@ export function MoodsWidget({ snapshot, buttons, width, height, stale }: { snaps
           ))}
         </FlexWidget>
       ))}
+    </FlexWidget>
+  );
+}
+
+/** A mood button on the Map widget's strip: a slim pill with its mark and name. */
+function MoodStripPill({ b, snapshot, stale, shadow, width }: { b: MoodTile; snapshot: Snapshot; stale: boolean; shadow: boolean; width: number }) {
+  const live = b.showing && !stale;
+  const mark = moodMark(b, stale, true);
+  return (
+    <FlexWidget
+      {...moodClick(b, snapshot)}
+      accessibilityLabel={`${b.name}${live ? ', on now' : ''}`}
+      style={{
+        width,
+        height: 34,
+        marginHorizontal: 3,
+        marginVertical: 2,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 10,
+        borderRadius: 17,
+        borderWidth: 1,
+        borderColor: live ? tint(color.champagne, 0.55) : line(0.14),
+        backgroundColor: live ? tint(color.champagne, 0.08) : shadow ? ('rgba(7, 7, 8, 0.45)' as Rgba) : ('rgba(0, 0, 0, 0)' as Rgba),
+      }}
+    >
+      <SvgWidget svg={mark.svg} style={{ width: mark.width, height: 14 }} />
+      <TextWidget
+        text={b.name}
+        maxLines={1}
+        truncate="END"
+        style={{ fontFamily: font.displayRegular, fontSize: 13, marginLeft: 7, color: live ? (color.champagne as Hex) : stale ? SECONDARY : IVORY, ...(shadow ? SHADOW : {}) }}
+      />
     </FlexWidget>
   );
 }

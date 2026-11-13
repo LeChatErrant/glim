@@ -7,11 +7,15 @@ import { WidgetPreview, type WidgetConfigurationScreenProps } from 'react-native
 
 import { cachedSnapshot, type Snapshot } from '../lib/hue/client';
 import { loadMap, type HomeMap } from '../lib/map/map';
+import { loadMoods, type Mood } from '../lib/moods';
+import { loadBridgeRituals, type BridgeRitual } from '../lib/rituals/rituals';
 import type { WidgetBackground } from '../lib/weather/scene';
 import { PillButton } from '../ui/controls';
 import { Choice } from '../ui/scan/parts';
 import { Display, Label, Txt } from '../ui/text';
 import { color } from '../ui/theme';
+import { isShowing, moodButtons } from './moodButtons';
+import { MoodItemPicker, prepareMoodItems } from './MoodItemPicker';
 import { loadWidgetSettings, saveWidgetSettings, widgetPlan, type MapWidgetSettings } from './settings';
 import { render } from './task-handler';
 import { MapWidget } from './widgets';
@@ -32,8 +36,14 @@ export function MapWidgetConfig({ widgetInfo, renderWidget, setResult }: WidgetC
   const [map, setMap] = useState<HomeMap | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [settings, setSettings] = useState<MapWidgetSettings | null>(null);
+  const [moods, setMoods] = useState<Mood[]>([]);
+  const [rituals, setRituals] = useState<BridgeRitual[]>([]);
 
   useEffect(() => {
+    loadMoods().then(setMoods);
+    loadBridgeRituals()
+      .then((b) => setRituals(b.rituals))
+      .catch(() => null);
     Promise.all([loadMap(), cachedSnapshot(), loadWidgetSettings(widgetInfo.widgetId)]).then(([m, s, w]) => {
       setMap(m);
       setSnapshot(s);
@@ -56,8 +66,11 @@ export function MapWidgetConfig({ widgetInfo, renderWidget, setResult }: WidgetC
   const ph = Math.round(widgetInfo.height * k);
   const plan = widgetPlan(map, settings);
 
+  const strip = snapshot ? moodButtons(settings.moods ?? [], moods, snapshot, map).map((b) => ({ ...b, showing: isShowing(snapshot, b) })) : [];
+
   const save = async () => {
     await saveWidgetSettings(widgetInfo.widgetId, settings);
+    await prepareMoodItems(snapshot, settings.moods ?? []);
     const widget = await render(widgetInfo, { snapshot, stale: false });
     if (widget) renderWidget(widget);
     setResult('ok');
@@ -72,7 +85,7 @@ export function MapWidgetConfig({ widgetInfo, renderWidget, setResult }: WidgetC
           key={JSON.stringify(settings)}
           width={pw}
           height={ph}
-          renderWidget={() => <MapWidget snapshot={snapshot} plan={plan} width={pw} height={ph} stale={false} background={settings.background} />}
+          renderWidget={() => <MapWidget snapshot={snapshot} plan={plan} width={pw} height={ph} stale={false} background={settings.background} moods={strip} />}
         />
       </View>
 
@@ -96,6 +109,22 @@ export function MapWidgetConfig({ widgetInfo, renderWidget, setResult }: WidgetC
           <Choice label="Turn left" onPress={() => turn(-90)} />
           <Choice label="Turn right" onPress={() => turn(90)} />
         </View>
+      </View>
+
+      <View style={{ gap: 14 }}>
+        <Label tone="label">Mood buttons</Label>
+        <Txt size={12} tone="muted">
+          Up to 3 moods along the bottom of the map (in the side panel when the widget is wide). Tap a mood again to remove it.
+        </Txt>
+        <MoodItemPicker
+          items={settings.moods ?? []}
+          onChange={(m) => setSettings({ ...settings, moods: m })}
+          max={3}
+          moods={moods}
+          snapshot={snapshot}
+          rituals={rituals}
+          off={false}
+        />
       </View>
 
       <View style={{ gap: 10 }}>

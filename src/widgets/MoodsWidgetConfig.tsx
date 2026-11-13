@@ -1,22 +1,19 @@
 import { Geist_400Regular, Geist_500Medium } from '@expo-google-fonts/geist';
 import { Jost_200ExtraLight, Jost_300Light, Jost_400Regular } from '@expo-google-fonts/jost';
 import { useFonts } from 'expo-font';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { WidgetPreview, type WidgetConfigurationScreenProps } from 'react-native-android-widget';
 
 import { cachedSnapshot, type Snapshot } from '../lib/hue/client';
-import { hueMoodPlace, hueMoods } from '../lib/hueMoods';
 import { loadMap, type HomeMap } from '../lib/map/map';
-import { PRESET_CATEGORIES, PRESETS } from '../lib/moodPresets';
-import { isMapAware, loadMoods, type Mood } from '../lib/moods';
+import { loadMoods, type Mood } from '../lib/moods';
 import { loadBridgeRituals, type BridgeRitual } from '../lib/rituals/rituals';
-import { ensureSleepPool } from '../lib/rituals/sleepNow';
 import { PillButton } from '../ui/controls';
-import { Choice } from '../ui/scan/parts';
-import { Display, Label, Txt } from '../ui/text';
+import { Display, Txt } from '../ui/text';
 import { color } from '../ui/theme';
-import { defaultItems, isShowing, itemKey, loadMoodsWidgetSettings, MAX_ITEMS, moodButtons, saveMoodsWidgetSettings, sleepItems, type MoodItem, type SleepItem } from './moodButtons';
+import { defaultItems, isShowing, itemKey, loadMoodsWidgetSettings, MAX_ITEMS, moodButtons, saveMoodsWidgetSettings, type MoodItem } from './moodButtons';
+import { MoodItemPicker, prepareMoodItems } from './MoodItemPicker';
 import { render } from './task-handler';
 import { MoodsWidget } from './widgets';
 
@@ -46,33 +43,14 @@ export function MoodsWidgetConfig({ widgetInfo, renderWidget, setResult }: Widge
 
   const { moods, map, snapshot } = data;
   const keys = items.map(itemKey);
-  const toggle = (i: MoodItem) => {
-    const k = itemKey(i);
-    if (keys.includes(k)) setItems(items.filter((x) => itemKey(x) !== k));
-    else if (items.length < MAX_ITEMS) setItems([...items, i]);
-  };
-  const chip = (i: MoodItem, label: string) => {
-    const at = keys.indexOf(itemKey(i));
-    return <Choice key={itemKey(i)} label={at >= 0 ? `${at + 1} · ${label}` : label} chosen={at >= 0} onPress={() => toggle(i)} />;
-  };
-
   const k = Math.min(1, (width - 48) / widgetInfo.width);
   const pw = Math.round(widgetInfo.width * k);
   const ph = Math.round(widgetInfo.height * k);
   const buttons = snapshot ? moodButtons(items, moods, snapshot, map).map((b) => ({ ...b, showing: isShowing(snapshot, b) })) : [];
-  const own = moods.filter((m) => !isMapAware(m));
-  const paths = moods.filter(isMapAware);
-  const fromHue = hueMoods(snapshot);
-
-  const sleeps = snapshot ? sleepItems(snapshot, rituals) : [];
-  // A sleep fade picked before and changed since in the Rituals tab stays listed as picked.
-  const sleepChoices = [...items.filter((i): i is SleepItem => i.kind === 'sleep' && !sleeps.some((x) => itemKey(x) === itemKey(i))), ...sleeps];
 
   const save = async () => {
     await saveMoodsWidgetSettings(widgetInfo.widgetId, { items });
-    // A sleep fade button: the bridge must have what its tap changes (made once).
-    const targets = items.flatMap((i) => (i.kind === 'sleep' ? i.targets : []));
-    if (snapshot && targets.length) await ensureSleepPool(snapshot, targets).catch(() => null);
+    await prepareMoodItems(snapshot, items);
     const widget = await render(widgetInfo, { snapshot, stale: false });
     if (widget) renderWidget(widget);
     setResult('ok');
@@ -93,42 +71,12 @@ export function MoodsWidgetConfig({ widgetInfo, renderWidget, setResult }: Widge
         Pick up to {MAX_ITEMS}, in the order you want them. A small widget shows the first ones and keeps All off last. Presets apply to the whole home.
       </Txt>
 
-      {!!own.length && (
-        <Section title="My moods">
-          {own.map((m) => chip({ kind: 'mood', id: m.id }, m.name))}
-        </Section>
-      )}
-      {!!paths.length && (
-        <Section title="On your map">
-          {paths.map((m) => chip({ kind: 'mood', id: m.id }, m.name))}
-        </Section>
-      )}
-      {!!fromHue.length && (
-        <Section title="From the Hue app">
-          {fromHue.map((sc) => chip({ kind: 'scene', id: sc.id }, `${sc.name} · ${hueMoodPlace(snapshot, sc)}`))}
-        </Section>
-      )}
-      {PRESET_CATEGORIES.map((c) => (
-        <Section key={c} title={c}>
-          {PRESETS.filter((p) => p.category === c).map((p) => chip({ kind: 'preset', id: p.id }, p.name))}
-        </Section>
-      ))}
-      {!!sleepChoices.length && <Section title="Sleep fade">{sleepChoices.map((i) => chip(i, `${i.name} · ${i.fadeMin} min`))}</Section>}
-      <Section title="Other">{chip({ kind: 'off' }, 'All off')}</Section>
+      <MoodItemPicker items={items} onChange={setItems} max={MAX_ITEMS} moods={moods} snapshot={snapshot} rituals={rituals} />
 
       <View style={{ gap: 10, marginTop: 8 }}>
         <PillButton title="Save" kind="primary" onPress={save} disabled={!items.length} />
         <PillButton title="Cancel" kind="text" onPress={() => setResult('cancel')} />
       </View>
     </ScrollView>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <View style={{ gap: 10 }}>
-      <Label tone="label">{title}</Label>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{children}</View>
-    </View>
   );
 }

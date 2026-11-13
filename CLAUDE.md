@@ -531,6 +531,23 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   seen: the drift itself (nobody home to look; the bridge accepted the
   scenes and reports the lights playing). Not yet: a mood icon, living
   preview while editing (it plays once saved).
+- 2026-11-13: **Settings sections and the Map widget's mood strip.**
+  Settings now also has Home location (the Arriving home circle, the
+  location access it needs with a shortcut to Android's settings, Forget),
+  Map (scan more, edit on screen, start over: `resetMap`), Lights and rooms
+  (every room, group and light opening its own screen, where renaming
+  already lives; lights folded away), Widgets (each placed widget opens its
+  configuration inside the app, `src/app/widget/[id].tsx`, the same screen
+  as long-pressing it) and About ("Glim 0.1.0 · <commit>": `app.config.js`
+  adds the build's commit to `extra`). Rows are `SettingsRow`
+  (`src/ui/settings/parts.tsx`). Not built: Appearance (light theme,
+  accent): Glim is designed dark-only (Nocturne), and a light theme would
+  touch every screen and widget. Hiding lights from the app isn't built
+  either. The Map widget can show up to 3 mood buttons (`settings.moods`),
+  picked like the Moods widget's (`MoodItemPicker`, shared): a row of pills
+  above the bottom bar when tall (the plan gets 48 dp less,
+  `mapWidgetBox(…, strip)`, also for the outside), stacked in the side
+  panel when wide. Taps are the Moods widget's (`moodClick`).
 
 ## Vocabulary
 
@@ -675,7 +692,7 @@ feature.**
   (sunrise and sunset, offline), `time.ts` (days, next run). Bridge calls in
   `src/lib/hue/behaviors.ts`. Screens: `src/ui/rituals/` (cards, day and
   time pickers, one sheet per ritual type).
-- `src/ui/settings/`: one component per Settings section.
+- `src/ui/settings/`: one component per Settings section (rows: `SettingsRow` in `parts.tsx`).
 - `src/ui/`: the Nocturne UI kit. `theme.ts` (tokens, fonts), `text.tsx`
   (`Label`, `Display`, `Txt`), `controls.tsx` (pill buttons, switch, slider,
   connection badge, SVG `Glow`), `icons.tsx`, `FloorPlan.tsx` (the map and the

@@ -43,10 +43,29 @@ function withExpected(snapshot: Snapshot | null): Snapshot | null {
  */
 let tappedMood: { key: string; until: number } | null = null;
 
-/** The buttons a Moods widget shows, for this state. */
-async function moodsWidgetButtons(widgetId: number, snapshot: Snapshot): Promise<MoodButton[]> {
-  const [moods, map, settings] = await Promise.all([loadMoods(), loadMap(), loadMoodsWidgetSettings(widgetId)]);
-  return moodButtons(settings.items ?? defaultItems(moods), moods, snapshot, map);
+/** The mood buttons a widget shows, for this state: a Moods widget's, or a Map widget's strip. */
+async function widgetMoodButtons(info: Pick<WidgetInfo, 'widgetId' | 'widgetName'>, snapshot: Snapshot): Promise<MoodButton[]> {
+  const [moods, map] = await Promise.all([loadMoods(), loadMap()]);
+  const items =
+    info.widgetName === 'Map'
+      ? ((await loadWidgetSettings(info.widgetId)).moods ?? [])
+      : ((await loadMoodsWidgetSettings(info.widgetId)).items ?? defaultItems(moods));
+  return moodButtons(items, moods, snapshot, map);
+}
+
+/** Mood buttons as drawn: each shows as on while the lights look like it (or just after its tap). */
+async function shownMoodButtons(info: Pick<WidgetInfo, 'widgetId' | 'widgetName'>, snapshot: Snapshot | null, stale: boolean) {
+  if (!snapshot) return [];
+  const held = tappedMood && tappedMood.until > Date.now() ? tappedMood.key : null;
+  const list = await widgetMoodButtons(info, snapshot);
+  // Sleep fade buttons: the bridge has what a tap changes, and they show while a fade runs.
+  const sleepTargets = list.flatMap((b) => b.sleep?.targets ?? []);
+  let fading: string[] | null = null;
+  if (sleepTargets.length && !stale) {
+    ensureSleepPool(snapshot, sleepTargets).catch((e) => console.warn('Sleep fade button', e));
+    fading = (await findSleepRun().catch(() => null))?.targets ?? null;
+  }
+  return list.map((b) => ({ ...b, showing: held !== null ? b.key === held : isShowing(snapshot, b, fading) }));
 }
 
 /**
@@ -87,9 +106,10 @@ export async function render(info: WidgetInfo, state: State, force = true) {
     const plan = widgetPlan(map, settings);
     const outside = await outsideNow();
     const background = settings.background ?? 'black';
-    if (alreadyDrawn(info, drawKey(info, [shown(snapshot, stale), stale, plan, settings, outside]), force)) return null;
+    const moods = settings.moods?.length ? await shownMoodButtons(info, snapshot, stale) : [];
+    if (alreadyDrawn(info, drawKey(info, [shown(snapshot, stale), stale, plan, settings, outside, moods.map((b) => [b.key, b.name, b.dots, b.showing])]), force)) return null;
     // The outside lands under the image the library is about to draw; native code waits for it.
-    sendMapOutside(info, plan, snapshot?.lights ?? [], outside, background).catch((e) => console.warn('Map widget outside', e));
+    sendMapOutside(info, plan, snapshot?.lights ?? [], outside, background, moods.length > 0).catch((e) => console.warn('Map widget outside', e));
     const weather = outside && { icon: weatherIcon(outside.sky), text: outside.temp !== null ? `${outside.temp}°` : outside.label, temp: outside.temp !== null };
     return (
       <MapWidget
@@ -101,20 +121,12 @@ export async function render(info: WidgetInfo, state: State, force = true) {
         outside={!!outside}
         background={background}
         weather={weather}
+        moods={moods}
       />
     );
   }
   if (info.widgetName === 'Moods') {
-    const held = tappedMood && tappedMood.until > Date.now() ? tappedMood.key : null;
-    const list = snapshot ? await moodsWidgetButtons(info.widgetId, snapshot) : [];
-    // Sleep fade buttons: the bridge has what a tap changes, and they show while a fade runs.
-    const sleepTargets = list.flatMap((b) => b.sleep?.targets ?? []);
-    let fading: string[] | null = null;
-    if (snapshot && sleepTargets.length && !stale) {
-      ensureSleepPool(snapshot, sleepTargets).catch((e) => console.warn('Sleep fade button', e));
-      fading = (await findSleepRun().catch(() => null))?.targets ?? null;
-    }
-    const buttons = snapshot ? list.map((b) => ({ ...b, showing: held !== null ? b.key === held : isShowing(snapshot, b, fading) })) : [];
+    const buttons = await shownMoodButtons(info, snapshot, stale);
     if (alreadyDrawn(info, drawKey(info, [shown(snapshot, stale), stale, buttons.map((b) => [b.key, b.name, b.dots, b.showing])]), force)) return null;
     return <MoodsWidget snapshot={snapshot} buttons={buttons} width={info.width} height={info.height} stale={stale} />;
   }
@@ -190,7 +202,7 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
       } else if (cached && clickAction?.endsWith('TOGGLE_ALL') && target !== undefined) {
         plan = planAll(cached, target);
       } else if (cached && clickAction?.endsWith('APPLY_MOOD') && typeof data.moodKey === 'string') {
-        const b = (await moodsWidgetButtons(widgetInfo.widgetId, cached)).find((x) => x.key === data.moodKey);
+        const b = (await widgetMoodButtons(widgetInfo, cached)).find((x) => x.key === data.moodKey);
         const scene = b?.scene && cached.scenes?.find((x) => x.id === b.scene);
         if (b?.lights) {
           plan = scene ? planScene(cached, scene) : planLights(cached, b.lights);

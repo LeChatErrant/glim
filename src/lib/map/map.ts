@@ -73,6 +73,11 @@ export async function saveMap(map: HomeMap) {
   savedDataChanged();
 }
 
+/** Deletes this bridge's map (Settings → Map → Start over). Lights, rooms and moods stay. */
+export async function resetMap() {
+  await AsyncStorage.removeItem(await key());
+}
+
 /** Turns the map on screen (degrees clockwise, kept in 0–360). */
 export async function saveMapRotation(rotation: number) {
   const map = await loadMap();

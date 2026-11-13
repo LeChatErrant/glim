@@ -37,6 +37,7 @@ export default function RootLayout() {
         <Stack.Screen name="light/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="mood" options={{ headerShown: false }} />
         <Stack.Screen name="away" options={{ headerShown: false }} />
+        <Stack.Screen name="widget/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="room/[id]" options={{ headerShown: false, presentation: 'transparentModal', animation: 'fade', contentStyle: { backgroundColor: 'transparent' } }} />
       </Stack>
     </>
