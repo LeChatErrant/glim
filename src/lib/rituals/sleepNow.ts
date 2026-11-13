@@ -157,9 +157,13 @@ async function startFade(s: Snapshot, pool: Pool, targets: string[], start: Date
   }).catch(() => null);
 }
 
-/** The coming whole minute: fades start on the minute. */
+/**
+ * The coming whole minute at least 15 s away: fades start on the minute, and a minute only a
+ * second away would pass before the request reaches the bridge (through Hue's cloud), which then
+ * never runs the fade. Same in GlimSleep.kt.
+ */
 function nextMinute() {
-  const d = new Date(Date.now() + 60_000);
+  const d = new Date(Date.now() + 75_000);
   d.setSeconds(0, 0);
   return d;
 }
@@ -192,7 +196,9 @@ function pendingStart(b: BehaviorInstance | undefined, stopped: Set<string>): nu
   const t = b.configuration.when?.time_point?.time;
   if (!t) return null;
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), t.hour, t.minute).getTime();
+  let start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), t.hour, t.minute).getTime();
+  // Started at 23:59 for 00:00: that's tomorrow's midnight.
+  if (start < Date.now() - 12 * 3600_000) start += 24 * 3600_000;
   // Set for a time already past: the bridge never ran it (it was off at that minute).
   return start > Date.now() - 60_000 && start < Date.now() + 120_000 ? start : null;
 }

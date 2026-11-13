@@ -99,7 +99,7 @@ export function moodButtons(items: MoodItem[], moods: Mood[], s: Snapshot, map: 
     const opts: MoodOptions = { transition: m.transition, living: m.living };
     if (m.path) {
       const tint = (PATH_TONES.find((t) => t.id === m.path!.tone) ?? PATH_TONES[0]).hex;
-      return [{ key: itemKey(i), name: m.name, dots: [tint, tint, tint], lights, path: true, off: pathOffFor(s, m, map) }];
+      return [{ key: itemKey(i), name: m.name, dots: [tint, tint, tint], lights, path: true, opts, off: pathOffFor(s, m, map) }];
     }
     // A sweep shows its colors in order, a spotlight its color, a room glow one dot per room color.
     if (m.recipe) return [{ key: itemKey(i), name: m.name, dots: recipeColors(m.recipe), lights, path: false, opts }];

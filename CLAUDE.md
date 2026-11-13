@@ -402,7 +402,8 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   basic, end brightness). **Sleep fade** = go-to-sleep behavior (`7e571ac6…`;
   its time is when the fade *starts*; `state.gts_state` is `started` with a
   `fade_end_time` while it runs). "Start now" reuses one hidden behavior
-  ("Glim sleep now") set for the coming minute with no days: the bridge runs
+  ("Glim sleep now") set for the coming minute (at least 15 s away, or it can
+  pass before the request lands) with no days: the bridge runs
   it once and switches it off. Switching a fade off does *not* stop one under
   way (tested): Stop also sets each light to the level it has reached.
   Go-to-sleep leaves lights off at their lowest level, so they came back on at

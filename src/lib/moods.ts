@@ -233,7 +233,8 @@ export function recipeLights(s: Snapshot, recipe: MapRecipe, map: HomeMap | null
     on = [...at].map(([id, t]) => tintLight(byId.get(id)!, tintAt(recipe.tints, t), recipe.brightness));
   } else if (recipe.kind === 'spot') {
     const w = spotWeights(map, recipe.at, recipe.radius, usable);
-    on = [...w].map(([id, k]) => tintLight(byId.get(id)!, recipe.tint, recipe.brightness * k));
+    // Lights at the very edge would come on at 1%: below 2% they're left out (off with the others).
+    on = [...w].filter(([, k]) => recipe.brightness * k >= 2).map(([id, k]) => tintLight(byId.get(id)!, recipe.tint, recipe.brightness * k));
   } else {
     const tints = new Map(recipe.rooms.map((r) => [r.id, r.tint]));
     const rooms = glowRooms(map, new Set(tints.keys()), usable);
@@ -291,7 +292,8 @@ function livingPart(s: Snapshot, lights: MoodLight[], opts?: MoodOptions) {
   if (!scenes.length) return { recalls: [] as [string, object][], covered };
   const groups = [...s.rooms, ...(s.zones ?? [])];
   const inScenes = new Set(scenes.flatMap((sc) => groups.find((g) => g.id === sc.group)?.lightIds ?? []));
-  for (const m of lights) if (m.on && inScenes.has(m.lightId)) covered.add(m.lightId);
+  // A light playing a Hue effect (candle...) keeps its own request: the scene can't hold an effect.
+  for (const m of lights) if (m.on && !m.effect && inScenes.has(m.lightId)) covered.add(m.lightId);
   const recall = { action: 'dynamic_palette', ...(opts?.transition !== undefined ? { duration: opts.transition } : {}) };
   return { recalls: scenes.map((sc): [string, object] => [`scene/${sc.scene}`, { recall }]), covered };
 }
@@ -324,11 +326,11 @@ export function planLights(s: Snapshot, lights: MoodLight[], opts?: MoodOptions)
         return { ...l, on: !!st.on, brightness: st.brightness ?? l.brightness, color, mirek: st.mirek ?? (st.xy ? null : l.mirek), effect: st.effect };
       }),
     },
-    // One request per light: the bridge takes about 10 a second, plenty for a room.
-    send: () =>
-      Promise.all([
-        ...recalls.map(([path, body]) => call(path, 'PUT', body)),
-        ...steps.filter((m) => !covered.has(m.lightId)).map((m) => setLight(m.lightId, state(m, byId.get(m.lightId)!))),
-      ]),
+    // Living scenes first (they set every light of their room), then one request per other light:
+    // the bridge takes about 10 a second, plenty for a room.
+    send: async () => {
+      await Promise.all(recalls.map(([path, body]) => call(path, 'PUT', body)));
+      return Promise.all(steps.filter((m) => !covered.has(m.lightId)).map((m) => setLight(m.lightId, state(m, byId.get(m.lightId)!))));
+    },
   };
 }

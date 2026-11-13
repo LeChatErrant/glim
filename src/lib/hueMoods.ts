@@ -2,7 +2,7 @@ import type { Planned } from './actions';
 import { findGroup } from './actions';
 import { mirekToHex, mirekToKelvin, xyToHex } from './hue/color';
 import { recallScene, sceneRecallBody, type BridgeScene, type Snapshot } from './hue/client';
-import { addMood, moodLightColor, moodLightState, type MoodLight } from './moods';
+import { addMood, moodLightColor, planLights, type MoodLight } from './moods';
 
 /**
  * Moods "from the Hue app": the scenes stored on the bridge (made in the Hue app, e.g. "Base",
@@ -48,18 +48,9 @@ export const sceneRequest = (scene: BridgeScene): [string, string] => [`scene/${
 
 /** Applies a scene: the lights show its look at once, the bridge recalls it. */
 export function planScene(s: Snapshot, scene: BridgeScene): Planned | null {
-  const byId = new Map(s.lights.map((l) => [l.id, l]));
-  const set = new Map(sceneMoodLights(scene).filter((m) => byId.has(m.lightId)).map((m) => [m.lightId, m]));
   return {
     next: {
-      ...s,
-      lights: s.lights.map((l) => {
-        const m = set.get(l.id);
-        if (!m) return l;
-        const st = moodLightState(m, l);
-        const color = st.xy ? m.hex! : st.mirek ? mirekToHex(st.mirek) : l.color;
-        return { ...l, on: !!st.on, brightness: st.brightness ?? l.brightness, color, mirek: st.mirek ?? (st.xy ? null : l.mirek), effect: st.effect };
-      }),
+      ...(planLights(s, sceneMoodLights(scene))?.next ?? s),
       // The bridge marks the recalled scene active, and the others of its room no longer.
       scenes: s.scenes?.map((x) =>
         x.id === scene.id ? { ...x, active: scene.living ? 'dynamic_palette' : 'static' } : x.groupId === scene.groupId ? { ...x, active: 'inactive' } : x,

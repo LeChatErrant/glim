@@ -90,8 +90,9 @@ object GlimSleep {
     val where = JSONArray()
     targets.mapNotNull { groupRef(pool, it) }.forEach { where.put(JSONObject().put("group", it)) }
     if (where.length() == 0) return false
-    // Fades start on the minute: the coming one (the bridge works in whole minutes).
-    val start = Calendar.getInstance().apply { timeInMillis = System.currentTimeMillis() + 60_000; set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
+    // Fades start on the minute (the bridge works in whole minutes): the coming one at least 15 s
+    // away, or it could pass before the request reaches the bridge (as nextMinute in sleepNow.ts).
+    val start = Calendar.getInstance().apply { timeInMillis = System.currentTimeMillis() + 75_000; set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
     val fade = JSONObject()
       .put("enabled", true)
       .put("configuration", JSONObject()
@@ -166,7 +167,9 @@ object GlimSleep {
       if (b.optJSONObject("metadata")?.optString("name") == NOW_NAME && b.optBoolean("enabled")) {
         val c = b.optJSONObject("configuration") ?: continue
         val t = c.optJSONObject("when")?.optJSONObject("time_point")?.optJSONObject("time") ?: continue
-        val at = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, t.optInt("hour")); set(Calendar.MINUTE, t.optInt("minute")); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+        var at = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, t.optInt("hour")); set(Calendar.MINUTE, t.optInt("minute")); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+        // Started at 23:59 for 00:00: that's tomorrow's midnight.
+        if (at < now - 12 * 3600_000L) at += 24 * 3600_000L
         val fade = c.optJSONObject("fade_out_duration")?.optLong("seconds") ?: 1800
         if (at > now - 60_000 && at < now + 120_000) pending = Run(at + fade * 1000, true)
       }
