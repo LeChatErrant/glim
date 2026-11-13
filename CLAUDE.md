@@ -560,7 +560,9 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   tile. The 2D map editor follows the design canvas's "Review your map"
   board: a top bar (back, Turn, Undo), hairline walls, champagne selection
   and wall-length pills, the Map tab's light markers, and a bottom sheet per
-  selection (`src/ui/editor/parts.tsx`). Its behavior is unchanged. The old
+  selection (`src/ui/editor/parts.tsx`). Its behavior is unchanged. Light
+  names go below their marker, else above, right or left, wherever they hit
+  no other name, light or room name (`placeLabels` in `src/lib/map/labels.ts`). The old
   `components.tsx` kit and `RoomAssign.tsx` are deleted.
 
 ## Vocabulary

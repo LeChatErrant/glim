@@ -19,6 +19,7 @@ import {
   type SnapTolerance,
 } from '../lib/map/geometry';
 import { roomForPoint } from '../lib/map/glow';
+import { capsWidth, placeLabels, type Box } from '../lib/map/labels';
 import { loadMap, saveMap, saveMapRotation, type FloorPoint, type HomeMap, type MapLight, type MapRoom, type Plan } from '../lib/map/map';
 import { PLAN_COLORS } from '../lib/map/svg';
 import { locate, pointAt, runPath, runSamples, wallRun, wrapStep, type WallRun } from '../lib/map/wallPath';
@@ -875,6 +876,23 @@ function Canvas({
   }
 
   // The selected room's walls: their length in a chip just outside the wall, a dot in the middle to add a corner.
+  // Light names clear of each other, of other lights and of room names; the selected light's first.
+  const roomNames: Box[] = doc.rooms
+    .filter((r) => r.points.length >= 3)
+    .map((r) => {
+      const x = X(centroid(r.points));
+      const y = Math.min(...r.points.map(Y)) + 20;
+      const w = capsWidth(r.name, 9) / 2;
+      return { x0: x - w, y0: y - 10, x1: x + w, y1: y + (!r.hueRoomId && r.name !== 'Other' ? 15 : 3) };
+    });
+  const selLightId = sel?.kind === 'light' ? sel.lightId : null;
+  const names = placeLabels(
+    [...doc.lights]
+      .sort((a, b) => Number(b.lightId === selLightId) - Number(a.lightId === selLightId))
+      .map((l) => ({ id: l.lightId, x: X(l), y: Y(l), text: snapshot?.lights.find((x) => x.id === l.lightId)?.name ?? '?' })),
+    roomNames,
+  );
+
   const walls = selRoom
     ? selRoom.points.map((p, i) => {
         const q = selRoom.points[(i + 1) % selRoom.points.length];
@@ -998,7 +1016,14 @@ function Canvas({
           return (
             <G key={l.lightId}>
               {selected && light && kind && <Handle l={l} rooms={doc.rooms} kind={kind} view={view} run={runOf(l, doc.rooms, snapshot, kind)} />}
-              <SvgText x={X(l)} y={Y(l) + 28} fill={selected ? ACCENT : hairline(0.55)} fontFamily={selected ? font.uiMedium : font.ui} fontSize={10} textAnchor="middle">
+              <SvgText
+                x={names.get(l.lightId)?.x ?? X(l)}
+                y={names.get(l.lightId)?.y ?? Y(l) + 28}
+                fill={selected ? ACCENT : hairline(0.55)}
+                fontFamily={selected ? font.uiMedium : font.ui}
+                fontSize={10}
+                textAnchor={names.get(l.lightId)?.anchor ?? 'middle'}
+              >
                 {light?.name ?? '?'}
               </SvgText>
             </G>

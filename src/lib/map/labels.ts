@@ -41,3 +41,52 @@ export function labelSpot(room: XY[], markers: XY[], labelW: number, labelH: num
 
 /** Approximate width of a label in spaced capitals (Geist 500, letter spacing 0.16em). */
 export const capsWidth = (text: string, size: number) => text.length * size * 0.82;
+
+export type LabelIn = { id: string; x: number; y: number; text: string };
+/** `anchor`: how the text is aligned on `x` (SVG textAnchor). `y` is the text's baseline. */
+export type LabelOut = { id: string; x: number; y: number; anchor: 'start' | 'middle' | 'end' };
+
+/** A screen rectangle a light's name must stay clear of (a room's name...). */
+export type Box = { x0: number; y0: number; x1: number; y1: number };
+
+const overlap = (a: Box, b: Box) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+
+/**
+ * Where to put each light's name on a plan so names don't cover each other, other lights or
+ * `obstacles` (room names): below the marker if there's room, else above, right or left, else
+ * the spot that overlaps least. Screen coordinates. The first labels in the list get the best
+ * spots (put the selected one first).
+ * `marker`: the marker's radius; `charW`: about how wide one character is; `size`: the font size.
+ * Markers count as obstacles too, so a name never sits on another light.
+ */
+export function placeLabels(items: LabelIn[], obstacles: Box[] = [], { marker = 13, charW = 5.6, size = 10 } = {}): Map<string, LabelOut> {
+  const markers: Box[] = [...obstacles, ...items.map((l) => ({ x0: l.x - marker, y0: l.y - marker, x1: l.x + marker, y1: l.y + marker }))];
+  const placed: Box[] = [];
+  const out = new Map<string, LabelOut>();
+  const gap = 4;
+  for (const l of items) {
+    const w = l.text.length * charW;
+    const h = size + 2;
+    // Each spot: the text's box and how it is drawn (baseline y).
+    const spots: { box: Box; label: LabelOut }[] = [
+      { box: { x0: l.x - w / 2, y0: l.y + marker + gap, x1: l.x + w / 2, y1: l.y + marker + gap + h }, label: { id: l.id, x: l.x, y: l.y + marker + gap + size, anchor: 'middle' } },
+      { box: { x0: l.x - w / 2, y0: l.y - marker - gap - h, x1: l.x + w / 2, y1: l.y - marker - gap }, label: { id: l.id, x: l.x, y: l.y - marker - gap - 2, anchor: 'middle' } },
+      { box: { x0: l.x + marker + gap, y0: l.y - h / 2, x1: l.x + marker + gap + w, y1: l.y + h / 2 }, label: { id: l.id, x: l.x + marker + gap, y: l.y + size / 2 - 1, anchor: 'start' } },
+      { box: { x0: l.x - marker - gap - w, y0: l.y - h / 2, x1: l.x - marker - gap, y1: l.y + h / 2 }, label: { id: l.id, x: l.x - marker - gap, y: l.y + size / 2 - 1, anchor: 'end' } },
+    ];
+    const cost = (b: Box) => [...placed, ...markers].reduce((sum, o) => sum + overlap(b, o), 0);
+    let best = spots[0];
+    let bestCost = Infinity;
+    for (const s of spots) {
+      const c = cost(s.box);
+      if (c < bestCost) {
+        best = s;
+        bestCost = c;
+      }
+      if (c === 0) break;
+    }
+    placed.push(best.box);
+    out.set(l.id, best.label);
+  }
+  return out;
+}
