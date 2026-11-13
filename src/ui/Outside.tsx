@@ -335,6 +335,7 @@ function offset(g: HouseGeom, dx: number, dy: number): HouseGeom {
     outdoor: g.outdoor.map((r) => r.map(m)),
     box: g.box && { ...g.box, x: g.box.x + dx, y: g.box.y + dy },
     outdoorLights: g.outdoorLights.map((l) => ({ ...l, ...m(l), beads: l.beads.map(m) })),
+    lamps: g.lamps.map((l) => ({ ...l, ...m(l) })),
   };
 }
 
