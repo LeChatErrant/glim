@@ -48,8 +48,11 @@ function clock(ts: number) {
  * here, from what the widget currently shows.
  */
 function fastToggle(path: string, on: boolean, extra: Record<string, string>) {
-  // No fade (Hue's default is 0.4 s): a widget tap acts like a switch, the light answers at once.
-  return { ...extra, fastPath: path, fastBody: JSON.stringify({ on: { on }, dynamics: { duration: 0 } }), target: on ? 'on' : 'off' };
+  // Turning on: no fade (Hue's default is 0.4 s), the light answers at once like a switch.
+  // Turning off: Hue's own fade. An "off" with a set duration dims the light to its minimum on
+  // the way out, and it then came back on at ~0% brightness.
+  const body = on ? { on: { on }, dynamics: { duration: 0 } } : { on: { on } };
+  return { ...extra, fastPath: path, fastBody: JSON.stringify(body), target: on ? 'on' : 'off' };
 }
 
 const shell = {

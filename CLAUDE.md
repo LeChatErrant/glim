@@ -380,7 +380,10 @@ feature.**
   Bridge connections stay pooled (no `disconnect()`; the bridge keeps idle
   ones for minutes), and live sync opens one when the screen turns on, so a
   tap skips the TCP + TLS handshakes (~15 ms instead of 130 to 430 ms).
-  Widget toggles send `dynamics.duration: 0` (no fade).
+  Widget taps that turn lights on send `dynamics.duration: 0` (no fade).
+  **Never send a duration with `on: false`:** Hue then dims the light to its
+  minimum on the way out, and it comes back on at ~0% (2026-11-13: every
+  widget "off" did this for a day, the glows on the map shrank to nothing).
 - **Map widget tap areas** (`src/lib/map/hitAreas.ts`): the widget library
   stacks tap areas sorted by id *as text* (`0-10` before `0-2`), so
   overlapping areas are unreliable. The plan is cut into non-overlapping
