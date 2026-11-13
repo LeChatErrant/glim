@@ -353,12 +353,13 @@ and an editor:
 3. **Day rhythm:** white lights follow the time of day (cool and bright
    during the day, warm and dim in the evening). Parameters: which lights, a
    curve over 24 hours (presets: Natural, Night owl, Early bird; editable
-   curve with drag points), apply only when a light is turned on or
-   continuously.
+   curve with drag points). Built (2026-11-13): it follows the curve while
+   the lights are left alone, and Glim's own "turn on" brings it back after
+   they were changed by hand.
 4. **Arriving home:** when the phone enters the area around home, turn on a
-   mood. Parameters: home location and radius (map picker), mood, only
-   after sunset (toggle), active hours. Can also do **Leaving home:** all off
-   when leaving.
+   mood. Parameters: home location and radius (set from the phone's position
+   while home; a map picker later), mood, only after sunset (toggle), active
+   hours. Can also do **Leaving home:** all off when leaving.
 
 Design an onboarding moment for location permission ("Allow all the time" is
 required; explain why in plain words).

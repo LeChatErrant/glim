@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { planAll, planLightBrightness, planToggleLight, planToggleRoom } from '../../lib/actions';
 import { getBridge, syncFastConfig } from '../../lib/hue/bridge';
+import { syncGeofence } from '../../lib/rituals/arrive';
+import { loadRhythms } from '../../lib/rituals/rhythm';
 import { roomIsOn, type Light, type Snapshot } from '../../lib/hue/client';
 import { useHome } from '../../lib/hue/useHome';
 import { ambienceKelvin, averageBrightness, houseMood, isLit, lightLevel, lightShape, lightsOf, lightTypeLabel } from '../../lib/lights';
@@ -25,6 +27,9 @@ export default function Home() {
   useEffect(() => {
     getBridge().then((b) => setPaired(!!b));
     syncFastConfig().catch(() => null);
+    // Rituals: Glim's "turn on" follows day rhythms; arriving home keeps watching after updates.
+    loadRhythms().catch(() => null);
+    syncGeofence().catch(() => null);
   }, []);
   if (paired === null) return null;
   if (!paired) return <Redirect href="/pair" />;

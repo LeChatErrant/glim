@@ -1,6 +1,8 @@
 import { cachedSnapshot, roomIsOn, saveCachedSnapshot, setLight, setRoom, type Light, type Room, type Snapshot } from './hue/client';
 import { hasEffect } from './effects';
 import { hexToXy, kelvinToMirek, mirekToHex } from './hue/color';
+import { activateSmartScene } from './hue/behaviors';
+import { rhythmSceneFor } from './rituals/rhythm';
 
 /**
  * Light actions shared by the app and the widgets. Each one is planned first: `next` is the
@@ -29,9 +31,11 @@ export function planToggleRoom(s: Snapshot, roomId: string, target?: boolean): P
   if (!room?.groupedLightId) return null;
   const on = target ?? !roomIsOn(room, s.lights);
   const groupId = room.groupedLightId;
+  // A room with a day rhythm comes on in the light of the hour, and the rhythm carries on.
+  const rhythm = on ? rhythmSceneFor(roomId) : null;
   return {
     next: { ...s, lights: s.lights.map((l) => (room.lightIds.includes(l.id) ? { ...l, on } : l)) },
-    send: () => setRoom(groupId, { on }),
+    send: () => (rhythm ? activateSmartScene(rhythm).catch(() => setRoom(groupId, { on })) : setRoom(groupId, { on })),
   };
 }
 
@@ -168,7 +172,10 @@ export function planToggleZone(s: Snapshot, zoneId: string, target?: boolean): P
   const groupId = zone.groupedLightId;
   return {
     next: { ...s, lights: s.lights.map((l) => (zone.lightIds.includes(l.id) ? { ...l, on } : l)) },
-    send: () => setRoom(groupId, { on }),
+    send: () => {
+      const rhythm = on ? rhythmSceneFor(zoneId) : null;
+      return rhythm ? activateSmartScene(rhythm).catch(() => setRoom(groupId, { on })) : setRoom(groupId, { on });
+    },
   };
 }
 

@@ -21,9 +21,7 @@
       "package": "io.lechaterrant.huelab",
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.ACCESS_COARSE_LOCATION"
-      ],
-      "blockedPermissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_BACKGROUND_LOCATION"
       ]
@@ -127,7 +125,7 @@
         {
           "android": {
             "minSdkVersion": 26,
-            "extraProguardRules": "# WorkManager (used by the widget library) instantiates workers, input mergers\n# and its Room database by reflection.\n-keep class androidx.work.** { *; }\n-keep class * extends androidx.work.ListenableWorker { <init>(...); }\n-keep class * extends androidx.work.InputMerger { <init>(); }\n-keep class * extends androidx.room.RoomDatabase { <init>(); }\n-keep class com.reactnativeandroidwidget.** { *; }\n# Local Expo modules: records are read by reflection.\n-keep class io.lechaterrant.** { *; }"
+            "extraProguardRules": "# WorkManager (used by the widget library) instantiates workers, input mergers\n# and its Room database by reflection.\n-keep class androidx.work.** { *; }\n-keep class * extends androidx.work.ListenableWorker { <init>(...); }\n-keep class * extends androidx.work.InputMerger { <init>(); }\n-keep class * extends androidx.room.RoomDatabase { <init>(); }\n-keep class com.reactnativeandroidwidget.** { *; }\n# Local Expo modules: records are read by reflection.\n-keep class io.lechaterrant.** { *; }\n# Background location (Arriving home): task consumers are restored by class name.\n-keep class expo.modules.taskManager.** { *; }\n-keep class expo.modules.location.** { *; }"
           }
         }
       ],
@@ -135,7 +133,9 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Glim uses your location once to show the weather around your home on the map."
+          "locationWhenInUsePermission": "Glim uses your location to show the weather around your home and to know when you arrive or leave home.",
+          "locationAlwaysAndWhenInUsePermission": "Glim uses your location in the background to turn your lights on when you arrive home and off when you leave. It stays on your phone.",
+          "isAndroidBackgroundLocationEnabled": true
         }
       ],
       [

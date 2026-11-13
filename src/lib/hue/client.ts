@@ -65,7 +65,7 @@ export type Snapshot = {
 
 type Resource = Record<string, any> & { id: string; type: string };
 
-async function call(path: string, method: 'GET' | 'PUT' | 'POST' | 'DELETE' = 'GET', body?: unknown): Promise<Resource[]> {
+export async function call(path: string, method: 'GET' | 'PUT' | 'POST' | 'DELETE' = 'GET', body?: unknown): Promise<Resource[]> {
   const bridge = await getBridge();
   if (!bridge) throw new Error('No bridge paired');
   // Straight to the bridge at home, through Hue's cloud when away.
