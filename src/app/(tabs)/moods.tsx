@@ -12,17 +12,16 @@ import { loadMap, type HomeMap } from '../../lib/map/map';
 import { PRESET_CATEGORIES, PRESETS, presetLights, type Preset } from '../../lib/moodPresets';
 import {
   addMood,
-  captureLights,
   deleteMood,
   isMapAware,
   loadMoods,
   moodLightColor,
+  moodLights,
   PATH_TONES,
   pathLights,
   planLights,
   planMood,
   recipeLights,
-  suggestName,
   updateMood,
   type Mood,
   type MapRecipe,
@@ -35,7 +34,8 @@ import { Icon } from '../../ui/icons';
 import { HueMoodsSection } from '../../ui/HueMoods';
 import { ColorDot } from '../../ui/LightControls';
 import { KIND_TITLES, MapMoodSheet, type MapMoodKind } from '../../ui/MapMoodSheet';
-import { MoodDots } from '../../ui/MoodChips';
+import { livingSpeedLabel } from '../../lib/living';
+import { MoodDots, openMoodEditor } from '../../ui/MoodChips';
 import { MoodMap } from '../../ui/MoodMap';
 import { PathPreview, PathSheet } from '../../ui/PathSheet';
 import { Choice } from '../../ui/scan/parts';
@@ -45,8 +45,8 @@ import { color, hairline, TAB_BAR_SPACE } from '../../ui/theme';
 /**
  * Moods: the user's own (by room and group), paths (map-aware moods: a dim trail from one room to
  * another), and the preset library, applied to the whole home or a room or group picked under
- * "For". Tap applies; open a mood to see each light's color and keep one as a favorite; long-press
- * a preset to keep it as your own mood.
+ * "For". Tap applies; open a mood to see each light's color and keep one as a favorite; the pencil
+ * opens the mood editor ("New mood" too); long-press a preset to keep it or duplicate and edit it.
  */
 export default function MoodsScreen() {
   const insets = useSafeAreaInsets();
@@ -90,6 +90,7 @@ export default function MoodsScreen() {
   const keepPreset = (p: Preset) =>
     Alert.alert(p.name, presetTarget === null ? 'For the whole home' : `For ${targetName(presetTarget)}`, [
       { text: 'Cancel', style: 'cancel' },
+      { text: 'Duplicate and edit', onPress: () => openMoodEditor({ preset: p.id, ...(presetTarget ? { target: presetTarget } : {}) }) },
       {
         text: 'Keep as my mood',
         onPress: () => snapshot && addMood({ name: p.name, targetId: presetTarget, lights: presetLightsFor(snapshot, p) }).then(setMoods),
@@ -122,16 +123,12 @@ export default function MoodsScreen() {
         A look for your lights, light by light. Start from a preset, save your own from a room or a group, or shape one on your map.
       </Txt>
       <PillButton
-        title="Save the whole home as a mood"
+        title="New mood"
         icon="add"
         height={44}
         disabled={!snapshot?.lights.length}
         style={{ marginTop: 18, alignSelf: 'flex-start' }}
-        onPress={() => {
-          if (!snapshot) return;
-          const lights = captureLights(snapshot.lights);
-          addMood({ name: suggestName(lights), targetId: null, lights }).then(setMoods);
-        }}
+        onPress={() => openMoodEditor(presetTarget ? { target: presetTarget } : {})}
       />
 
       {targets.map((t) => (
@@ -144,10 +141,12 @@ export default function MoodsScreen() {
                 key={m.id}
                 mood={m}
                 snapshot={snapshot}
+                map={map}
                 expanded={open === m.id}
                 applied={applied === m.id}
                 onApply={() => apply(m)}
                 onExpand={() => setOpen(open === m.id ? null : m.id)}
+                onEdit={() => openMoodEditor({ id: m.id })}
                 onDelete={() =>
                   Alert.alert(`Delete ${m.name}?`, undefined, [
                     { text: 'Keep', style: 'cancel' },
@@ -405,33 +404,50 @@ function DashedButton({ title, onPress }: { title: string; onPress: () => void }
 function MoodCard({
   mood,
   snapshot,
+  map,
   expanded,
   applied,
   onApply,
   onExpand,
+  onEdit,
   onDelete,
 }: {
   mood: Mood;
   snapshot: Snapshot | null;
+  map: HomeMap | null;
   expanded: boolean;
   applied: boolean;
   onApply: () => void;
   onExpand: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
+  // A palette mood is worked out for today's lights.
+  const lights = mood.palette ? (snapshot ? moodLights(snapshot, mood, map) : []) : mood.lights;
+  // Living now: the bridge plays its colors on its lights (Hue reports each light's dynamics).
+  const livingNow = !!mood.living?.scenes?.length && lights.some((m) => m.on && snapshot?.lights.find((l) => l.id === m.lightId)?.living);
+  const kind = [
+    mood.palette ? 'Palette' : null,
+    livingNow ? 'Living now' : mood.living?.scenes?.length ? `Living, ${livingSpeedLabel(mood.living.speed).toLowerCase()}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   return (
     <View style={{ borderRadius: 22, borderWidth: 1, borderColor: hairline(expanded ? 0.14 : 0.1), backgroundColor: color.card, paddingVertical: 10, paddingLeft: 18, paddingRight: 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44 }}>
-        <Pressable onPress={onApply} accessibilityRole="button" accessibilityLabel={`Apply ${mood.name}`} style={({ pressed }) => ({ flex: 1, minWidth: 0, gap: 7, opacity: pressed ? 0.6 : 1 })}>
+        <Pressable onPress={onApply} onLongPress={onEdit} accessibilityRole="button" accessibilityLabel={`Apply ${mood.name}`} style={({ pressed }) => ({ flex: 1, minWidth: 0, gap: 7, opacity: pressed ? 0.6 : 1 })}>
           <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
             {mood.name}
           </Display>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <MoodDots mood={mood} size={7} />
-            <Label size={9} tone={applied ? 'champagne' : 'muted'}>
-              {applied ? 'Applied' : `${mood.lights.length} ${mood.lights.length === 1 ? 'light' : 'lights'} · tap to apply`}
+            <Label size={9} tone={applied || livingNow ? 'champagne' : 'muted'}>
+              {applied && !livingNow ? 'Applied' : `${kind ? `${kind} · ` : ''}${lights.length} ${lights.length === 1 ? 'light' : 'lights'} · tap to apply`}
             </Label>
           </View>
+        </Pressable>
+        <Pressable onPress={onEdit} accessibilityRole="button" accessibilityLabel={`Edit ${mood.name}`} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="edit" size={15} tint={color.muted} stroke={1.6} />
         </Pressable>
         <Pressable
           onPress={onExpand}
@@ -445,10 +461,13 @@ function MoodCard({
       </View>
       {expanded && (
         <>
-          {mood.lights.map((m) => (
+          {lights.map((m) => (
             <MoodLightRow key={m.lightId} m={m} name={snapshot?.lights.find((l) => l.id === m.lightId)?.name ?? 'Removed light'} />
           ))}
-          <PillButton title="Delete mood" kind="text" height={40} onPress={onDelete} style={{ alignSelf: 'flex-start', marginTop: 4 }} />
+          <View style={{ flexDirection: 'row', gap: 4, marginTop: 4 }}>
+            <PillButton title="Edit mood" kind="text" height={40} onPress={onEdit} />
+            <PillButton title="Delete mood" kind="text" height={40} onPress={onDelete} />
+          </View>
         </>
       )}
     </View>

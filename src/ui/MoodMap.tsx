@@ -24,17 +24,21 @@ export function MoodMap({
   height,
   width,
   selectedRoom,
+  selectedLight,
   frame,
   onTouch,
 }: {
   map: HomeMap;
-  recipe: MapRecipe;
+  /** The recipe's marks (none: just the lights, as in the mood editor's per-light mode). */
+  recipe?: MapRecipe;
   /** The lights as the mood sets them now. */
   lights: MoodLight[];
   height: number;
   width?: number;
   /** A room drawn with a champagne edge (the one being colored). */
   selectedRoom?: string | null;
+  /** A light drawn with a champagne ring (the one being edited). */
+  selectedLight?: string | null;
   /** Map points to frame instead of the whole home (small previews). */
   frame?: FloorPoint[];
   onTouch?: (t: MapTouch) => void;
@@ -94,9 +98,9 @@ export function MoodMap({
   const d = (r: (typeof rooms)[number]) => `M${r.pts.map((p) => `${f!.x(p.u).toFixed(1)},${f!.y(p.v).toFixed(1)}`).join('L')}Z`;
 
   // Recipe marks.
-  const swept = recipe.kind === 'sweep' && recipe.rooms ? roomsWithin(map, recipe.rooms) : null;
-  const tints = recipe.kind === 'glow' ? new Map(recipe.rooms.map((r) => [r.id, tintHex(r.tint)])) : null;
-  const arrow = f && recipe.kind === 'sweep' ? sweepArrow(map, recipe.angle, recipe.rooms) : null;
+  const swept = recipe?.kind === 'sweep' && recipe.rooms ? roomsWithin(map, recipe.rooms) : null;
+  const tints = recipe?.kind === 'glow' ? new Map(recipe.rooms.map((r) => [r.id, tintHex(r.tint)])) : null;
+  const arrow = f && recipe?.kind === 'sweep' ? sweepArrow(map, recipe.angle, recipe.rooms) : null;
   const small = height < 100;
 
   return (
@@ -105,14 +109,14 @@ export function MoodMap({
         <View pointerEvents="none">
           <Svg width={w} height={height}>
             <Defs>
-              {arrow && recipe.kind === 'sweep' && (
+              {arrow && recipe?.kind === 'sweep' && (
                 <LinearGradient id="sweep" gradientUnits="userSpaceOnUse" x1={pt(arrow.from).x} y1={pt(arrow.from).y} x2={pt(arrow.to).x} y2={pt(arrow.to).y}>
                   {recipe.tints.map((t, i) => (
                     <Stop key={i} offset={recipe.tints.length > 1 ? i / (recipe.tints.length - 1) : 0} stopColor={tintHex(t)} stopOpacity={0.2} />
                   ))}
                 </LinearGradient>
               )}
-              {recipe.kind === 'spot' && (
+              {recipe?.kind === 'spot' && (
                 <RadialGradient id="spot">
                   <Stop offset="0" stopColor={tintHex(recipe.tint)} stopOpacity={0.28} />
                   <Stop offset="1" stopColor={tintHex(recipe.tint)} stopOpacity={0} />
@@ -129,20 +133,20 @@ export function MoodMap({
             </Defs>
             {rooms.map((r) => {
               const fill =
-                recipe.kind === 'sweep' ? (!swept || swept.has(r.id) ? 'url(#sweep)' : 'none') : tints?.get(r.id) ? tints.get(r.id)! : 'none';
-              const picked = selectedRoom === r.id || (recipe.kind === 'sweep' && !!swept?.has(r.id));
+                recipe?.kind === 'sweep' ? (!swept || swept.has(r.id) ? 'url(#sweep)' : 'none') : tints?.get(r.id) ? tints.get(r.id)! : 'none';
+              const picked = selectedRoom === r.id || (recipe?.kind === 'sweep' && !!swept?.has(r.id));
               return (
                 <Path
                   key={r.id}
                   d={d(r)}
                   fill={fill}
-                  fillOpacity={recipe.kind === 'glow' ? 0.16 : 1}
+                  fillOpacity={recipe?.kind === 'glow' ? 0.16 : 1}
                   stroke={selectedRoom === r.id ? color.champagne : hairline(picked ? 0.34 : 0.16)}
                   strokeWidth={selectedRoom === r.id ? 1.5 : 1}
                 />
               );
             })}
-            {recipe.kind === 'spot' && (
+            {recipe?.kind === 'spot' && (
               <G>
                 <Circle cx={pt(recipe.at).x} cy={pt(recipe.at).y} r={recipe.radius * f.scale} fill="url(#spot)" />
                 <Circle
@@ -164,12 +168,20 @@ export function MoodMap({
               const m = byId.get(l.lightId);
               const x = f.x(l.u);
               const y = f.y(l.v);
-              if (!m?.on) return <Circle key={l.lightId} cx={x} cy={y} r={core * 0.8} fill="none" stroke={hairline(m ? 0.18 : 0.32)} strokeWidth={1} />;
+              const ring = selectedLight === l.lightId ? <Circle cx={x} cy={y} r={core + 7} fill="none" stroke={color.champagne} strokeWidth={1.4} /> : null;
+              if (!m?.on)
+                return (
+                  <G key={l.lightId}>
+                    <Circle cx={x} cy={y} r={core * 0.8} fill="none" stroke={hairline(m ? 0.18 : 0.32)} strokeWidth={1} />
+                    {ring}
+                  </G>
+                );
               const k = 0.45 + 0.55 * ((m.brightness ?? 100) / 100);
               return (
                 <G key={l.lightId}>
                   <Circle cx={x} cy={y} r={glow * k} fill={`url(#g-${l.lightId})`} />
                   <Circle cx={x} cy={y} r={core} fill={moodLightColor(m) ?? color.champagne} />
+                  {ring}
                 </G>
               );
             })}

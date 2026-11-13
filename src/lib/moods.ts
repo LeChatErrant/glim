@@ -4,12 +4,14 @@ import { Platform } from 'react-native';
 import { HueHttp } from '../../modules/hue-http';
 import { hasTemperature, mirekFor, type Planned } from './actions';
 import { getBridge } from './hue/bridge';
+import { deleteScene } from './hue/behaviors';
 import { hexToXy, mirekToHex, mirekToKelvin } from './hue/color';
 import { EFFECTS, effectLabel, hasEffect } from './effects';
-import { setLight, stateBody, type Light, type LightState, type Snapshot } from './hue/client';
+import { call, setLight, stateBody, type Light, type LightState, type Snapshot } from './hue/client';
 import { findRoute, lightsAlongRoute } from './map/route';
 import type { FloorPoint, HomeMap, MapLight } from './map/map';
 import { glowRooms, spotWeights, sweepPositions } from './map/spread';
+import { presetLights, type Palette } from './moodPresets';
 import { colorName, kelvinName } from './palette';
 import { savedDataChanged } from './savedData';
 import { tintAt, tintHex, whiteFor, type Tint } from './tints';
@@ -84,12 +86,33 @@ export type GlowRecipe = { kind: 'glow'; rooms: { id: string; tint: Tint }[]; br
 export type MapRecipe = SweepRecipe | SpotRecipe | GlowRecipe;
 
 /**
- * A mood: a look for some lights, light by light (one red, one blue...). Our own data, not a
- * bridge scene. Saved from a room or a group, and shown there; `targetId` is that room or group.
- * A map-aware mood has a `path` (night path) or a `recipe` (sweep, spotlight, room glow) instead
- * of fixed lights (`lights` stays empty).
+ * Living: the colors slowly drift across the lights, played by the bridge (a Hue dynamic scene,
+ * one per room or group the mood covers, made when the mood is saved). `speed` 0–1.
  */
-export type Mood = { id: string; name: string; targetId: string | null; lights: MoodLight[]; createdAt: number; path?: PathRecipe; recipe?: MapRecipe };
+export type Living = { speed: number; scenes?: { group: string; scene: string }[] };
+
+/**
+ * A mood: a look for some lights, light by light (one red, one blue...). Our own data, not a
+ * bridge scene. Saved from a room or a group, and shown there; `targetId` is that room or group
+ * (null: the whole home). A palette mood has a `palette` (colors spread over the target's lights
+ * at each apply), a map-aware mood a `path` (night path) or a `recipe` (sweep, spotlight, room
+ * glow); for these `lights` stays empty. `transition` is the fade in ms (absent: Hue's own).
+ */
+export type Mood = {
+  id: string;
+  name: string;
+  targetId: string | null;
+  lights: MoodLight[];
+  createdAt: number;
+  palette?: Palette;
+  path?: PathRecipe;
+  recipe?: MapRecipe;
+  transition?: number;
+  living?: Living;
+};
+
+/** How a mood is played beyond each light's look: its fade, and its living scenes. */
+export type MoodOptions = Pick<Mood, 'transition' | 'living'>;
 
 /** Paths, sweeps, spotlights and room glows: moods worked out from the map. */
 export const isMapAware = (m: Mood) => !!(m.path || m.recipe);
@@ -119,7 +142,16 @@ export async function updateMood(id: string, change: Partial<Omit<Mood, 'id'>>) 
 }
 
 export async function deleteMood(id: string) {
-  return save((await loadMoods()).filter((m) => m.id !== id));
+  const list = await loadMoods();
+  for (const sc of list.find((m) => m.id === id)?.living?.scenes ?? []) await deleteScene(sc.scene).catch(() => null);
+  return save(list.filter((m) => m.id !== id));
+}
+
+/** The lights of a room or a group, or every light (null: the whole home). */
+export function targetLights(s: Snapshot, targetId: string | null): Light[] {
+  if (targetId === null) return s.lights;
+  const g = s.rooms.find((r) => r.id === targetId) ?? s.zones?.find((z) => z.id === targetId);
+  return g ? s.lights.filter((l) => g.lightIds.includes(l.id)) : [];
 }
 
 /** What the lights look like now, as mood lights. Unreachable lights are left out (their state is stale). */
@@ -223,41 +255,64 @@ export function recipeColors(recipe: MapRecipe): string[] {
 export function moodLights(s: Snapshot, mood: Mood, map: HomeMap | null): MoodLight[] {
   if (mood.path) return pathLights(s, mood.path, map) ?? [];
   if (mood.recipe) return recipeLights(s, mood.recipe, map) ?? [];
+  if (mood.palette) return presetLights(mood.palette, targetLights(s, mood.targetId), map);
   return mood.lights;
 }
 
 /** Puts every light of the mood back as it was saved. Lights gone from the bridge are skipped. */
 export function planMood(s: Snapshot, mood: Mood, map: HomeMap | null = null): Planned | null {
-  const plan = planLights(s, moodLights(s, mood, map));
+  const plan = planLights(s, moodLights(s, mood, map), mood);
   if (!plan || !mood.path) return plan;
   // A path that turns itself off: its alarm is set once the lights are sent.
   return { ...plan, send: () => plan.send().finally(() => armPathOff(s, mood, map)) };
 }
 
-/** What to send a light to make it look like a mood light, given what it can do. */
-export function moodLightState(m: MoodLight, l: Light): LightState {
+/** What to send a light to make it look like a mood light, given what it can do; `transition` in ms. */
+export function moodLightState(m: MoodLight, l: Light, transition?: number): LightState {
   if (!m.on) return { on: false };
   const brightness = l.brightness !== null ? m.brightness : undefined;
-  if (m.effect && l.effects?.includes(m.effect)) return { on: true, brightness, effect: m.effect };
+  const duration = transition;
+  if (m.effect && l.effects?.includes(m.effect)) return { on: true, brightness, effect: m.effect, duration };
   // A mood without an effect stops one that's running.
   const stop = hasEffect(l.effect) ? { effect: 'no_effect' } : {};
-  if (m.hex && l.kind === 'color') return { on: true, brightness, xy: hexToXy(m.hex), ...stop };
-  if (m.kelvin && hasTemperature(l)) return { on: true, brightness, mirek: mirekFor(l, m.kelvin), ...stop };
-  return { on: true, brightness, ...stop };
+  if (m.hex && l.kind === 'color') return { on: true, brightness, xy: hexToXy(m.hex), duration, ...stop };
+  if (m.kelvin && hasTemperature(l)) return { on: true, brightness, mirek: mirekFor(l, m.kelvin), duration, ...stop };
+  return { on: true, brightness, duration, ...stop };
 }
 
-/** A mood as ready-made bridge requests, [path, body] per light (widget taps, sent from native code). */
-export function moodRequests(s: Snapshot, lights: MoodLight[]): [string, string][] {
+/**
+ * A living mood's bridge scenes: the recall of each (the bridge then plays the colors across its
+ * room or group), and the lights it plays, which then get no request of their own. Lights the
+ * mood turns off, and lights outside those rooms and groups, are still set one by one.
+ */
+function livingPart(s: Snapshot, lights: MoodLight[], opts?: MoodOptions) {
+  const scenes = opts?.living?.scenes ?? [];
+  const covered = new Set<string>();
+  if (!scenes.length) return { recalls: [] as [string, object][], covered };
+  const groups = [...s.rooms, ...(s.zones ?? [])];
+  const inScenes = new Set(scenes.flatMap((sc) => groups.find((g) => g.id === sc.group)?.lightIds ?? []));
+  for (const m of lights) if (m.on && inScenes.has(m.lightId)) covered.add(m.lightId);
+  const recall = { action: 'dynamic_palette', ...(opts?.transition !== undefined ? { duration: opts.transition } : {}) };
+  return { recalls: scenes.map((sc): [string, object] => [`scene/${sc.scene}`, { recall }]), covered };
+}
+
+/** A mood as ready-made bridge requests, [path, body] each (widget and tile taps, sent from native code). */
+export function moodRequests(s: Snapshot, lights: MoodLight[], opts?: MoodOptions): [string, string][] {
   const byId = new Map(s.lights.map((l) => [l.id, l]));
-  return lights.filter((m) => byId.has(m.lightId)).map((m) => [`light/${m.lightId}`, JSON.stringify(stateBody(moodLightState(m, byId.get(m.lightId)!)))]);
+  const { recalls, covered } = livingPart(s, lights, opts);
+  const each = lights
+    .filter((m) => byId.has(m.lightId) && !covered.has(m.lightId))
+    .map((m): [string, string] => [`light/${m.lightId}`, JSON.stringify(stateBody(moodLightState(m, byId.get(m.lightId)!, opts?.transition)))]);
+  return [...recalls.map(([p, b]): [string, string] => [p, JSON.stringify(b)]), ...each];
 }
 
-/** Sets each light as listed. Lights gone from the bridge are skipped. */
-export function planLights(s: Snapshot, lights: MoodLight[]): Planned | null {
+/** Sets each light as listed (with the mood's fade and living scenes, if given). Lights gone from the bridge are skipped. */
+export function planLights(s: Snapshot, lights: MoodLight[], opts?: MoodOptions): Planned | null {
   const byId = new Map(s.lights.map((l) => [l.id, l]));
   const steps = lights.filter((m) => byId.has(m.lightId));
   if (!steps.length) return null;
-  const state = moodLightState;
+  const { recalls, covered } = livingPart(s, steps, opts);
+  const state = (m: MoodLight, l: Light) => moodLightState(m, l, opts?.transition);
   return {
     next: {
       ...s,
@@ -270,6 +325,10 @@ export function planLights(s: Snapshot, lights: MoodLight[]): Planned | null {
       }),
     },
     // One request per light: the bridge takes about 10 a second, plenty for a room.
-    send: () => Promise.all(steps.map((m) => setLight(m.lightId, state(m, byId.get(m.lightId)!)))),
+    send: () =>
+      Promise.all([
+        ...recalls.map(([path, body]) => call(path, 'PUT', body)),
+        ...steps.filter((m) => !covered.has(m.lightId)).map((m) => setLight(m.lightId, state(m, byId.get(m.lightId)!))),
+      ]),
   };
 }

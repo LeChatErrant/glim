@@ -78,7 +78,7 @@ export function tileConfig(t: TileTarget, s: Snapshot, moods: Mood[], map: HomeM
         sub: b.path ? 'Path' : b.scene ? sceneSub(s, b.scene) : 'Mood',
         lights: b.lights.map((l) => l.lightId),
         // A mood from the Hue app is one scene recall (GlimTile asks the bridge whether it's showing).
-        on: JSON.stringify(b.request ? [b.request] : moodRequests(s, b.lights)),
+        on: JSON.stringify(b.request ? [b.request] : moodRequests(s, b.lights, b.opts)),
         // Tapped while it shows: the lights it turned on go off.
         off: JSON.stringify(lit.map((l) => [`light/${l.lightId}`, JSON.stringify(OFF)])),
         // A path that turns itself off: the tile sets its alarm when it lights it.

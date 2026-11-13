@@ -585,7 +585,7 @@ function MoodButtonTile({ b, snapshot, stale, width, lines }: { b: MoodTile; sna
   const off = b.lights === null;
   const home = snapshot.homeGroupId;
   // A mood from the Hue app is one scene recall; the others, a request per light.
-  const batch = b.request ? JSON.stringify([b.request]) : b.lights?.length ? JSON.stringify(moodRequests(snapshot, b.lights)) : null;
+  const batch = b.request ? JSON.stringify([b.request]) : b.lights?.length ? JSON.stringify(moodRequests(snapshot, b.lights, b.opts)) : null;
   const click = b.sleep
     ? {
         // Native code starts the fade (or stops the one running), like the Rituals tab (GlimSleep.kt).

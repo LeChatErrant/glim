@@ -44,7 +44,7 @@ export function arriveAllowed(a: Arrive, area: HomeArea, now = new Date()) {
 async function arriveNow(a: Arrive, s: Snapshot) {
   if (a.moodId) {
     const mood = (await loadMoods()).find((m) => m.id === a.moodId);
-    const plan = mood && planMood(s, mood, mood.path ? await loadMap() : null);
+    const plan = mood && planMood(s, mood, await loadMap());
     if (plan) return plan.send();
   }
   if (a.targetId) {

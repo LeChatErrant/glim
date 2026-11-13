@@ -493,6 +493,44 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   mood" (long-press, or the card's button) copies it light by light into a
   Glim mood of its room (`src/lib/hueMoods.ts`); a living one keeps its still
   colors. Glim doesn't edit or delete scenes on the bridge.
+- 2026-11-13: **Mood editor** (`src/app/mood.tsx`, design: Scenes page of
+  the Nocturne canvas). A full screen: name, target (whole home, a room or a
+  group: "Chambre · 3 lights ›"), and three tabs. **Per light:** the map of
+  the target (tap a light) and a row per light: On / Off / Leave as it is,
+  a color or white (favorites, whites, colors; "Fine-tune" opens the light
+  screen's dial), an effect where the light has one, brightness. **Palette:**
+  1 to 5 colors as overlapping orbs, a brightness and an optional Hue
+  effect, spread over the target's lights at each apply like a preset
+  (`Mood.palette`, same `Palette` shape as presets; white-only lights take
+  the white closest to each color). Switching tabs carries the look over.
+  **On your map:** opens the path, sweep, spotlight and room glow sheets.
+  Options: **transition** (Instant, Quick = Hue's default, 2 s, 10 s,
+  1 min; `Mood.transition`, sent as `dynamics.duration`, never with
+  `on: false`) and **living**. **Live on your lights** captures every light
+  first, sends only the lights that changed 250 ms after each edit, and puts
+  them back when switched off or when leaving without saving
+  (`src/ui/useLivePreview.ts`). Save, Save as new, Delete. Entry points: New
+  mood on the Moods tab (replaces "Save the whole home"; starts from the
+  lights as they are), the pencil or a long-press on a mood card, Edit on a
+  room or group sheet's mood chip (long-press), "Duplicate and edit" on a
+  preset (long-press). **Living** = Hue's dynamic scenes (`src/lib/living.ts`):
+  saving a living mood makes one hidden scene per room or group it covers
+  ("Glim mood …", `isGlimScene` skips them): every light of the group with
+  the mood's look (lights it leaves alone get a no-op `dynamics`), a palette
+  of its colors, `speed` (Slow 0.15, Medium 0.45, Lively 0.8),
+  `auto_dynamic`. Applying recalls them with `dynamic_palette` (first in a
+  widget or tile batch) instead of the lights they cover; lights it turns
+  off or outside those groups are set one by one. Needs a color on a color
+  light. Remade at each save, deleted with the mood. Hue reports a light
+  playing it (`dynamics.status`, `Light.living`): the card says "Living
+  now", and the widget's "showing" edge needs it; the tile asks the bridge
+  for the scene's status. Tested on the real lights through Hue's cloud:
+  editor live preview and put back, per light and palette moods saved and
+  applied from the tab, a living mood from the tab, the tile and the Moods
+  widget ("Living now" each time), a palette mood from the widget. Not
+  seen: the drift itself (nobody home to look; the bridge accepted the
+  scenes and reports the lights playing). Not yet: a mood icon, living
+  preview while editing (it plays once saved).
 
 ## Vocabulary
 

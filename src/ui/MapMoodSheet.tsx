@@ -299,16 +299,17 @@ const HUES = [0, 18, 32, 46, 60, 100, 140, 170, 195, 215, 240, 265, 290, 320, 34
 const SAME = (a: Tint | undefined, b: Tint) => !!a && (a.hex && b.hex ? a.hex.toLowerCase() === b.hex.toLowerCase() : !a.hex && !b.hex && a.kelvin === b.kelvin);
 
 /** Colors to pick from: your favorites, the whites, then a spectrum of colors. */
-function TintPicker({ current, onPick, label }: { current?: Tint; onPick: (t: Tint) => void; label?: string }) {
+export function TintPicker({ current, onPick, label, whitesOnly, ground = color.sheet }: { current?: Tint; onPick: (t: Tint) => void; label?: string; whitesOnly?: boolean; ground?: string }) {
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   useEffect(() => {
     loadFavorites().then(setFavorites);
   }, []);
-  const offered: (Tint & { fav?: boolean })[] = [
+  const all: (Tint & { fav?: boolean })[] = [
     ...favorites.map((f) => ({ hex: f.hex, kelvin: f.kelvin, fav: true })),
     ...WHITE_PRESETS.map((w) => ({ kelvin: w.kelvin })),
     ...HUES.map((h) => ({ hex: hsvHex(h, h >= 32 && h <= 60 ? 0.9 : 0.85, 1).toUpperCase() })),
   ];
+  const offered = all.filter((t) => !whitesOnly || !t.hex);
   // The color in use comes first when it isn't one of these (a default, an older pick).
   const items: (Tint & { fav?: boolean })[] = current && !offered.some((t) => SAME(current, t)) ? [current, ...offered] : offered;
   return (
@@ -317,9 +318,9 @@ function TintPicker({ current, onPick, label }: { current?: Tint; onPick: (t: Ti
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 8, alignItems: 'center' }}>
         {items.map((t, i) => (
           <Pressable key={i} onPress={() => onPick({ hex: t.hex, kelvin: t.hex ? undefined : t.kelvin })} accessibilityRole="button" accessibilityLabel={tintName(t)} hitSlop={4}>
-            <ColorDot hex={tintHex(t)} size={32} selected={SAME(current, t)} ground={color.sheet} />
+            <ColorDot hex={tintHex(t)} size={32} selected={SAME(current, t)} ground={ground} />
             {t.fav && (
-              <View style={{ position: 'absolute', right: -3, bottom: -3, width: 15, height: 15, borderRadius: 8, backgroundColor: color.sheet, alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{ position: 'absolute', right: -3, bottom: -3, width: 15, height: 15, borderRadius: 8, backgroundColor: ground, alignItems: 'center', justifyContent: 'center' }}>
                 <Icon name="star" size={9} tint={color.champagne} stroke={1.8} />
               </View>
             )}

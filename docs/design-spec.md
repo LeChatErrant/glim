@@ -336,6 +336,11 @@ generator with parameters:
 - **Live preview:** the real lights update while editing, with a clear way to
   restore what was on before.
 - Save, or save as new.
+- Built (2026-11-13): a full screen (`src/app/mood.tsx`) with the tabs Per
+  light, Palette and On your map (the map tab opens the path, sweep,
+  spotlight and room glow sheets). No icon yet. Entry points: New mood on
+  the Moods tab, the pencil (or long-press) on a mood card, long-press a mood
+  chip on a room or group sheet, and "Duplicate and edit" on a preset.
 
 ### 5.8 Rituals
 

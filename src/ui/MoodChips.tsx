@@ -1,8 +1,10 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 
 import type { BridgeScene, Light } from '../lib/hue/client';
 import { addMood, captureLights, deleteMood, moodLightColor, suggestName, updateMood, type Mood } from '../lib/moods';
+import { tintHex } from '../lib/tints';
 import { PillButton } from './controls';
 import { HueMoodPill } from './HueMoods';
 import { Icon } from './icons';
@@ -39,10 +41,24 @@ export function MoodPill({ mood, onPress, onLongPress }: { mood: Mood; onPress: 
   );
 }
 
+/** Opens the mood editor on a mood (or a new one: `params` say what it starts from). */
+export const openMoodEditor = (params: { id?: string; target?: string; preset?: string }) => router.push({ pathname: '/mood', params });
+
 export function MoodDots({ mood, size = 8 }: { mood: Mood; size?: number }) {
+  // A palette shows its colors in order.
+  if (mood.palette)
+    return (
+      <View style={{ flexDirection: 'row', gap: size * 0.6 }}>
+        {mood.palette.tones.slice(0, 6).map((t, i) => {
+          const c = tintHex(t);
+          return <View key={i} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: c, boxShadow: `0 0 ${size}px 1px ${c}88` }} />;
+        })}
+      </View>
+    );
   return (
     <View style={{ flexDirection: 'row', gap: size * 0.6 }}>
-      {mood.lights.slice(0, 6).map((m) => {
+      {/* Lit lights first: a whole-home mood with a few lights on shows their colors. */}
+      {[...mood.lights.filter((m) => m.on), ...mood.lights.filter((m) => !m.on)].slice(0, 6).map((m) => {
         const c = moodLightColor(m) ?? (m.on ? color.champagne : null);
         return (
           <View
@@ -60,7 +76,7 @@ export function MoodDots({ mood, size = 8 }: { mood: Mood; size?: number }) {
 }
 
 /**
- * The moods of a room or a group: tap to apply, long-press to update, rename or delete, and
+ * The moods of a room or a group: tap to apply, long-press to edit, update, rename or delete, and
  * "Save" keeps the lights as they are now (one red, one blue...) as a new mood. Its moods from the
  * Hue app (bridge scenes) follow; long-press one to keep it as my mood.
  */
@@ -91,8 +107,11 @@ export function MoodChips({
 
   const options = (m: Mood) =>
     Alert.alert(m.name, undefined, [
-      { text: 'Update with current lights', onPress: () => updateMood(m.id, { lights: captureLights(lights) }).then(onChange) },
-      { text: 'Rename', onPress: () => setNaming({ mood: m, name: m.name }) },
+      { text: 'Edit', onPress: () => openMoodEditor({ id: m.id }) },
+      // A palette mood would turn into a light-by-light one: that's the editor's job.
+      m.palette
+        ? { text: 'Rename', onPress: () => setNaming({ mood: m, name: m.name }) }
+        : { text: 'Update with current lights', onPress: () => updateMood(m.id, { lights: captureLights(lights) }).then(onChange) },
       { text: 'Delete', style: 'destructive', onPress: () => deleteMood(m.id).then(onChange) },
     ], { cancelable: true });
 

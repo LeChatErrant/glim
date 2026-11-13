@@ -34,6 +34,8 @@ export type Light = {
   effects?: string[];
   /** Speed of the running effect, 0–1. */
   effectSpeed?: number;
+  /** Playing a living mood (Hue's dynamic palette) now. */
+  living?: boolean;
 };
 
 export type Room = {
@@ -99,8 +101,8 @@ export async function call(path: string, method: 'GET' | 'PUT' | 'POST' | 'DELET
   return json.data ?? [];
 }
 
-/** Scenes Glim makes behind the scenes for rituals (day rhythm, the level after a sleep fade). */
-export const isGlimScene = (name: string) => /^Glim (rhythm |after sleep)/.test(name);
+/** Scenes Glim makes behind the scenes: rituals (day rhythm, the level after a sleep fade) and living moods. */
+export const isGlimScene = (name: string) => /^Glim (rhythm |after sleep|mood )/.test(name);
 
 function toScene(x: Resource): BridgeScene {
   const lights = ((x.actions ?? []) as { target: { rid: string; rtype: string }; action: Record<string, any> }[])
@@ -186,6 +188,7 @@ export async function fetchSnapshot(): Promise<Snapshot> {
       effect: l.effects_v2?.status?.effect ?? l.effects?.status,
       effects: (l.effects_v2?.action?.effect_values ?? l.effects?.effect_values ?? []).filter((e: string) => e !== 'no_effect'),
       effectSpeed: l.effects_v2?.status?.parameters?.speed,
+      living: l.dynamics?.status === 'dynamic_palette',
     };
   });
 
@@ -225,9 +228,10 @@ export async function saveCachedSnapshot(snapshot: Snapshot) {
 
 /**
  * A change to send: color (CIE xy) and white temperature (mirek) are exclusive. `effect` starts a
- * built-in effect ("candle"...) or stops it ("no_effect"); `speed` is 0–1.
+ * built-in effect ("candle"...) or stops it ("no_effect"); `speed` is 0–1. `duration` is the fade
+ * to the new look, in ms (ignored when turning off).
  */
-export type LightState = { on?: boolean; brightness?: number; xy?: { x: number; y: number }; mirek?: number; effect?: string; speed?: number };
+export type LightState = { on?: boolean; brightness?: number; xy?: { x: number; y: number }; mirek?: number; effect?: string; speed?: number; duration?: number };
 
 export function stateBody(state: LightState) {
   const body: Record<string, unknown> = {};
@@ -236,6 +240,8 @@ export function stateBody(state: LightState) {
   if (state.xy) body.color = { xy: state.xy };
   else if (state.mirek !== undefined) body.color_temperature = { mirek: state.mirek };
   if (state.effect) body.effects_v2 = { action: { effect: state.effect, ...(state.speed !== undefined ? { parameters: { speed: state.speed } } : {}) } };
+  // Never with `on: false`: Hue then dims the light to its lowest level on the way out.
+  if (state.duration !== undefined && state.on !== false) body.dynamics = { duration: state.duration };
   return body;
 }
 

@@ -6,7 +6,8 @@ import type { Snapshot } from '../lib/hue/client';
 import type { HomeMap } from '../lib/map/map';
 import { sceneColors, sceneMoodLights, sceneRequest, sceneShowing } from '../lib/hueMoods';
 import { PRESETS, presetLights } from '../lib/moodPresets';
-import { moodLightColor, moodLights, PATH_TONES, pathOffFor, recipeColors, type Mood, type MoodLight, type PathOff } from '../lib/moods';
+import { moodLightColor, moodLights, PATH_TONES, pathOffFor, recipeColors, type Mood, type MoodLight, type MoodOptions, type PathOff } from '../lib/moods';
+import { tintHex } from '../lib/tints';
 import { near } from '../lib/palette';
 
 /**
@@ -58,8 +59,9 @@ export function defaultItems(moods: Mood[]): MoodItem[] {
 export const itemKey = (i: MoodItem) => (i.kind === 'off' ? 'off' : i.kind === 'sleep' ? `sleep:${i.targets.join('+')}:${i.fadeMin}` : `${i.kind}:${i.id}`);
 
 /**
- * A button as drawn: its name, a few dots of its colors, and the lights it sets (null = all off).
- * A mood from the Hue app has `scene` (its id) and `request`: one scene recall instead of a request per light.
+ * A button as drawn: its name, a few dots of its colors, and the lights it sets (null = all off),
+ * with the mood's fade and living scenes (`opts`, for its requests). A mood from the Hue app has
+ * `scene` (its id) and `request`: one scene recall instead of a request per light.
  * `off`: a path's auto-off. `sleep`: a sleep fade button (no lights; native code starts it).
  */
 export type MoodButton = {
@@ -68,6 +70,7 @@ export type MoodButton = {
   dots: string[];
   lights: MoodLight[] | null;
   path: boolean;
+  opts?: MoodOptions;
   scene?: string;
   request?: [string, string];
   off?: PathOff | null;
@@ -93,14 +96,16 @@ export function moodButtons(items: MoodItem[], moods: Mood[], s: Snapshot, map: 
     const m = moods.find((x) => x.id === i.id);
     if (!m) return [];
     const lights = moodLights(s, m, map);
+    const opts: MoodOptions = { transition: m.transition, living: m.living };
     if (m.path) {
       const tint = (PATH_TONES.find((t) => t.id === m.path!.tone) ?? PATH_TONES[0]).hex;
       return [{ key: itemKey(i), name: m.name, dots: [tint, tint, tint], lights, path: true, off: pathOffFor(s, m, map) }];
     }
     // A sweep shows its colors in order, a spotlight its color, a room glow one dot per room color.
-    if (m.recipe) return [{ key: itemKey(i), name: m.name, dots: recipeColors(m.recipe), lights, path: false }];
-    const dots = [...new Set(lights.map((l) => moodLightColor(l)).filter((c): c is string => !!c))];
-    return [{ key: itemKey(i), name: m.name, dots, lights, path: false }];
+    if (m.recipe) return [{ key: itemKey(i), name: m.name, dots: recipeColors(m.recipe), lights, path: false, opts }];
+    // A palette shows its colors in order, even when they fall on fewer lights.
+    const dots = m.palette ? m.palette.tones.map(tintHex) : [...new Set(lights.map((l) => moodLightColor(l)).filter((c): c is string => !!c))];
+    return [{ key: itemKey(i), name: m.name, dots, lights, path: false, opts }];
   });
 }
 
@@ -115,6 +120,12 @@ export function isShowing(s: Snapshot, b: MoodButton, fading: string[] | null = 
   if (!b.lights) return reachable.length > 0 && reachable.every((l) => !l.on);
   const scene = b.scene && s.scenes?.find((x) => x.id === b.scene);
   if (scene) return sceneShowing(s, scene, (lights) => looksLike(s, lights));
+  // A living mood's colors and levels drift: its lights are on and off as it says, and the
+  // bridge reports its colored lights playing (Hue's dynamic palette).
+  if (b.opts?.living?.scenes?.length) {
+    const playing = b.lights.some((m) => m.on && m.hex && s.lights.find((l) => l.id === m.lightId)?.living);
+    return playing && looksLike(s, b.lights.map((m) => ({ lightId: m.lightId, on: m.on })));
+  }
   return looksLike(s, b.lights);
 }
 

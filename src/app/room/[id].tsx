@@ -1,5 +1,5 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { Animated, PanResponder, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,6 +10,7 @@ import { kelvinTint } from '../../lib/hue/color';
 import { useHome } from '../../lib/hue/useHome';
 import { hueMoodsFor, planScene } from '../../lib/hueMoods';
 import { isLit, lightLevel, lightsOf } from '../../lib/lights';
+import { loadMap, type HomeMap } from '../../lib/map/map';
 import { loadMoods, planMood, type Mood } from '../../lib/moods';
 import { formatKelvin, loadRecentColors, near, type Swatch } from '../../lib/palette';
 import { Glow, PillButton, Switch, TagButton } from '../../ui/controls';
@@ -37,10 +38,17 @@ export default function RoomSheet() {
   const throttle = useThrottle();
   const [recents, setRecents] = useState<Swatch[]>([]);
   const [moods, setMoods] = useState<Mood[]>([]);
+  const [map, setMap] = useState<HomeMap | null>(null);
   useEffect(() => {
     loadRecentColors().then(setRecents);
-    loadMoods().then(setMoods);
   }, []);
+  // Moods again when back from the mood editor.
+  useFocusEffect(
+    useCallback(() => {
+      loadMoods().then(setMoods);
+      loadMap().then(setMap);
+    }, []),
+  );
 
   // Slides up on open, follows the finger down, closes past a threshold.
   const [y] = useState(() => new Animated.Value(height));
@@ -206,7 +214,7 @@ export default function RoomSheet() {
               lights={lights}
               moods={moods}
               onChange={setMoods}
-              onApply={(m) => act((s) => planMood(s, m))}
+              onApply={(m) => act((s) => planMood(s, m, map))}
               hueMoods={hueMoodsFor(snapshot, room.id)}
               place={room.name}
               onApplyHue={(sc) => act((s) => planScene(s, sc))}

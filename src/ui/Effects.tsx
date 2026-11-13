@@ -64,15 +64,15 @@ export function EffectGrid({ supported, current, onPick, width }: { supported: s
   );
 }
 
-/** Effects as a row of chips (room sheet): the effect runs on every light that has it. */
-export function EffectRow({ current, onPick, labelWidth = 58 }: { current?: string; onPick: (id: string) => void; labelWidth?: number }) {
+/** Effects as a row of chips (room sheet, mood editor): the effect runs on every light that has it; `supported` limits the list. */
+export function EffectRow({ current, onPick, labelWidth = 58, supported }: { current?: string; onPick: (id: string) => void; labelWidth?: number; supported?: string[] }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <Label tone="label" style={{ width: labelWidth }}>
         Effect
       </Label>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingRight: 8 }} style={{ flex: 1 }}>
-        {[{ id: 'no_effect', label: 'None' }, ...EFFECTS].map((e) => {
+        {[{ id: 'no_effect', label: 'None' }, ...EFFECTS.filter((e) => !supported || supported.includes(e.id))].map((e) => {
           const sel = e.id === 'no_effect' ? !current : e.id === current;
           return (
             <Pressable

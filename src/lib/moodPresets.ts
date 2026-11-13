@@ -2,6 +2,7 @@ import { hasTemperature } from './actions';
 import type { Light } from './hue/client';
 import type { HomeMap } from './map/map';
 import type { MoodLight } from './moods';
+import { whiteFor } from './tints';
 
 /** One color of a preset: a color (hex) or a white (kelvin), optionally at its own brightness. */
 export type Tone = { hex?: string; kelvin?: number; brightness?: number };
@@ -11,15 +12,22 @@ export type Tone = { hex?: string; kelvin?: number; brightness?: number };
  * whole home). Presets ship with the app; keeping one as "my mood" saves it light by light, and
  * from there it can be changed like any mood.
  */
-export type Preset = {
+export type Preset = Palette & {
   id: string;
   name: string;
   category: PresetCategory;
+};
+
+/**
+ * Colors spread over some lights: a preset, or a mood made in the palette mode of the mood
+ * editor (1 to 5 tones). Worked out for the lights at each apply.
+ */
+export type Palette = {
   tones: Tone[];
   brightness: number;
   /** Lights that can play it run this Hue effect instead (candle, fire...). */
   effect?: string;
-  /** The white given to white-only lights when the tones are colors. */
+  /** The white given to white-only lights when the tones are colors (default: the white closest to each color). */
   white?: number;
 };
 
@@ -55,7 +63,7 @@ export const PRESETS: Preset[] = [
  * across the map (unplaced lights after, by name), so neighbours differ. White-only lights take
  * the preset's white; smart plugs are left as they are (a preset is a look, and a plug has none).
  */
-export function presetLights(preset: Preset, lights: Light[], map: HomeMap | null): MoodLight[] {
+export function presetLights(preset: Palette, lights: Light[], map: HomeMap | null): MoodLight[] {
   const placed = new Map(map?.lights.map((l) => [l.lightId, l]) ?? []);
   const order = lights
     .filter((l) => l.reachable && l.kind !== 'onoff')
@@ -71,7 +79,7 @@ export function presetLights(preset: Preset, lights: Light[], map: HomeMap | nul
     const brightness = tone.brightness ?? preset.brightness;
     if (preset.effect && l.effects?.includes(preset.effect)) return { lightId: l.id, on: true, brightness, effect: preset.effect };
     if (tone.hex && l.kind === 'color') return { lightId: l.id, on: true, brightness, hex: tone.hex };
-    const kelvin = tone.kelvin ?? preset.white ?? 2700;
+    const kelvin = tone.kelvin ?? preset.white ?? (tone.hex ? whiteFor(tone.hex) : 2700);
     return { lightId: l.id, on: true, brightness, kelvin: hasTemperature(l) ? kelvin : undefined };
   });
 }
