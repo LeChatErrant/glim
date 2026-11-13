@@ -195,8 +195,11 @@ function GridTile({ look, stale, width }: { look: TileLook; stale: boolean; widt
   );
 }
 
-/** Tiles in balanced rows, about 80 dp wide and at least 44 dp tall; extra tiles don't fit and are left out. */
-function TileRows({ tiles, snapshot, width, height, stale, top = 0 }: { tiles: Tile[]; snapshot: Snapshot; width: number; height: number; stale: boolean; top?: number }) {
+/**
+ * Tiles in balanced rows, about 80 dp wide and at least 44 dp tall; extra tiles don't fit and are
+ * left out. A plain function returning the rows: the widget library can't render a fragment.
+ */
+function tileRows({ tiles, snapshot, width, height, stale, top = 0 }: { tiles: Tile[]; snapshot: Snapshot; width: number; height: number; stale: boolean; top?: number }) {
   const maxCols = Math.max(2, Math.floor((width - 8) / 80));
   const maxRows = Math.max(1, Math.floor((height - 8 - top) / 50));
   const shown = tiles.slice(0, maxCols * maxRows);
@@ -205,17 +208,13 @@ function TileRows({ tiles, snapshot, width, height, stale, top = 0 }: { tiles: T
   const rows = Array.from({ length: rowCount }, (_, i) => shown.slice(i * cols, i * cols + cols));
   // Explicit widths: flex weights only share the space left after each tile's content.
   const tileWidth = Math.floor((width - 10) / cols) - 6;
-  return (
-    <>
-      {rows.map((row, i) => (
-        <FlexWidget key={i} style={{ flexDirection: 'row', width: 'match_parent', flex: 1, marginVertical: 3 }}>
-          {row.map((t) => (
-            <GridTile key={t.key} look={tileLook(t, snapshot)} stale={stale} width={tileWidth} />
-          ))}
-        </FlexWidget>
+  return rows.map((row, i) => (
+    <FlexWidget key={i} style={{ flexDirection: 'row', width: 'match_parent', flex: 1, marginVertical: 3 }}>
+      {row.map((t) => (
+        <GridTile key={t.key} look={tileLook(t, snapshot)} stale={stale} width={tileWidth} />
       ))}
-    </>
-  );
+    </FlexWidget>
+  ));
 }
 
 /** Grid of room tiles. Tap a tile to toggle the room. */
@@ -231,7 +230,7 @@ export function RoomsWidget({ snapshot, width, height, stale }: { snapshot: Snap
           <StaleBadge snapshot={snapshot} />
         </FlexWidget>
       )}
-      <TileRows tiles={tiles} snapshot={snapshot} width={width} height={height} stale={stale} top={top} />
+      {tileRows({ tiles, snapshot, width, height, stale, top })}
     </FlexWidget>
   );
 }
@@ -248,7 +247,7 @@ export function GridWidget({ snapshot, tiles, width, height, stale }: { snapshot
           <StaleBadge snapshot={snapshot} />
         </FlexWidget>
       )}
-      <TileRows tiles={tiles} snapshot={snapshot} width={width} height={height} stale={stale} top={top} />
+      {tileRows({ tiles, snapshot, width, height, stale, top })}
     </FlexWidget>
   );
 }

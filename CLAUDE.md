@@ -314,7 +314,9 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   `FAST_TOGGLE_ROOM` / `FAST_TOGGLE_LIGHT`, follow live sync, and keep their
   picks per widget (`src/widgets/tiles.ts`, `TilesWidgetConfig.tsx`). Not
   yet: the "updating" arc from the design canvas (it would cost one more
-  redraw, and redraws flicker).
+  redraw, and redraws flicker). The widget library can't render a React
+  fragment (`<>…</>`): it fails with "Symbol(react.fragment) is not a
+  function"; return arrays from plain functions instead.
 - 2026-11-13: **Gradient sweep, spotlight, room glow**, the other
   map-aware moods, next to paths in the Moods tab's "On your map" section.
   Stored as a recipe (`Mood.recipe`, a `kind` union in `src/lib/moods.ts`;

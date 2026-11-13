@@ -65,7 +65,7 @@ export function TilesWidgetConfig({ widgetInfo, renderWidget, setResult }: Widge
   const dotOf = (on: boolean, c: string) => (on ? c : undefined);
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: color.ground }} contentContainerStyle={{ padding: 24, paddingTop: 56, gap: 22 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: color.ground }} contentContainerStyle={{ padding: 24, paddingTop: 56, paddingBottom: 72, gap: 22 }}>
       <Display size={30}>{single ? 'Light widget' : 'Grid widget'}</Display>
       <View style={{ alignItems: 'center' }}>
         <WidgetPreview
