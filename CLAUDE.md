@@ -441,6 +441,22 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   path's lights cross rooms: it needs a scene per room; a `bridge_home`
   scene is refused), sleep fade from a widget or the tile, "+5 min" on a
   running fade.
+- 2026-11-13: **Moods from the Hue app.** The bridge's scenes (made in the
+  Hue app: "Base", "Lumineux"...) are moods in their own group, "From the Hue
+  app", on the Moods tab (a card per mood with its room or group, its colors
+  and its lights), after a room or group's own moods on its sheet, and in the
+  Moods widget's and the Quick Settings tile's pickers (named "Lumineux ·
+  Salon": the Hue app repeats names per room). Read with the snapshot
+  (`Snapshot.scenes`, `BridgeScene` in `src/lib/hue/client.ts`), leaving out
+  Glim's own ritual scenes ("Glim rhythm …", "Glim after sleep",
+  `isGlimScene`). Applying one is a single scene recall (`recall.action`
+  `active`, or `dynamic_palette` for a living mood: a scene with a palette
+  set to play, `auto_dynamic`, as the Hue app does); widget and tile taps
+  send it natively. "Showing" (champagne edge, tile on) is the bridge's
+  `status.active`, or for a still one its lights looking like it. "Keep as my
+  mood" (long-press, or the card's button) copies it light by light into a
+  Glim mood of its room (`src/lib/hueMoods.ts`); a living one keeps its still
+  colors. Glim doesn't edit or delete scenes on the bridge.
 
 ## Vocabulary
 
