@@ -238,7 +238,7 @@ function PathCard({
         accessibilityLabel={`Light the path ${mood.name}`}
         style={({ pressed }) => ({ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 14, opacity: pressed ? 0.6 : 1 })}
       >
-        <PathPreview map={map} path={path} lit={lit} tint={tint} width={76} height={56} />
+        <PathPreview map={map} path={path} lit={lit} tint={tint} width={76} height={56} focus />
         <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
           <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
             {mood.name}

@@ -147,7 +147,24 @@ const ROUTE_ID = '__route';
  * route as a dashed champagne line, and a glowing dot at each light it turns on (the night path
  * "constellation").
  */
-export function PathPreview({ map, path, lit, tint, height, width }: { map: HomeMap; path: Pick<PathRecipe, 'from' | 'to'>; lit: string[]; tint: string; height: number; width?: number }) {
+export function PathPreview({
+  map,
+  path,
+  lit,
+  tint,
+  height,
+  width,
+  focus,
+}: {
+  map: HomeMap;
+  path: Pick<PathRecipe, 'from' | 'to'>;
+  lit: string[];
+  tint: string;
+  height: number;
+  width?: number;
+  /** Frame the rooms walked through instead of the whole home (small previews). */
+  focus?: boolean;
+}) {
   const [box, setBox] = useState(width ?? 0);
   const route: Route | null = useMemo(() => findRoute(map, path.from, path.to), [map, path.from, path.to]);
   const plan = useMemo(
@@ -155,8 +172,21 @@ export function PathPreview({ map, path, lit, tint, height, width }: { map: Home
     [map, route],
   );
   const w = width ?? box;
-  const f = w ? fitPlan(plan, w, height, 10) : null;
   const walked = new Set(route?.rooms ?? []);
+  const f = useMemo(() => {
+    if (!w) return null;
+    const framed = focus ? plan.rooms.filter((r) => walked.has(r.id)).flatMap((r) => r.pts) : [];
+    if (!framed.length) return fitPlan(plan, w, height, height * 0.07);
+    // Fit the walked rooms; the rest of the home runs off the edges.
+    const u0 = Math.min(...framed.map((p) => p.u));
+    const v0 = Math.min(...framed.map((p) => p.v));
+    const frame = { ...plan, width: Math.max(...framed.map((p) => p.u)) - u0 || 1, height: Math.max(...framed.map((p) => p.v)) - v0 || 1 };
+    const fit = fitPlan(frame, w, height, height * 0.1);
+    return { ...fit, x: (u: number) => fit.x(u - u0), y: (v: number) => fit.y(v - v0) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [w, height, plan, focus, route]);
+  const glow = Math.max(5, height * 0.075);
+  const core = Math.max(1.8, height * 0.017);
   const line = plan.rooms.find((r) => r.id === ROUTE_ID);
   const litSet = new Set(lit);
   const gid = `pathglow-${tint.slice(1)}`;
@@ -196,11 +226,11 @@ export function PathPreview({ map, path, lit, tint, height, width }: { map: Home
           {plan.lights.map((l) =>
             litSet.has(l.lightId) ? (
               <G key={l.lightId}>
-                <Circle cx={f.x(l.u)} cy={f.y(l.v)} r={11} fill={`url(#${gid})`} />
-                <Circle cx={f.x(l.u)} cy={f.y(l.v)} r={2.6} fill={tint} />
+                <Circle cx={f.x(l.u)} cy={f.y(l.v)} r={glow} fill={`url(#${gid})`} />
+                <Circle cx={f.x(l.u)} cy={f.y(l.v)} r={core} fill={tint} />
               </G>
             ) : (
-              <Circle key={l.lightId} cx={f.x(l.u)} cy={f.y(l.v)} r={1.8} fill="none" stroke={hairline(0.3)} strokeWidth={1} />
+              <Circle key={l.lightId} cx={f.x(l.u)} cy={f.y(l.v)} r={core * 0.7} fill="none" stroke={hairline(0.3)} strokeWidth={1} />
             ),
           )}
         </Svg>
