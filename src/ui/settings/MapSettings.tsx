@@ -40,7 +40,7 @@ export function MapSettings() {
   return (
     <Section title="Map">
       <View>
-        <SettingsRow icon="map" title={map ? 'Your home' : 'No map'} sub={sub} />
+        <SettingsRow icon="map" title={map ? 'Your map' : 'No map'} sub={sub} />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingTop: 6 }}>
           <PillButton title={map ? 'Scan more' : 'Scan with camera'} icon="scan" height={40} onPress={() => router.push('/scan')} />
           <PillButton title={map ? 'Edit on screen' : 'Draw it myself'} icon="edit" height={40} onPress={() => router.push('/editor')} />

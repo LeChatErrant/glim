@@ -1,12 +1,10 @@
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react';
-import { PanResponder, Pressable, ScrollView, Text, View, type GestureResponderEvent } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PanResponder, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Circle, G, Line, Path, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 
 import { identifyLight, type Light, type Snapshot } from '../lib/hue/client';
-import { inkOn, LIGHT_ICON_PATHS } from '../lib/lightIcons';
-import { DEFAULT_LENGTH, isPlug, lightShape, lightType } from '../lib/lights';
+import { DEFAULT_LENGTH, lightShape, lightTypeLabel } from '../lib/lights';
 import { useSnapshot } from '../lib/hue/useSnapshot';
 import {
   centroid,
@@ -24,11 +22,14 @@ import { roomForPoint } from '../lib/map/glow';
 import { loadMap, saveMap, saveMapRotation, type FloorPoint, type HomeMap, type MapLight, type MapRoom, type Plan } from '../lib/map/map';
 import { PLAN_COLORS } from '../lib/map/svg';
 import { locate, pointAt, runPath, runSamples, wallRun, wrapStep, type WallRun } from '../lib/map/wallPath';
-import { Body, Button, Chip } from '../ui/components';
+import { PillButton } from '../ui/controls';
+import { EditorSheet, EditorTop, LightRow, RoomPicker, SheetTitle } from '../ui/editor/parts';
+import { LightMarker } from '../ui/FloorPlan';
+import { iconPath } from '../ui/icons';
 import { offerMoveToRoom } from '../ui/offerMoveToRoom';
-import { RoomAssign } from '../ui/RoomAssign';
 import { turnTo } from '../ui/MapGestures';
-import { theme } from '../ui/theme';
+import { Display, Label, Txt } from '../ui/text';
+import { color, font, hairline } from '../ui/theme';
 import { refreshAllWidgets } from '../widgets/task-handler';
 
 /**
@@ -82,7 +83,9 @@ const HIT_PX = 26;
 const SNAP_CORNER_PX = 16;
 const SNAP_WALL_PX = 12;
 const SNAP_AXIS_PX = 10;
-const ACCENT = theme.accent;
+const ACCENT = color.champagne;
+/** Size of a light marker on the plan, as on the Map tab. */
+const MARKER_SIZE = 22;
 
 export default function Editor() {
   const [doc, setDoc] = useState<Doc | null>(null);
@@ -98,7 +101,6 @@ export default function Editor() {
 }
 
 function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number }) {
-  const insets = useSafeAreaInsets();
   const { snapshot, refresh } = useSnapshot(5000);
   // `?place=1`: opened to place lights missing from the map, so start on the light picker.
   const { place } = useLocalSearchParams<{ place?: string }>();
@@ -426,25 +428,24 @@ function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number })
   const selKind = selPlaced ? directional(selPlaced.lightId, snapshot) : null;
   const selRun = selPlaced && selKind ? runOf(selPlaced, doc.rooms, snapshot, selKind) : null;
 
+  const unplaced = snapshot ? snapshot.lights.filter((l) => !placedIds.has(l.id)).length : 0;
+  const hint =
+    selKind &&
+    (selRun
+      ? `Drag an end to stretch the ${selKind === 'strip' ? 'strip' : 'string'} along the walls, around corners. Drag the light to slide it.`
+      : selKind === 'string'
+        ? 'Drag an end to turn the string and stretch it to its real length.'
+        : selKind === 'strip'
+          ? 'Drag an end to turn the strip and stretch it to its real length. It snaps to walls.'
+          : selKind === 'lantern'
+            ? 'Drag the handle to turn it along the wall it hangs on. It snaps to walls.'
+            : 'Drag the handle to turn the bar the way it really stands. It snaps to walls.');
+
   return (
-    <View style={{ flex: 1 }}>
-      <Stack.Screen
-        options={{
-          title: 'Edit map',
-          headerRight: () => (
-            <View style={{ flexDirection: 'row' }}>
-              <Pressable onPress={turnRight} accessibilityLabel="Turn the map a quarter turn right" hitSlop={8} style={{ padding: 8 }}>
-                <Text style={{ color: theme.text, fontSize: 16 }}>⟳ Turn</Text>
-              </Pressable>
-              <Pressable onPress={undo} disabled={!history.length} hitSlop={12} style={{ opacity: history.length ? 1 : 0.35, padding: 8 }}>
-                <Text style={{ color: theme.text, fontSize: 16 }}>↶ Undo</Text>
-              </Pressable>
-            </View>
-          ),
-        }}
-      />
+    <View style={{ flex: 1, backgroundColor: color.ground }}>
+      <EditorTop onBack={() => router.back()} onTurn={turnRight} onUndo={undo} canUndo={history.length > 0} />
       <View
-        style={{ flex: 1 }}
+        style={{ flex: 1, overflow: 'hidden' }}
         onLayout={(e) => {
           const { width: w, height: h } = e.nativeEvent.layout;
           setSize({ w, h });
@@ -455,130 +456,145 @@ function EditorCanvas({ initial, rotation }: { initial: Doc; rotation: number })
       >
         {view && <Canvas doc={shown} view={view} sel={sel} guides={guides} snapshot={snapshot} width={size.w} height={size.h} />}
         {!doc.rooms.length && (
-          <View pointerEvents="none" style={{ position: 'absolute', top: 24, left: 24, right: 24 }}>
-            <Body muted>{"Start with Add room, then drag the corners to the shape of your room. Tap a wall's middle dot to add a corner."}</Body>
+          <View pointerEvents="none" style={{ position: 'absolute', top: 18, left: 24, right: 24, gap: 6 }}>
+            <Display size={28}>
+              Draw <Display size={28} style={{ color: color.champagne }}>your home</Display>
+            </Display>
+            <Txt size={13} tone="secondary" style={{ lineHeight: 18 }}>
+              {"Start with Add room, then drag the corners to the shape of your room. Tap a wall's middle dot to add a corner."}
+            </Txt>
           </View>
         )}
       </View>
 
-      <View style={{ padding: 16, paddingBottom: insets.bottom + 12, gap: 10, backgroundColor: theme.surface }}>
+      <EditorSheet>
         {sel === null && (
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Button title="Add room" primary style={{ flex: 1 }} onPress={addRoom} />
-            <Button title="Add light" style={{ flex: 1 }} onPress={() => setSel({ kind: 'add-light' })} />
-            <Button title="Done" style={{ flex: 0.8 }} onPress={() => router.back()} />
-          </View>
-        )}
-
-        {sel?.kind === 'add-light' && snapshot && (
           <>
-            <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>Pick a light to place</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-              {sortLightsForPlacing(snapshot, placedIds).map((l) => (
-                <Chip key={l.id} label={`${placedIds.has(l.id) ? '✓ ' : ''}${l.name}`} dot={l.on ? l.color : undefined} onPress={() => addLight(l.id)} />
-              ))}
-            </ScrollView>
-            <Button title="Cancel" onPress={() => setSel(null)} />
+            <Txt size={13} tone="secondary" style={{ lineHeight: 18 }}>
+              {doc.rooms.length ? 'Tap a room or a light to change it. Pinch to zoom, twist to turn.' : 'Close enough is fine: you can fine-tune it any time.'}
+            </Txt>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <PillButton title="Add room" icon="add" kind="primary" height={48} style={{ flex: 1 }} onPress={addRoom} />
+              <PillButton title="Add light" icon="light" height={48} style={{ flex: 1 }} onPress={() => setSel({ kind: 'add-light' })} />
+            </View>
           </>
         )}
 
-        {selRoom && sel?.kind === 'room' && snapshot && (
+        {sel?.kind === 'add-light' && (
           <>
-            <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>
-              {selRoom.name} · {area(selRoom.points).toFixed(1)} m²
-            </Text>
-            <RoomAssign
-              rooms={snapshot.rooms}
-              // A room just drawn isn't "Other space" yet: highlight nothing until the user picks.
-              current={selRoom.hueRoomId ?? (selRoom.name === 'Other' ? null : undefined)}
-              onAssign={(c) => updateRoom(selRoom.id, { name: c.name, hueRoomId: c.hueRoomId })}
-              onRoomCreated={refresh}
-            />
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Button title={selRoom.outdoor ? '✓ Outdoor' : 'Outdoor'} style={{ flex: 1 }} onPress={() => updateRoom(selRoom.id, { outdoor: !selRoom.outdoor })} />
-              <Button
+            <SheetTitle title="Place a light" sub={unplaced ? `${unplaced} not on the map yet · it blinks when placed` : 'All your lights are on the map · tap one to move it here'} onClose={() => setSel(null)} />
+            {snapshot ? (
+              <LightRow lights={sortLightsForPlacing(snapshot, placedIds)} placed={placedIds} onPick={addLight} />
+            ) : (
+              <Txt size={13} tone="muted">
+                Finding your lights…
+              </Txt>
+            )}
+          </>
+        )}
+
+        {selRoom && sel?.kind === 'room' && (
+          <>
+            <SheetTitle title={selRoom.name} sub={`${area(selRoom.points).toFixed(1)} m²${selRoom.outdoor ? ' · outdoor' : ''}${selRoom.hueRoomId ? '' : ' · no Hue room'}`} onClose={() => setSel(null)} />
+            {snapshot && (
+              <View style={{ gap: 8 }}>
+                <Label tone="label">Which room is it</Label>
+                <RoomPicker
+                  rooms={snapshot.rooms}
+                  // A room just drawn isn't "Other space" yet: highlight nothing until the user picks.
+                  current={selRoom.hueRoomId ?? (selRoom.name === 'Other' ? null : undefined)}
+                  onAssign={(c) => updateRoom(selRoom.id, { name: c.name, hueRoomId: c.hueRoomId })}
+                  onRoomCreated={refresh}
+                />
+              </View>
+            )}
+            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              <PillButton
+                title="Outdoor"
+                icon={selRoom.outdoor ? 'check' : undefined}
+                height={44}
+                onPress={() => updateRoom(selRoom.id, { outdoor: !selRoom.outdoor })}
+                style={selRoom.outdoor ? { borderColor: 'rgba(233,207,159,0.55)' } : undefined}
+              />
+              <PillButton
                 title="Delete room"
-                style={{ flex: 1 }}
+                kind="text"
+                height={44}
                 onPress={() => {
                   commit({ ...doc, rooms: doc.rooms.filter((r) => r.id !== selRoom.id) });
                   setSel(null);
                 }}
               />
-              <Button title="Done" style={{ flex: 0.8 }} onPress={() => setSel(null)} />
             </View>
-            <Body muted>{"Drag the room to move it, drag a corner to reshape it, tap a wall's middle dot to add a corner."}</Body>
+            <Txt size={12} tone="muted" style={{ lineHeight: 16 }}>
+              {"Drag the room to move it, drag a corner to reshape it, tap a wall's middle dot to add a corner."}
+            </Txt>
           </>
         )}
 
         {selRoom && sel?.kind === 'corner' && (
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Button
-              title="Delete corner"
-              style={{ flex: 1 }}
-              disabled={selRoom.points.length <= 3}
-              onPress={() => {
-                updateRoom(selRoom.id, { points: selRoom.points.filter((_, i) => i !== sel.index) });
-                setSel({ kind: 'room', roomId: selRoom.id });
-              }}
-            />
-            <Button title="Done" style={{ flex: 1 }} onPress={() => setSel({ kind: 'room', roomId: selRoom.id })} />
-          </View>
+          <>
+            <SheetTitle title={`Corner ${sel.index + 1} of ${selRoom.points.length}`} sub={`${selRoom.name} · drag it to reshape the room`} onClose={() => setSel({ kind: 'room', roomId: selRoom.id })} />
+            <View style={{ flexDirection: 'row' }}>
+              <PillButton
+                title="Delete corner"
+                height={44}
+                disabled={selRoom.points.length <= 3}
+                onPress={() => {
+                  updateRoom(selRoom.id, { points: selRoom.points.filter((_, i) => i !== sel.index) });
+                  setSel({ kind: 'room', roomId: selRoom.id });
+                }}
+              />
+            </View>
+          </>
         )}
 
         {sel?.kind === 'light' && (
           <>
-            <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>{selLight?.name ?? 'Light'}</Text>
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Button title="Blink" style={{ flex: 1 }} onPress={() => identifyLight(sel.lightId).catch(() => null)} />
-              <Button
+            <SheetTitle
+              mark={selLight ? <LightMarker light={selLight} size={30} ground={color.sheet} glow={false} /> : undefined}
+              title={selLight?.name ?? 'Light'}
+              sub={selLight ? lightTypeLabel(selLight) : undefined}
+              onClose={() => setSel(null)}
+            />
+            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <PillButton title="Blink" icon="blink" height={44} onPress={() => identifyLight(sel.lightId).catch(() => null)} />
+              {selPlaced && selKind && selRun && (
+                <PillButton
+                  title="Straight"
+                  height={44}
+                  onPress={() => commit({ ...doc, lights: doc.lights.map((l) => (l.lightId === sel.lightId ? { ...l, angle: lightAngle(l, doc.rooms) } : l)) })}
+                />
+              )}
+              {selPlaced && selKind && !selRun && selPlaced.angle !== undefined && (
+                <PillButton
+                  title="Along the wall"
+                  height={44}
+                  onPress={() =>
+                    commit({
+                      ...doc,
+                      // Strings and strips keep their length: by a wall, they now follow it around corners.
+                      lights: doc.lights.map((l) => (l.lightId === sel.lightId ? { ...l, angle: undefined, length: stretchy(selKind) ? l.length : undefined } : l)),
+                    })
+                  }
+                />
+              )}
+              <PillButton
                 title="Remove from map"
-                style={{ flex: 1.4 }}
+                kind="text"
+                height={44}
                 onPress={() => {
                   commit({ ...doc, lights: doc.lights.filter((l) => l.lightId !== sel.lightId) });
                   setSel(null);
                 }}
               />
-              <Button title="Done" style={{ flex: 0.8 }} onPress={() => setSel(null)} />
             </View>
-            {selPlaced && selKind && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Body muted>
-                    {selRun
-                      ? `Drag a ⟳ end to stretch the ${selKind === 'strip' ? 'strip' : 'string'} along the walls, around corners. Drag the light to slide it.`
-                      : selKind === 'string'
-                        ? 'Drag a ⟳ end to turn the string and stretch it to its real length.'
-                        : selKind === 'strip'
-                          ? 'Drag a ⟳ end to turn the strip and stretch it to its real length. It snaps to walls.'
-                          : selKind === 'lantern'
-                            ? 'Drag ⟳ to turn it along the wall it hangs on. It snaps to walls.'
-                            : 'Drag ⟳ to turn the bar the way it really stands. It snaps to walls.'}
-                  </Body>
-                </View>
-                {selRun ? (
-                  <Button
-                    title="Straight"
-                    onPress={() => commit({ ...doc, lights: doc.lights.map((l) => (l.lightId === sel.lightId ? { ...l, angle: lightAngle(l, doc.rooms) } : l)) })}
-                  />
-                ) : (
-                  selPlaced.angle !== undefined && (
-                    <Button
-                      title="Along the wall"
-                      onPress={() =>
-                        commit({
-                          ...doc,
-                          // Strings and strips keep their length: by a wall, they now follow it around corners.
-                          lights: doc.lights.map((l) => (l.lightId === sel.lightId ? { ...l, angle: undefined, length: stretchy(selKind) ? l.length : undefined } : l)),
-                        })
-                      }
-                    />
-                  )
-                )}
-              </View>
-            )}
+            <Txt size={12} tone="muted" style={{ lineHeight: 16 }}>
+              {hint || 'Drag the light to where it really is.'}
+            </Txt>
           </>
         )}
-      </View>
+      </EditorSheet>
     </View>
   );
 }
@@ -647,8 +663,6 @@ function snapAngle(deg: number, rooms: MapRoom[]): { deg: number; wall?: [FloorP
   return { deg: Math.round(deg / 5) * 5 };
 }
 
-const ROTATE_ICON = 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4v4.5H15';
-
 /**
  * The selected light's handle: a knob with a turn icon at the end of a dashed arm, labeled with
  * what dragging it does. String lights and strips get a knob at each end, and their length in the middle.
@@ -660,30 +674,36 @@ function Handle({ l, rooms, kind, view, run }: { l: MapLight; rooms: MapRoom[]; 
   const b = stretchy(kind) ? handleAt(l, rooms, kind, view.scale, -1, run) : l;
   const knob = (p: FloorPoint, key: string) => (
     <G key={key}>
-      <Circle cx={X(p)} cy={Y(p)} r={14} fill={theme.bg} stroke={ACCENT} strokeWidth={2} />
-      <Path d={ROTATE_ICON} fill="none" stroke={ACCENT} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" transform={`translate(${X(p) - 8} ${Y(p) - 8}) scale(${16 / 24})`} />
+      <Circle cx={X(p)} cy={Y(p)} r={19} fill={ACCENT} fillOpacity={0.1} />
+      <Circle cx={X(p)} cy={Y(p)} r={14} fill={color.ground} stroke={ACCENT} strokeOpacity={0.9} strokeWidth={1.2} />
+      <Path d={iconPath('rotate')} fill="none" stroke={ACCENT} strokeWidth={1.6 * (24 / 15)} strokeLinecap="round" strokeLinejoin="round" transform={`translate(${X(p) - 7.5} ${Y(p) - 7.5}) scale(${15 / 24})`} />
     </G>
   );
   const length = stretchy(kind) ? `${lengthOf(l, kind).toFixed(1)} m` : null;
   return (
     <G>
-      {!run && <Line x1={X(b)} y1={Y(b)} x2={X(a)} y2={Y(a)} stroke={ACCENT} strokeWidth={1.5} strokeDasharray="5 4" />}
+      {!run && <Line x1={X(b)} y1={Y(b)} x2={X(a)} y2={Y(a)} stroke={ACCENT} strokeOpacity={0.7} strokeWidth={1} strokeDasharray="4 4" />}
       {knob(a, 'a')}
       {stretchy(kind) && knob(b, 'b')}
       {/* Along the walls the middle of the knobs can be anywhere (on the light, outside the room): the length goes with the label. */}
-      <PlanChip x={X(a)} y={Y(a) - 30} text={run ? `STRETCH · ${length}` : stretchy(kind) ? 'TURN · STRETCH' : 'TURN'} />
+      <PlanChip x={X(a)} y={Y(a) - 31} text={run ? `STRETCH · ${length}` : stretchy(kind) ? 'TURN · STRETCH' : 'TURN'} />
       {length && !run && <PlanChip x={(X(a) + X(b)) / 2} y={(Y(a) + Y(b)) / 2 - 26} text={length} />}
     </G>
   );
 }
 
-/** A small dark label with champagne text, centered on (x, y). */
-function PlanChip({ x, y, text }: { x: number; y: number; text: string }) {
-  const w = text.length * 6.6 + 16;
+/** How far out from a wall's middle a length chip sits so it clears the wall's add-corner dot: further on upright walls (the chip is wide). */
+const chipOut = (w: { nx: number; ny: number; text: string }) => 12 + Math.abs(w.nx) * ((w.text.length * 6.4 + 16) / 2) + Math.abs(w.ny) * 10;
+
+/** A small dark pill with champagne capitals, centered on (x, y): wall lengths, handle labels. */
+function PlanChip({ x: at, y, text, within }: { x: number; y: number; text: string; within?: number }) {
+  const w = text.length * 6.4 + 16;
+  // Kept on screen when a width is given (a wall by the screen's edge).
+  const x = within ? Math.min(Math.max(at, w / 2 + 6), within - w / 2 - 6) : at;
   return (
     <G>
-      <Rect x={x - w / 2} y={y - 10} width={w} height={20} rx={10} fill="rgba(5,5,6,0.88)" stroke={ACCENT} strokeOpacity={0.45} strokeWidth={1} />
-      <SvgText x={x} y={y + 3.5} fill={ACCENT} fontSize={10} letterSpacing={1.2} textAnchor="middle">
+      <Rect x={x - w / 2} y={y - 10} width={w} height={20} rx={10} fill={color.ground} fillOpacity={0.92} stroke={ACCENT} strokeOpacity={0.55} strokeWidth={1} />
+      <SvgText x={x} y={y + 3.5} fill={ACCENT} fontFamily={font.uiMedium} fontSize={10} letterSpacing={0.8} textAnchor="middle">
         {text}
       </SvgText>
     </G>
@@ -691,50 +711,20 @@ function PlanChip({ x, y, text }: { x: number; y: number; text: string }) {
 }
 
 /**
- * A light as the Map tab draws it: color core, dark gap, ivory ring, and its type icon on top.
- * Plugs are diamonds, light bars capsules turned along `angle` (degrees on screen). Off = hollow.
- */
-function MarkerG({ light, x, y, angle }: { light: Light; x: number; y: number; angle?: number }) {
-  const on = light.on && light.reachable;
-  const core = on ? light.color : theme.bg;
-  const ink = on ? inkOn(light.color) : 'rgba(242,232,216,0.85)';
-  const r = 13;
-  const plug = isPlug(light);
-  const shape = (grow: number, fill: string, stroke?: string, dash?: string) =>
-    plug ? (
-      <Rect x={x - r + 2 - grow} y={y - r + 2 - grow} width={(r - 2 + grow) * 2} height={(r - 2 + grow) * 2} transform={`rotate(45 ${x} ${y})`} fill={fill} stroke={stroke} strokeWidth={stroke ? 1.2 : 0} strokeDasharray={dash} />
-    ) : angle !== undefined ? (
-      <Rect x={x - r - 5 - grow} y={y - r + 3 - grow} width={(r + 5 + grow) * 2} height={(r - 3 + grow) * 2} rx={r - 3 + grow} transform={`rotate(${angle} ${x} ${y})`} fill={fill} stroke={stroke} strokeWidth={stroke ? 1.2 : 0} strokeDasharray={dash} />
-    ) : (
-      <Circle cx={x} cy={y} r={r + grow} fill={fill} stroke={stroke} strokeWidth={stroke ? 1.2 : 0} strokeDasharray={dash} />
-    );
-  const icon = 15;
-  return (
-    <G>
-      {on && <Circle cx={x} cy={y} r={r + 9} fill={light.color} fillOpacity={0.18} />}
-      {!light.reachable ? shape(3, 'none', '#F2B872', '3 3') : on ? shape(3, 'rgba(255,246,230,0.85)') : null}
-      {on && shape(1.6, PLAN_COLORS.off)}
-      {shape(0, core, on ? undefined : PLAN_COLORS.offStroke)}
-      <Path
-        d={LIGHT_ICON_PATHS[lightType(light.archetype)]}
-        fill="none"
-        stroke={ink}
-        strokeWidth={1.6 * (24 / icon)}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        transform={`translate(${x - icon / 2} ${y - icon / 2}) scale(${icon / 24})`}
-      />
-    </G>
-  );
-}
-
-/**
  * What the light physically is, on the floor: a light bar's length, a string's row of beads or a
  * strip (their real length), a lantern's wall plate. Turning the handle turns this, so its effect shows.
+ * Drawn like the Map tab: a warm core in a halo of the light's color, dark when off.
  */
 function Footprint({ l, light, rooms, kind, view, run }: { l: MapLight; light: Light; rooms: MapRoom[]; kind: Directional; view: ViewBox; run: WallRun | null }) {
   const on = light.on && light.reachable;
-  const tint = on ? light.color : 'rgba(242,232,216,0.45)';
+  const tint = on ? light.color : hairline(0.45);
+  const core = on ? '#FFE2B0' : '#4A4640';
+  const bead = (key: number, x: number, y: number) => (
+    <G key={key}>
+      {on && <Circle cx={x} cy={y} r={5} fill={light.color} fillOpacity={0.35} />}
+      <Circle cx={x} cy={y} r={2} fill={core} />
+    </G>
+  );
   if (run) {
     // Along the walls, turning at corners: the strip itself, or the string's line and its beads.
     const pts = runPath(run)
@@ -744,18 +734,16 @@ function Footprint({ l, light, rooms, kind, view, run }: { l: MapLight; light: L
     if (kind === 'strip') {
       return (
         <G>
-          {on && <Polyline points={pts} fill="none" stroke={tint} strokeOpacity={0.4} strokeWidth={8} strokeLinecap="round" strokeLinejoin="round" />}
-          <Polyline points={pts} fill="none" stroke={on ? '#FFE2B0' : tint} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+          {on && <Polyline points={pts} fill="none" stroke={tint} strokeOpacity={0.45} strokeWidth={6} strokeLinecap="round" strokeLinejoin="round" />}
+          <Polyline points={pts} fill="none" stroke={core} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
         </G>
       );
     }
     const beads = runSamples(run, Math.max(3, Math.round(run.len / 0.3)) + 1).map((p) => screenOf(xz(p), view));
     return (
       <G>
-        <Polyline points={pts} fill="none" stroke={tint} strokeOpacity={0.5} strokeWidth={1} />
-        {beads.map((b, i) => (
-          <Circle key={i} cx={b.sx} cy={b.sy} r={2.6} fill={on ? light.color : theme.bg} stroke={on ? undefined : tint} strokeWidth={1} />
-        ))}
+        <Polyline points={pts} fill="none" stroke={tint} strokeOpacity={0.4} strokeWidth={1} />
+        {beads.map((b, i) => bead(i, b.sx, b.sy))}
       </G>
     );
   }
@@ -768,10 +756,10 @@ function Footprint({ l, light, rooms, kind, view, run }: { l: MapLight; light: L
     const n = Math.max(3, Math.round((half * 2) / 0.3));
     return (
       <G>
-        <Line x1={p.sx} y1={p.sy} x2={q.sx} y2={q.sy} stroke={tint} strokeOpacity={0.5} strokeWidth={1} />
+        <Line x1={p.sx} y1={p.sy} x2={q.sx} y2={q.sy} stroke={tint} strokeOpacity={0.4} strokeWidth={1} />
         {Array.from({ length: n + 1 }, (_, i) => {
           const b = at(-half + (i * half * 2) / n);
-          return <Circle key={i} cx={b.sx} cy={b.sy} r={2.6} fill={on ? light.color : theme.bg} stroke={on ? undefined : tint} strokeWidth={1} />;
+          return bead(i, b.sx, b.sy);
         })}
       </G>
     );
@@ -779,12 +767,18 @@ function Footprint({ l, light, rooms, kind, view, run }: { l: MapLight; light: L
   if (kind === 'strip') {
     return (
       <G>
-        {on && <Line x1={p.sx} y1={p.sy} x2={q.sx} y2={q.sy} stroke={tint} strokeOpacity={0.4} strokeWidth={8} strokeLinecap="round" />}
-        <Line x1={p.sx} y1={p.sy} x2={q.sx} y2={q.sy} stroke={on ? '#FFE2B0' : tint} strokeWidth={2.5} strokeLinecap="round" />
+        {on && <Line x1={p.sx} y1={p.sy} x2={q.sx} y2={q.sy} stroke={tint} strokeOpacity={0.45} strokeWidth={6} strokeLinecap="round" />}
+        <Line x1={p.sx} y1={p.sy} x2={q.sx} y2={q.sy} stroke={core} strokeWidth={2} strokeLinecap="round" />
       </G>
     );
   }
-  return <Line x1={p.sx} y1={p.sy} x2={q.sx} y2={q.sy} stroke={tint} strokeOpacity={on ? 0.6 : 0.5} strokeWidth={kind === 'bar' ? 7 : 3} strokeLinecap="round" />;
+  // Bars and lanterns: a soft wash along the wall, the fitting as a thin line.
+  return (
+    <G>
+      {on && <Line x1={p.sx} y1={p.sy} x2={q.sx} y2={q.sy} stroke={tint} strokeOpacity={0.3} strokeWidth={kind === 'bar' ? 12 : 8} strokeLinecap="round" />}
+      <Line x1={p.sx} y1={p.sy} x2={q.sx} y2={q.sy} stroke={on ? tint : hairline(0.45)} strokeOpacity={on ? 0.85 : 1} strokeWidth={kind === 'bar' ? 4 : 2.5} strokeLinecap="round" />
+    </G>
+  );
 }
 
 /** A free spot in a room: its center, nudged so it doesn't land on a light already there. */
@@ -840,6 +834,11 @@ function area(pts: FloorPoint[]) {
   return Math.abs(a) / 2;
 }
 
+/**
+ * The plan as the editor draws it, Nocturne style: dark floors, hairline walls, the selected room in
+ * champagne with its corners, wall lengths and add-a-corner dots, and lights as the Map tab's
+ * markers (views, so they glow the same). Touches go to the editor's responder, never here.
+ */
 function Canvas({
   doc,
   view,
@@ -860,6 +859,8 @@ function Canvas({
   const X = (p: FloorPoint) => screenOf(p, view).sx;
   const Y = (p: FloorPoint) => screenOf(p, view).sy;
   const selRoomId = sel?.kind === 'room' || sel?.kind === 'corner' ? sel.roomId : null;
+  const selRoom = doc.rooms.find((r) => r.id === selRoomId && r.points.length >= 2);
+  const pathOf = (pts: FloorPoint[]) => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p)},${Y(p)}`).join(' ') + ' Z';
 
   // 1 m grid in map coordinates (it turns with the map), so sizes are readable at a glance.
   const grid: JSX.Element[] = [];
@@ -869,93 +870,141 @@ function Canvas({
   const z0 = Math.floor(Math.min(...ends.map((p) => p.z)));
   const z1 = Math.ceil(Math.max(...ends.map((p) => p.z)));
   if (x1 - x0 < 80 && z1 - z0 < 80) {
-    for (let x = x0; x <= x1; x++) grid.push(<Line key={`x${x}`} x1={X({ x, z: z0 })} y1={Y({ x, z: z0 })} x2={X({ x, z: z1 })} y2={Y({ x, z: z1 })} stroke="#ffffff" strokeOpacity={0.05} />);
-    for (let z = z0; z <= z1; z++) grid.push(<Line key={`z${z}`} x1={X({ x: x0, z })} y1={Y({ x: x0, z })} x2={X({ x: x1, z })} y2={Y({ x: x1, z })} stroke="#ffffff" strokeOpacity={0.05} />);
+    for (let x = x0; x <= x1; x++) grid.push(<Line key={`x${x}`} x1={X({ x, z: z0 })} y1={Y({ x, z: z0 })} x2={X({ x, z: z1 })} y2={Y({ x, z: z1 })} stroke={hairline(0.04)} strokeWidth={1} />);
+    for (let z = z0; z <= z1; z++) grid.push(<Line key={`z${z}`} x1={X({ x: x0, z })} y1={Y({ x: x0, z })} x2={X({ x: x1, z })} y2={Y({ x: x1, z })} stroke={hairline(0.04)} strokeWidth={1} />);
   }
 
-  const ordered = [...doc.rooms].sort((a, b) => Number(a.id === selRoomId) - Number(b.id === selRoomId));
+  // The selected room's walls: their length in a chip just outside the wall, a dot in the middle to add a corner.
+  const walls = selRoom
+    ? selRoom.points.map((p, i) => {
+        const q = selRoom.points[(i + 1) % selRoom.points.length];
+        const m = { x: (p.x + q.x) / 2, z: (p.z + q.z) / 2 };
+        const c = centroid(selRoom.points);
+        const dx = X(q) - X(p);
+        const dy = Y(q) - Y(p);
+        const len = Math.hypot(dx, dy) || 1;
+        let nx = -dy / len;
+        let ny = dx / len;
+        if ((X(m) - X(c)) * nx + (Y(m) - Y(c)) * ny < 0) {
+          nx = -nx;
+          ny = -ny;
+        }
+        return { i, m, nx, ny, text: `${distance(p, q).toFixed(2)} m`, long: len > 70 };
+      })
+    : [];
 
   return (
-    <Svg width={width} height={height} pointerEvents="none">
-      {grid}
-      {ordered.map((r) => {
-        if (r.points.length < 2) return null;
-        const selected = r.id === selRoomId;
-        const d = r.points.map((p, i) => `${i ? 'L' : 'M'}${X(p)},${Y(p)}`).join(' ') + ' Z';
-        // Name near the top of the room as shown on screen, whatever the orientation.
-        const label = { sx: X(centroid(r.points)), sy: Math.min(...r.points.map(Y)) + 22 };
-        return (
-          <G key={r.id}>
+    <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width, height }}>
+      <Svg width={width} height={height}>
+        {grid}
+        {doc.rooms.map((r) =>
+          r.points.length < 2 ? null : (
             <Path
-              d={d}
+              key={r.id}
+              d={pathOf(r.points)}
               fill={r.outdoor ? PLAN_COLORS.outdoorFill : PLAN_COLORS.roomFill}
-              stroke={selected ? ACCENT : PLAN_COLORS.wall}
-              strokeWidth={selected ? 3 : 2}
-              strokeDasharray={r.outdoor ? '6 4' : undefined}
+              stroke={hairline(r.outdoor ? 0.2 : 0.24)}
+              strokeWidth={1}
+              strokeDasharray={r.outdoor ? '3 4' : undefined}
             />
-            <SvgText x={label.sx} y={label.sy} fill={r.hueRoomId ? PLAN_COLORS.label : theme.danger} fontSize={13} textAnchor="middle">
-              {r.hueRoomId ? r.name : `${r.name} (no Hue room)`}
-            </SvgText>
-            {selected &&
-              r.points.map((p, i) => {
-                const q = r.points[(i + 1) % r.points.length];
-                const m = { x: (p.x + q.x) / 2, z: (p.z + q.z) / 2 };
-                return (
-                  <G key={i}>
-                    <SvgText x={X(m)} y={Y(m) - 10} fill={theme.text} fontSize={11} textAnchor="middle">
-                      {`${distance(p, q).toFixed(2)} m`}
-                    </SvgText>
-                    <Circle cx={X(m)} cy={Y(m)} r={6} fill={theme.bg} stroke={ACCENT} strokeWidth={1.5} />
-                  </G>
-                );
-              })}
-            {selected &&
-              r.points.map((p, i) => (
-                <Circle
-                  key={`c${i}`}
-                  cx={X(p)}
-                  cy={Y(p)}
-                  r={sel?.kind === 'corner' && sel.index === i ? 13 : 10}
-                  fill={sel?.kind === 'corner' && sel.index === i ? ACCENT : theme.bg}
-                  stroke={ACCENT}
-                  strokeWidth={2.5}
-                />
-              ))}
-          </G>
-        );
-      })}
-      {guides.map((g, i) =>
-        g.kind === 'point' ? (
-          <Circle key={`g${i}`} cx={X(g.at)} cy={Y(g.at)} r={17} fill="none" stroke={ACCENT} strokeWidth={2} />
-        ) : (
-          <Line key={`g${i}`} x1={X(g.a)} y1={Y(g.a)} x2={X(g.b)} y2={Y(g.b)} stroke={ACCENT} strokeWidth={2} strokeDasharray="6 4" />
-        ),
-      )}
-      {/* What each light is on the floor first (a bar, a row of beads), under every marker. */}
-      {doc.lights.map((l) => {
-        const kind = directional(l.lightId, snapshot);
-        const light = snapshot?.lights.find((x) => x.id === l.lightId);
-        return kind && light ? <Footprint key={`f-${l.lightId}`} l={l} light={light} rooms={doc.rooms} kind={kind} view={view} run={runOf(l, doc.rooms, snapshot, kind)} /> : null;
-      })}
+          ),
+        )}
+        {selRoom && <Path d={pathOf(selRoom.points)} fill={ACCENT} fillOpacity={0.07} />}
+        {doc.rooms.map((r) => {
+          if (r.points.length < 3) return null;
+          // Name near the top of the room as shown on screen, whatever the orientation.
+          const x = X(centroid(r.points));
+          const y = Math.min(...r.points.map(Y)) + 20;
+          const selected = r.id === selRoomId;
+          return (
+            <G key={`n-${r.id}`}>
+              <SvgText x={x} y={y} fill={selected ? ACCENT : hairline(0.82)} fontFamily={font.uiMedium} fontSize={9} letterSpacing={1.44} textAnchor="middle">
+                {r.name.toUpperCase()}
+              </SvgText>
+              {!r.hueRoomId && r.name !== 'Other' && (
+                <SvgText x={x} y={y + 13} fill={color.warning} fontFamily={font.uiMedium} fontSize={8} letterSpacing={1.28} textAnchor="middle">
+                  NO HUE ROOM
+                </SvgText>
+              )}
+            </G>
+          );
+        })}
+        {/* What each light is on the floor first (a bar, a row of beads), under every marker. */}
+        {doc.lights.map((l) => {
+          const kind = directional(l.lightId, snapshot);
+          const light = snapshot?.lights.find((x) => x.id === l.lightId);
+          return kind && light ? <Footprint key={`f-${l.lightId}`} l={l} light={light} rooms={doc.rooms} kind={kind} view={view} run={runOf(l, doc.rooms, snapshot, kind)} /> : null;
+        })}
+      </Svg>
+
       {doc.lights.map((l) => {
         const light = snapshot?.lights.find((x) => x.id === l.lightId);
         const selected = sel?.kind === 'light' && sel.lightId === l.lightId;
-        const kind = directional(l.lightId, snapshot);
+        const ring = MARKER_SIZE + 12;
         return (
-          <G key={l.lightId}>
-            {selected && <Circle cx={X(l)} cy={Y(l)} r={22} fill="none" stroke={ACCENT} strokeWidth={2} />}
-            {selected && light && kind && <Handle l={l} rooms={doc.rooms} kind={kind} view={view} run={runOf(l, doc.rooms, snapshot, kind)} />}
+          <View key={l.lightId} style={{ position: 'absolute', left: X(l) - 22, top: Y(l) - 22, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+            {selected && <View style={{ position: 'absolute', width: ring, height: ring, borderRadius: ring / 2, borderWidth: 1, borderColor: 'rgba(233,207,159,0.9)', boxShadow: '0 0 14px rgba(233,207,159,0.45)' }} />}
             {light ? (
-              <MarkerG light={light} x={X(l)} y={Y(l)} angle={kind === 'bar' ? lightAngle(l, doc.rooms) + view.rot : undefined} />
+              <LightMarker light={light} size={MARKER_SIZE} />
             ) : (
-              <Circle cx={X(l)} cy={Y(l)} r={11} fill={PLAN_COLORS.off} stroke={PLAN_COLORS.offStroke} strokeWidth={2} />
+              <View style={{ width: 12, height: 12, borderRadius: 6, borderWidth: 1, borderColor: hairline(0.55), backgroundColor: color.ground }} />
             )}
-            <SvgText x={X(l)} y={Y(l) + 32} fill={selected ? ACCENT : theme.muted} fontSize={11} textAnchor="middle">
-              {light?.name ?? '?'}
-            </SvgText>
-          </G>
+          </View>
         );
       })}
-    </Svg>
+
+      <Svg width={width} height={height} style={{ position: 'absolute', left: 0, top: 0 }}>
+        {selRoom && (
+          <G>
+            <Path d={pathOf(selRoom.points)} fill="none" stroke={ACCENT} strokeOpacity={0.18} strokeWidth={6} strokeLinejoin="round" />
+            <Path d={pathOf(selRoom.points)} fill="none" stroke={ACCENT} strokeWidth={1.5} strokeLinejoin="round" />
+          </G>
+        )}
+        {walls.map((w) => (
+          <G key={`w${w.i}`}>
+            {w.long && <PlanChip x={X(w.m) + w.nx * chipOut(w)} y={Y(w.m) + w.ny * chipOut(w)} text={w.text} within={width} />}
+            <Circle cx={X(w.m)} cy={Y(w.m)} r={6} fill={color.ground} stroke={ACCENT} strokeOpacity={0.8} strokeWidth={1} />
+            <Path d={`M${X(w.m) - 2.5},${Y(w.m)} h5 M${X(w.m)},${Y(w.m) - 2.5} v5`} stroke={ACCENT} strokeWidth={1.1} strokeLinecap="round" />
+          </G>
+        ))}
+        {selRoom &&
+          selRoom.points.map((p, i) => {
+            const on = sel?.kind === 'corner' && sel.index === i;
+            return on ? (
+              <G key={`c${i}`}>
+                <Circle cx={X(p)} cy={Y(p)} r={16} fill={ACCENT} fillOpacity={0.12} />
+                <Circle cx={X(p)} cy={Y(p)} r={12} fill="none" stroke={ACCENT} strokeOpacity={0.9} strokeWidth={1} />
+                <Rect x={X(p) - 7} y={Y(p) - 7} width={14} height={14} fill={color.ground} />
+                <Rect x={X(p) - 5} y={Y(p) - 5} width={10} height={10} fill={ACCENT} />
+              </G>
+            ) : (
+              <G key={`c${i}`}>
+                <Rect x={X(p) - 6} y={Y(p) - 6} width={12} height={12} fill={color.ground} />
+                <Rect x={X(p) - 4} y={Y(p) - 4} width={8} height={8} fill={color.ivory} />
+              </G>
+            );
+          })}
+        {guides.map((g, i) =>
+          g.kind === 'point' ? (
+            <Circle key={`g${i}`} cx={X(g.at)} cy={Y(g.at)} r={16} fill="none" stroke={ACCENT} strokeWidth={1.2} />
+          ) : (
+            <Line key={`g${i}`} x1={X(g.a)} y1={Y(g.a)} x2={X(g.b)} y2={Y(g.b)} stroke={ACCENT} strokeOpacity={0.85} strokeWidth={1.2} strokeDasharray="5 4" />
+          ),
+        )}
+        {doc.lights.map((l) => {
+          const light = snapshot?.lights.find((x) => x.id === l.lightId);
+          const selected = sel?.kind === 'light' && sel.lightId === l.lightId;
+          const kind = directional(l.lightId, snapshot);
+          return (
+            <G key={l.lightId}>
+              {selected && light && kind && <Handle l={l} rooms={doc.rooms} kind={kind} view={view} run={runOf(l, doc.rooms, snapshot, kind)} />}
+              <SvgText x={X(l)} y={Y(l) + 28} fill={selected ? ACCENT : hairline(0.55)} fontFamily={selected ? font.uiMedium : font.ui} fontSize={10} textAnchor="middle">
+                {light?.name ?? '?'}
+              </SvgText>
+            </G>
+          );
+        })}
+      </Svg>
+    </View>
   );
 }

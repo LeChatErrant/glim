@@ -548,6 +548,19 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   above the bottom bar when tall (the plan gets 48 dp less,
   `mapWidgetBox(…, strip)`, also for the outside), stacked in the side
   panel when wide. Taps are the Moods widget's (`moodClick`).
+- 2026-11-13: **Settings in groups, and the editor in Nocturne.** The
+  Settings tab is a list of 5 groups, each with a line on where it stands
+  (Your home: map, lights and rooms, home location; Widgets and tile;
+  Bridge and connection; Weather on the map; About), each opening its own
+  screen (`src/app/settings/[group].tsx`, groups in
+  `src/ui/settings/groups.tsx`). A section titled like its group doesn't
+  repeat the title (`PageTitle` in `controls.tsx`).
+  `glim://settings?section=tile` opens Widgets and tile, scrolled to the
+  tile. The 2D map editor follows the design canvas's "Review your map"
+  board: a top bar (back, Turn, Undo), hairline walls, champagne selection
+  and wall-length pills, the Map tab's light markers, and a bottom sheet per
+  selection (`src/ui/editor/parts.tsx`). Its behavior is unchanged. The old
+  `components.tsx` kit and `RoomAssign.tsx` are deleted.
 
 ## Vocabulary
 
@@ -692,15 +705,14 @@ feature.**
   (sunrise and sunset, offline), `time.ts` (days, next run). Bridge calls in
   `src/lib/hue/behaviors.ts`. Screens: `src/ui/rituals/` (cards, day and
   time pickers, one sheet per ritual type).
-- `src/ui/settings/`: one component per Settings section (rows: `SettingsRow` in `parts.tsx`).
+- `src/ui/settings/`: one component per Settings section (rows: `SettingsRow` in `parts.tsx`), grouped in `groups.tsx`; each group is its own screen (`src/app/settings/[group].tsx`).
 - `src/ui/`: the Nocturne UI kit. `theme.ts` (tokens, fonts), `text.tsx`
   (`Label`, `Display`, `Txt`), `controls.tsx` (pill buttons, switch, slider,
   connection badge, SVG `Glow`), `icons.tsx`, `FloorPlan.tsx` (the map and the
   `Jewel` light marker). Fonts (Jost, Geist) load at startup in
   `src/app/_layout.tsx`, one family name per weight. Build new screens from
-  these, not from the older `components.tsx` (still used by scan, editor and
-  pairing until they are restyled). The design canvas says "Scenes": the app
-  says **Moods** (see [Vocabulary](#vocabulary)).
+  these (the old `components.tsx` kit is gone, 2026-11-13). The design canvas
+  says "Scenes": the app says **Moods** (see [Vocabulary](#vocabulary)).
 
 ## Local Android builds
 

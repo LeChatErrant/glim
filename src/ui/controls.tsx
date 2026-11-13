@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'expo-router';
 import { PanResponder, Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
@@ -282,11 +282,15 @@ export function Rule({ style }: { style?: StyleProp<ViewStyle> }) {
   return <View style={[{ height: 1, backgroundColor: hairline(0.1) }, style]} />;
 }
 
+/** The title of the screen a Section sits on: a Section with the same title doesn't repeat it. */
+export const PageTitle = createContext<string | null>(null);
+
 export function Section({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
+  const page = useContext(PageTitle);
   return (
     <View style={{ gap: 10 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <Label tone="label">{title}</Label>
+        {title === page ? <View /> : <Label tone="label">{title}</Label>}
         {right}
       </View>
       {children}
