@@ -50,14 +50,10 @@ async function fadingNow(): Promise<string[] | null> {
   return sleepRun.targets;
 }
 
-/** The mood buttons a widget shows, for this state: a Moods widget's, or a Map widget's strip. */
+/** The buttons a Moods widget shows, for this state. */
 async function widgetMoodButtons(info: Pick<WidgetInfo, 'widgetId' | 'widgetName'>, snapshot: Snapshot): Promise<MoodButton[]> {
-  const [moods, map] = await Promise.all([loadMoods(), loadMap()]);
-  const items =
-    info.widgetName === 'Map'
-      ? ((await loadWidgetSettings(info.widgetId)).moods ?? [])
-      : ((await loadMoodsWidgetSettings(info.widgetId)).items ?? defaultItems(moods));
-  return moodButtons(items, moods, snapshot, map);
+  const [moods, map, settings] = await Promise.all([loadMoods(), loadMap(), loadMoodsWidgetSettings(info.widgetId)]);
+  return moodButtons(settings.items ?? defaultItems(moods), moods, snapshot, map);
 }
 
 /** Mood buttons as drawn: each shows as on while the lights look like it (or just after its tap). */
@@ -115,10 +111,9 @@ export async function render(info: WidgetInfo, state: State, force = true) {
     const plan = widgetPlan(map, settings);
     const outside = await outsideNow();
     const background = settings.background ?? 'black';
-    const moods = settings.moods?.length ? await shownMoodButtons(info, snapshot, stale) : [];
-    if (alreadyDrawn(info, drawKey(info, [shown(snapshot, stale), stale, plan, settings, outside, moods.map((b) => [b.key, b.name, b.dots, b.showing])]), force)) return null;
+    if (alreadyDrawn(info, drawKey(info, [shown(snapshot, stale), stale, plan, settings, outside]), force)) return null;
     // The outside lands under the image the library is about to draw; native code waits for it.
-    sendMapOutside(info, plan, snapshot?.lights ?? [], outside, background, moods.length > 0).catch((e) => console.warn('Map widget outside', e));
+    sendMapOutside(info, plan, snapshot?.lights ?? [], outside, background).catch((e) => console.warn('Map widget outside', e));
     const weather = outside && { icon: weatherIcon(outside.sky), text: outside.temp !== null ? `${outside.temp}°` : outside.label, temp: outside.temp !== null };
     return (
       <MapWidget
@@ -130,7 +125,6 @@ export async function render(info: WidgetInfo, state: State, force = true) {
         outside={!!outside}
         background={background}
         weather={weather}
-        moods={moods}
       />
     );
   }

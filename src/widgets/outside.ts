@@ -17,11 +17,11 @@ const BUDGET = 8_000_000;
  * weather animations between and over them, played by the launcher. Nothing (or `outside` null)
  * clears it. Builds without the native side ignore this.
  */
-export async function sendMapOutside(info: WidgetInfo, plan: Plan | null, lights: Light[], outside: Outside | null, background: WidgetBackground = 'black', strip = false) {
+export async function sendMapOutside(info: WidgetInfo, plan: Plan | null, lights: Light[], outside: Outside | null, background: WidgetBackground = 'black') {
   if (!HueHttp.setWidgetOutside) return;
   const base = { widgetId: info.widgetId, width: info.width, height: info.height, scale: 1 };
   if (!outside || !plan) return HueHttp.setWidgetOutside({ ...base, low: [], high: [] });
-  const { box, pad, radius } = mapWidgetBox(info.width, info.height, true, strip);
+  const { box, pad, radius } = mapWidgetBox(info.width, info.height, true);
   const fit = fitPlan(plan, box.width, box.height, pad);
   const f = { scale: fit.scale, x: (u: number) => box.left + fit.x(u), y: (v: number) => box.top + fit.y(v) };
   const geom = houseGeom(plan, f, lights);

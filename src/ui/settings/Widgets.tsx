@@ -21,8 +21,7 @@ async function describe(info: WidgetInfo, rooms: { id: string; name: string }[],
   const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
   if (info.widgetName === 'Map') {
     const s = await loadWidgetSettings(info.widgetId);
-    const shows = s.roomIds?.length ? rooms.filter((r) => s.roomIds!.includes(r.id)).map((r) => r.name).join(', ') || 'Some rooms' : 'Whole home';
-    return [shows, s.moods?.length ? n(s.moods.length, 'mood button', 'mood buttons') : null].filter(Boolean).join(' · ');
+    return s.roomIds?.length ? rooms.filter((r) => s.roomIds!.includes(r.id)).map((r) => r.name).join(', ') || 'Some rooms' : 'Whole home';
   }
   if (info.widgetName === 'Moods') {
     const s = await loadMoodsWidgetSettings(info.widgetId);

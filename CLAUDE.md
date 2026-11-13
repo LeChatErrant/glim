@@ -532,7 +532,7 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   seen: the drift itself (nobody home to look; the bridge accepted the
   scenes and reports the lights playing). Not yet: a mood icon, living
   preview while editing (it plays once saved).
-- 2026-11-13: **Settings sections and the Map widget's mood strip.**
+- 2026-11-13: **Settings sections** (and a Map widget mood strip, removed).
   Settings now also has Home location (the Arriving home circle, the
   location access it needs with a shortcut to Android's settings, Forget),
   Map (scan more, edit on screen, start over: `resetMap`), Lights and rooms
@@ -544,11 +544,9 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   (`src/ui/settings/parts.tsx`). Not built: Appearance (light theme,
   accent): Glim is designed dark-only (Nocturne), and a light theme would
   touch every screen and widget. Hiding lights from the app isn't built
-  either. The Map widget can show up to 3 mood buttons (`settings.moods`),
-  picked like the Moods widget's (`MoodItemPicker`, shared): a row of pills
-  above the bottom bar when tall (the plan gets 48 dp less,
-  `mapWidgetBox(…, strip)`, also for the outside), stacked in the side
-  panel when wide. Taps are the Moods widget's (`moodClick`).
+  either. The Map widget's mood strip (up to 3 mood buttons) shipped the
+  same day and was removed hours later: it crowded the map, and the Moods
+  widget already does it. Keep the Map widget to the map.
 - 2026-11-13: **Settings in groups, and the editor in Nocturne.** The
   Settings tab is a list of 5 groups, each with a line on where it stands
   (Your home: map, lights and rooms, home location; Widgets and tile;

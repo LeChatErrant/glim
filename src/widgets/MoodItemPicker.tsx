@@ -13,8 +13,8 @@ import { itemKey, sleepItems, type MoodItem, type SleepItem } from './moodButton
 
 /**
  * Picks a widget's mood buttons, in the order tapped (numbered chips), up to `max`: my moods, the
- * ones on the map, moods from the Hue app, presets, sleep fades and All off. Shared by the Moods
- * widget and the Map widget's mood strip.
+ * ones on the map, moods from the Hue app, presets, sleep fades and All off. Used by the Moods
+ * widget's configuration screen.
  */
 export function MoodItemPicker({
   items,
