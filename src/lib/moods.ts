@@ -5,16 +5,33 @@ import { getBridge } from './hue/bridge';
 import { hexToXy, mirekToHex, mirekToKelvin } from './hue/color';
 import { EFFECTS, effectLabel, hasEffect } from './effects';
 import { setLight, type Light, type LightState, type Snapshot } from './hue/client';
+import { findRoute, lightsAlongRoute } from './map/route';
+import type { HomeMap } from './map/map';
 import { colorName, kelvinName } from './palette';
 
 /** How one light looks in a mood. Off lights stay off; color lights keep a color or a white. */
 export type MoodLight = { lightId: string; on: boolean; brightness?: number; hex?: string; kelvin?: number; effect?: string };
 
+/** The light of a path: warm white, amber (dimmer to the eye) or red (keeps night vision). */
+export type PathTone = 'warm' | 'amber' | 'red';
+export const PATH_TONES: { id: PathTone; label: string; hex: string; kelvin: number }[] = [
+  { id: 'warm', label: 'Warm white', hex: mirekToHex(1_000_000 / 2200), kelvin: 2200 },
+  { id: 'amber', label: 'Amber', hex: '#FF8A1E', kelvin: 2200 },
+  { id: 'red', label: 'Red', hex: '#FF2A0A', kelvin: 2200 },
+];
+
+/**
+ * A path (map-aware mood): a dim trail from one room to another, worked out from the map each
+ * time it's applied, so it follows changes to the map and to the lights. Rooms are map room ids.
+ */
+export type PathRecipe = { from: string; to: string; brightness: number; tone: PathTone; others: 'leave' | 'off' };
+
 /**
  * A mood: a look for some lights, light by light (one red, one blue...). Our own data, not a
  * bridge scene. Saved from a room or a group, and shown there; `targetId` is that room or group.
+ * A path mood has a `path` instead of fixed lights (`lights` stays empty).
  */
-export type Mood = { id: string; name: string; targetId: string | null; lights: MoodLight[]; createdAt: number };
+export type Mood = { id: string; name: string; targetId: string | null; lights: MoodLight[]; createdAt: number; path?: PathRecipe };
 
 const key = async () => `moods:${(await getBridge())?.id ?? 'none'}`;
 
@@ -71,10 +88,42 @@ export function suggestName(lights: MoodLight[]) {
   return `${names[0]} & ${names[1].toLowerCase()}${names.length > 2 ? ' +' : ''}`;
 }
 
-/** Puts every light of the mood back as it was saved. Lights gone from the bridge are skipped. */
-export function planMood(s: Snapshot, mood: Mood): Planned | null {
+/** A path's lights for today's map and lights, or null when the map lacks one of its rooms. */
+export function pathLights(s: Snapshot, path: PathRecipe, map: HomeMap | null): MoodLight[] | null {
+  if (!map) return null;
+  const route = findRoute(map, path.from, path.to);
+  if (!route) return null;
   const byId = new Map(s.lights.map((l) => [l.id, l]));
-  const steps = mood.lights.filter((m) => byId.has(m.lightId));
+  // Smart plugs can't be dimmed: a path never turns one on.
+  const usable = (id: string) => {
+    const l = byId.get(id);
+    return !!l && l.reachable && l.kind !== 'onoff';
+  };
+  const lit = new Set(lightsAlongRoute(map, route, (m) => usable(m.lightId)));
+  const tone = PATH_TONES.find((t) => t.id === path.tone) ?? PATH_TONES[0];
+  const on = [...lit].map((id): MoodLight => {
+    const l = byId.get(id)!;
+    const colored = path.tone !== 'warm' && l.kind === 'color';
+    return { lightId: id, on: true, brightness: path.brightness, hex: colored ? tone.hex : undefined, kelvin: colored ? undefined : tone.kelvin };
+  });
+  const off = path.others === 'off' ? s.lights.filter((l) => l.reachable && !lit.has(l.id)).map((l): MoodLight => ({ lightId: l.id, on: false })) : [];
+  return [...on, ...off];
+}
+
+/** The lights a mood sets, light by light: its saved lights, or a path worked out from the map. */
+export function moodLights(s: Snapshot, mood: Mood, map: HomeMap | null): MoodLight[] {
+  return mood.path ? (pathLights(s, mood.path, map) ?? []) : mood.lights;
+}
+
+/** Puts every light of the mood back as it was saved. Lights gone from the bridge are skipped. */
+export function planMood(s: Snapshot, mood: Mood, map: HomeMap | null = null): Planned | null {
+  return planLights(s, moodLights(s, mood, map));
+}
+
+/** Sets each light as listed. Lights gone from the bridge are skipped. */
+export function planLights(s: Snapshot, lights: MoodLight[]): Planned | null {
+  const byId = new Map(s.lights.map((l) => [l.id, l]));
+  const steps = lights.filter((m) => byId.has(m.lightId));
   if (!steps.length) return null;
   const state = (m: MoodLight, l: Light): LightState => {
     if (!m.on) return { on: false };

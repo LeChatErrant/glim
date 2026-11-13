@@ -4,49 +4,101 @@ import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { effectLabel } from '../../lib/effects';
+import { mirekToHex } from '../../lib/hue/color';
 import type { Snapshot } from '../../lib/hue/client';
 import { useHome } from '../../lib/hue/useHome';
-import { addMood, captureLights, deleteMood, loadMoods, moodLightColor, planMood, suggestName, type Mood, type MoodLight } from '../../lib/moods';
+import { loadMap, type HomeMap } from '../../lib/map/map';
+import { PRESET_CATEGORIES, PRESETS, presetLights, type Preset } from '../../lib/moodPresets';
+import {
+  addMood,
+  captureLights,
+  deleteMood,
+  loadMoods,
+  moodLightColor,
+  PATH_TONES,
+  pathLights,
+  planLights,
+  planMood,
+  suggestName,
+  updateMood,
+  type Mood,
+  type MoodLight,
+  type PathRecipe,
+} from '../../lib/moods';
 import { addFavorite, colorName, kelvinName } from '../../lib/palette';
 import { PillButton } from '../../ui/controls';
 import { Icon } from '../../ui/icons';
 import { ColorDot } from '../../ui/LightControls';
 import { MoodDots } from '../../ui/MoodChips';
+import { Choice, PathPreview, PathSheet } from '../../ui/PathSheet';
 import { Display, Label, Txt } from '../../ui/text';
 import { color, hairline, TAB_BAR_SPACE } from '../../ui/theme';
 
 /**
- * Every saved mood, by room and group. Tap applies it; open one to see each light's color and keep
- * one as a favorite. Moods are saved from a room or group sheet ("Save current look"), or here for the
- * whole home.
+ * Moods: the user's own (by room and group), paths (map-aware moods: a dim trail from one room to
+ * another), and the preset library, applied to the whole home or a room or group picked under
+ * "For". Tap applies; open a mood to see each light's color and keep one as a favorite; long-press
+ * a preset to keep it as your own mood.
  */
 export default function MoodsScreen() {
   const insets = useSafeAreaInsets();
   const { snapshot, act } = useHome();
   const [moods, setMoods] = useState<Mood[]>([]);
+  const [map, setMap] = useState<HomeMap | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [applied, setApplied] = useState<string | null>(null);
+  const [presetTarget, setPresetTarget] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ mood?: Mood } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       loadMoods().then(setMoods);
+      loadMap().then(setMap);
     }, []),
   );
 
   const apply = (m: Mood) => {
-    act((s) => planMood(s, m));
+    act((s) => planMood(s, m, map));
     setApplied(m.id);
   };
 
   const targetName = (id: string | null) =>
     id === null ? 'Whole home' : (snapshot?.rooms.find((r) => r.id === id)?.name ?? snapshot?.zones?.find((z) => z.id === id)?.name ?? 'Removed room');
-  const targets = [...new Set(moods.map((m) => m.targetId))];
+  const own = moods.filter((m) => !m.path);
+  const paths = moods.filter((m) => m.path);
+  const targets = [...new Set(own.map((m) => m.targetId))];
+  const hasMap = !!map?.rooms.some((r) => r.points.length >= 3);
+
+  // Presets go to the lights of the room or group picked under "For" (or the whole home).
+  const presetLightsFor = (s: Snapshot, p: Preset): MoodLight[] => {
+    const group = presetTarget && (s.rooms.find((r) => r.id === presetTarget) ?? s.zones?.find((z) => z.id === presetTarget));
+    const lights = group ? s.lights.filter((l) => group.lightIds.includes(l.id)) : s.lights;
+    return presetLights(p, lights, map);
+  };
+  const applyPreset = (p: Preset) => {
+    act((s) => planLights(s, presetLightsFor(s, p)));
+    setApplied(`preset:${p.id}`);
+  };
+  const keepPreset = (p: Preset) =>
+    Alert.alert(p.name, presetTarget === null ? 'For the whole home' : `For ${targetName(presetTarget)}`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Keep as my mood',
+        onPress: () => snapshot && addMood({ name: p.name, targetId: presetTarget, lights: presetLightsFor(snapshot, p) }).then(setMoods),
+      },
+    ]);
+
+  const savePath = (name: string, path: PathRecipe) => {
+    const m = editing?.mood;
+    (m ? updateMood(m.id, { name, path }) : addMood({ name, targetId: null, lights: [], path })).then(setMoods);
+    setEditing(null);
+  };
 
   return (
     <ScrollView contentContainerStyle={{ paddingTop: insets.top + 28, paddingHorizontal: 24, paddingBottom: insets.bottom + TAB_BAR_SPACE + 32 }}>
       <Display>Moods</Display>
       <Txt size={14} tone="secondary" style={{ marginTop: 6 }}>
-        A look for your lights, light by light. Save one from a room or a group, or for the whole home.
+        A look for your lights, light by light. Start from a preset, save your own from a room or a group, or draw a path across your home.
       </Txt>
       <PillButton
         title="Save the whole home as a mood"
@@ -61,17 +113,10 @@ export default function MoodsScreen() {
         }}
       />
 
-      {!moods.length && (
-        <View style={{ marginTop: 40, gap: 10 }}>
-          <Label tone="label">No moods yet</Label>
-          <Txt tone="secondary">Open a room or a group, set its lights the way you like, then tap “Save current look”.</Txt>
-        </View>
-      )}
-
       {targets.map((t) => (
         <View key={t ?? 'home'} style={{ marginTop: 26, gap: 10 }}>
           <Label tone="label">{targetName(t)}</Label>
-          {moods
+          {own
             .filter((m) => m.targetId === t)
             .map((m) => (
               <MoodCard
@@ -92,7 +137,182 @@ export default function MoodsScreen() {
             ))}
         </View>
       ))}
+
+      <View style={{ marginTop: 32, gap: 10 }}>
+        <Label tone="label">Paths</Label>
+        {map &&
+          paths.map((m) => (
+            <PathCard
+              key={m.id}
+              mood={m}
+              map={map}
+              snapshot={snapshot}
+              applied={applied === m.id}
+              onApply={() => apply(m)}
+              onEdit={() => setEditing({ mood: m })}
+            />
+          ))}
+        {hasMap ? (
+          <DashedButton title="New night path" onPress={() => setEditing({})} />
+        ) : (
+          <Txt size={13} tone="muted">
+            A path lights the way from one room to another, along the lights on your map. Scan or draw your home on the Map tab first.
+          </Txt>
+        )}
+      </View>
+
+      <View style={{ marginTop: 32, gap: 12 }}>
+        <Label tone="label">Presets</Label>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, alignItems: 'center', paddingRight: 8 }}>
+          <Label size={9}>For</Label>
+          <Choice title="Whole home" on={presetTarget === null} onPress={() => setPresetTarget(null)} />
+          {[...(snapshot?.rooms ?? []), ...(snapshot?.zones ?? [])]
+            .filter((g) => g.lightIds.length)
+            .map((g) => (
+              <Choice key={g.id} title={g.name} on={presetTarget === g.id} onPress={() => setPresetTarget(g.id)} />
+            ))}
+        </ScrollView>
+        {PRESET_CATEGORIES.map((c) => (
+          <View key={c} style={{ gap: 8, marginTop: 6 }}>
+            <Label size={9}>{c}</Label>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {PRESETS.filter((p) => p.category === c).map((p) => (
+                <PresetPill key={p.id} preset={p} applied={applied === `preset:${p.id}`} onPress={() => applyPreset(p)} onLongPress={() => keepPreset(p)} />
+              ))}
+            </View>
+          </View>
+        ))}
+        <Txt size={12} tone="muted" style={{ marginTop: 4 }}>
+          Long-press a preset to keep it as your own mood. Smart plugs stay as they are.
+        </Txt>
+      </View>
+
+      {editing && map && (
+        <PathSheet
+          map={map}
+          snapshot={snapshot}
+          initial={editing.mood?.path && { name: editing.mood.name, path: editing.mood.path }}
+          onTry={(path) => act((s) => planLights(s, pathLights(s, path, map) ?? []))}
+          onSave={savePath}
+          onDelete={
+            editing.mood
+              ? () => {
+                  const m = editing.mood!;
+                  setEditing(null);
+                  deleteMood(m.id).then(setMoods);
+                }
+              : undefined
+          }
+          onClose={() => setEditing(null)}
+        />
+      )}
     </ScrollView>
+  );
+}
+
+/** A path: its route on a tiny map, its name; tap lights the way, the pencil edits it. */
+function PathCard({
+  mood,
+  map,
+  snapshot,
+  applied,
+  onApply,
+  onEdit,
+}: {
+  mood: Mood;
+  map: HomeMap;
+  snapshot: Snapshot | null;
+  applied: boolean;
+  onApply: () => void;
+  onEdit: () => void;
+}) {
+  const path = mood.path!;
+  const lit = snapshot ? (pathLights(snapshot, path, map) ?? []).filter((m) => m.on).map((m) => m.lightId) : [];
+  const tint = (PATH_TONES.find((t) => t.id === path.tone) ?? PATH_TONES[0]).hex;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 22, borderWidth: 1, borderColor: hairline(0.1), backgroundColor: color.card, padding: 8, paddingLeft: 10 }}>
+      <Pressable
+        onPress={onApply}
+        onLongPress={onEdit}
+        accessibilityRole="button"
+        accessibilityLabel={`Light the path ${mood.name}`}
+        style={({ pressed }) => ({ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 14, opacity: pressed ? 0.6 : 1 })}
+      >
+        <PathPreview map={map} path={path} lit={lit} tint={tint} width={76} height={56} />
+        <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
+          <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
+            {mood.name}
+          </Display>
+          <Label size={9} tone={applied ? 'champagne' : 'muted'}>
+            {applied ? 'Lit' : lit.length ? `${lit.length} ${lit.length === 1 ? 'light' : 'lights'} · ${path.brightness}% · tap to light` : 'No light on the way'}
+          </Label>
+        </View>
+      </Pressable>
+      <Pressable onPress={onEdit} accessibilityRole="button" accessibilityLabel={`Edit ${mood.name}`} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name="edit" size={15} tint={color.muted} stroke={1.6} />
+      </Pressable>
+    </View>
+  );
+}
+
+/** A preset as a pill: a dot per color and the name; champagne edge once applied. */
+function PresetPill({ preset, applied, onPress, onLongPress }: { preset: Preset; applied: boolean; onPress: () => void; onLongPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Preset ${preset.name}`}
+      accessibilityHint="Long-press to keep it as your own mood"
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        height: 40,
+        paddingHorizontal: 14,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: applied ? color.champagne : hairline(0.16),
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <View style={{ flexDirection: 'row', gap: 4 }}>
+        {preset.tones.slice(0, 4).map((t, i) => {
+          const c = t.hex ?? mirekToHex(1_000_000 / (t.kelvin ?? 2700));
+          return <View key={i} style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: c, boxShadow: `0 0 7px 1px ${c}88` }} />;
+        })}
+      </View>
+      <Txt size={13} tone={applied ? 'champagne' : 'ivory'} style={{ lineHeight: 17 }}>
+        {preset.name}
+      </Txt>
+    </Pressable>
+  );
+}
+
+function DashedButton({ title, onPress }: { title: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        height: 44,
+        paddingHorizontal: 16,
+        alignSelf: 'flex-start',
+        borderRadius: 22,
+        borderWidth: 1,
+        borderStyle: 'dashed',
+        borderColor: hairline(0.35),
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <Icon name="add" size={14} tint={color.secondary} />
+      <Txt size={13} tone="secondary" style={{ lineHeight: 17 }}>
+        {title}
+      </Txt>
+    </Pressable>
   );
 }
 

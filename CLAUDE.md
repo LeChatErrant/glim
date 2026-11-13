@@ -272,6 +272,25 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   Storm: **charcoal blue**. Snow: **icy blue** (flakes get a soft dark edge
   to show on it; the snow day's cloud shadows are gone). Fog: **deep blue
   mist**, navy past the house. Moths around outdoor lamps are removed.
+- 2026-11-13: **Mood presets and night paths.** Presets
+  (`src/lib/moodPresets.ts`, Everyday, Focus, Evening, Color) are palettes
+  spread round the lights of the room or group picked under "For" on the
+  Moods tab (or the whole home), in their order across the map so
+  neighbours differ. White-only lights take the preset's white; Candlelight
+  and Fireside play the Hue effect where the light has it; smart plugs are
+  left as they are. Long-press keeps a preset as my mood (light by light).
+  **Paths** (`src/lib/map/route.ts`): from one map room to another. Rooms link
+  where their walls face each other (parallel, overlapping, at most 0.45 m
+  apart for wall thickness, at least 0.6 m long; rooms touching at a corner
+  don't link) or where one sits inside the other; the route goes through the
+  middle of each shared wall (shortest walk, outdoor rooms cost 5 m extra).
+  Lights within 1.6 m of the route in the rooms walked (and rooms inside
+  them) light up, at least the nearest one in each room; never plugs. A path
+  is stored as a recipe (`Mood.path`) and worked out at each apply, so it
+  follows map changes. Options: warm white, amber or red, brightness, other
+  lights left or turned off. Not yet: auto-off after N minutes (needs a
+  bridge-side timer, with rituals), gradient sweep, spotlight, room glow,
+  the mood editor, the mood widget, scenes from the Hue app.
 
 ## Vocabulary
 
@@ -352,7 +371,9 @@ feature.**
   focused, refresh on bridge events, optimistic `act(plan)`). `src/lib/map/`: floor
   plan model, glow geometry (`glow.ts`: which walls clip a light, nested
   rooms) and the widget SVG. `src/lib/lights.ts`: light shapes from Hue
-  archetypes, labels, headline mood. `src/widgets/`: home-screen widgets and
+  archetypes, labels, headline mood. `src/lib/moods.ts` (saved moods, paths,
+  `planLights`) and `src/lib/moodPresets.ts` (the preset library);
+  `src/lib/map/route.ts` routes paths through the map. `src/widgets/`: home-screen widgets and
   their task handler (registered in `index.ts`), plus the Map widget's
   configuration screen (`MapWidgetConfig.tsx`, per-widget `settings.ts`) and
   its outside (`outside.ts`).
