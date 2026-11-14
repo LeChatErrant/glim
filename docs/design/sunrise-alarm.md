@@ -37,8 +37,10 @@ no alarm, no sunrise.
   the week), and Glim checks again daily.
 - **Phone off or dead:** the bridge keeps the last sunrise Glim wrote and runs it with the phone
   off (verified for wake-ups: a bridge behavior). The Clock won't ring with the phone off, so the
-  light is then the only alarm: on purpose. If the phone stays off a whole week, the same sunrise
-  comes back on the same weekday; Glim rewrites it as soon as the phone is back.
+  light is then the only alarm: on purpose. An alarm within 24 h is written as a **one-off**,
+  which the bridge switches off once it has run (verified), so a phone left off doesn't bring
+  the same sunrise back. Further alarms are written on their weekday and become one-offs at the
+  daily check.
 - **Away from home** (option, default on when a home location is set): an alarm while the
   phone sleeps away (last geofence: outside) doesn't light an empty home.
 - **Time zones:** the alarm is an instant; Glim writes it in the **bridge's** time zone
@@ -116,13 +118,15 @@ type AlarmFollow = {
   3. End = alarm − offset, in the bridge's time zone; start = end − fade. Start in the past →
      shortened fade or phone fade (above).
   4. `PUT behavior_instance/{id}` with `enabled`, `configuration.when` =
-     `{ time_point: { type: 'time', time: { hour, minute } }, recurrence_days: [weekday] }`,
-     keeping the rest of the configuration, through `FastRoute` (bridge, else Hue's cloud).
+     `{ time_point: { type: 'time', time: { hour, minute } } }` (a one-off, alarm within 24 h)
+     or with `recurrence_days: [weekday]` (further away), keeping the rest of the configuration, through `FastRoute` (bridge, else Hue's cloud).
      `goAsync()` (10 s); on failure a one-off WorkManager job with a network constraint retries.
   5. Writes `last` to `huelab_fast`; the app and the Rituals tab read it.
 - The minute is the bridge's granularity: an alarm at 7:10:30 ends the fade at 7:10.
 - **Daily check** (WorkManager, inexact): an alarm more than 6 days away gets armed when it
-  comes within the week; a stale sunrise (its alarm gone while the phone was off) is fixed.
+  comes within the week, a weekday sunrise becomes a one-off once its alarm is within 24 h, and
+  a stale sunrise (its alarm gone while the phone was off) is fixed. A skipped late one-off
+  stays enabled (verified) and would run the next day: Glim always rewrites after a late alarm.
 - **JS:** the sheet and card read `getNextAlarmClock` through the module
   (`nextAlarm(): { at, pkg, label } | null`) and `last`; saving a following Sunrise runs the
   same computation once from JS.
@@ -156,6 +160,10 @@ through 15:17 and 15:22, so whether the bridge restarted the fade **can't be rea
 API**, and nobody was there to look. Design consequence: Glim **never moves a sunrise while it
 rises**. An alarm changed during the fade applies to the next sunrise; a snooze follows the
 snooze option; an alarm turned off stops it (above).
+
+At 15:22, the moved end, the one-off behavior **switched itself off** (`enabled: false`), as
+"Glim sleep now" does for sleep fades. The one that was skipped for a late start (15:11)
+stayed enabled.
 
 ## Limits
 
