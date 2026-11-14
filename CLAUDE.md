@@ -659,7 +659,20 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   canvas, <https://claude.ai/artifact/G9V6rrNyhv8BVchpGwtKjy> ("Glim small
   ideas"). The alarm one writes one-off wake-ups (the bridge switches them
   off after running). Album colors and Notification glow share one
-  notification-access moment. **Ambilight TV**: design under way.
+  notification-access moment. **Ambilight TV** (`ambilight-tv.md`, canvas
+  <https://claude.ai/artifact/L3zbSbEF6QvtF7JwSiTnqn>): the TV is a Philips
+  65OLED887/12 (Android TV), JointSpace 6.1 on HTTPS 1926, paired with Glim
+  (a 4-digit PIN shown 60 s on the TV, then HTTP digest; credentials never
+  expire, kept off the repo). It answers only while on (deep standby: nothing).
+  It shows on/standby and the app in front, **not play or pause**, so "lights
+  up on pause" isn't promised. Screen colors: A the TV's own Ambilight+Hue
+  (Glim turns it on and off, its area has one light today) or B Glim reads
+  `ambilight/measured` (~25/s) and streams map-aware to every color light of
+  the room. **Watching TV** ritual (TV on → a mood and/or screen colors, puts
+  the lights back at standby). The TV's LEDs join moods as one color, and All
+  off turns them off. The TV goes on the map with the direction it faces. First
+  build risk: Python's TLS to the TV failed (curl works), so check Android's
+  early. Open: Netflix and pause test at the TV, waking the TV from standby.
 
 ## Vocabulary
 
