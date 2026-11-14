@@ -630,6 +630,36 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   lights into test rooms and restoring after (touches the real bridge), and
   backing up then wiping the bridge (restored scenes get new IDs, the tap
   dial and Hue app shortcuts break).
+- 2026-11-14: **Music, TV and three smaller ideas designed** (no app code
+  yet; each doc in `docs/design/` ends with the choices waiting for the
+  maintainer and its build steps). **Album colors**
+  (`album-colors.md`, canvas
+  <https://claude.ai/artifact/3CtPqqR1rXYomywXv7CeY2>): "Follow the
+  music" reads what's playing (notification access, `MediaSession`), takes 3
+  to 5 colors from the cover and spreads them like a palette mood on the
+  target, living by default; pausing holds, 15 min without music puts the
+  lights back; out loud only (not headphones); runs natively through
+  `FastRoute.kt`, so it works locked and away. Android only. **Listening
+  room** (`listening-room.md`, canvas
+  <https://claude.ai/artifact/6nmX5MhtBFnkmTEKxmD59g>, probe
+  `docs/design/listening-room-probe.py`): Breathe, Pulse and Ripple (each
+  beat crosses the plan from the speaker), streamed with Hue's Entertainment
+  API from an area Glim builds from the map. Probed on the real bridge:
+  creating an area ~0.6 s, start ~0.4 s, DTLS 1.2 PSK handshake < 0.6 s,
+  25 Hz frames rendered. Found: **Glim doesn't store the client key** (pairing
+  asks for it, `pairOnce` drops it: needs a re-pair or a stored key);
+  `max_streams` is 1 (the TV's Ambilight+Hue and Listening room exclude each
+  other); **the bridge doesn't put lights back after a stream** (each keeps
+  the last frame, off lights end "on at 6%"), so Glim captures the lights
+  first and ends on black frames, then restores them (a light accepts level
+  and color while off); streaming lights show stale state over REST and
+  ignore commands. Local only. Mic by default (catches the TV and vinyl).
+  **Sunrise follows your alarm** (`sunrise-alarm.md`), **Window light**
+  (`window-light.md`), **Notification glow** (`notification-glow.md`): one
+  canvas, <https://claude.ai/artifact/G9V6rrNyhv8BVchpGwtKjy> ("Glim small
+  ideas"). The alarm one writes one-off wake-ups (the bridge switches them
+  off after running). Album colors and Notification glow share one
+  notification-access moment. **Ambilight TV**: design under way.
 
 ## Vocabulary
 

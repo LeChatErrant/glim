@@ -518,5 +518,8 @@ Use the real rooms and light names from section 2 everywhere.
 
 ## 10. Out of scope for now
 
-Music sync, a "paint" mode for coloring lights on the map, remapping the
+Music and TV (Album colors, Listening room, the Philips Ambilight TV) and
+three smaller ideas (Sunrise follows your alarm, Window light, Notification
+glow) are now in scope, each designed in its own doc in
+[`docs/design/`](design/) with its canvas. Still out of scope: a "paint" mode for coloring lights on the map, remapping the
 tap dial switch, multiple homes, multiple users, tablets and landscape.
