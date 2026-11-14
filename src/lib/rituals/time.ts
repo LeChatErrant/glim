@@ -56,3 +56,16 @@ export function whenPhrase(d: Date, now = new Date()) {
   const [day, t] = whenLabel(d, now).split(' ');
   return `${day === 'Today' || day === 'Tomorrow' ? day.toLowerCase() : day} at ${t}`;
 }
+
+/** A moment gone by: "18:42" (today), "Yesterday 18:42", "Friday 18:42", "3 Nov 18:42". */
+export function pastLabel(d: Date, now = new Date()) {
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOf(now) - startOf(d)) / 864e5);
+  const t = fmtClock(d.getHours() * 60 + d.getMinutes());
+  if (days <= 0) return t;
+  if (days === 1) return `Yesterday ${t}`;
+  if (days < 7) return `${DAY_NAMES[dayIndex(d)]} ${t}`;
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${t}`;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

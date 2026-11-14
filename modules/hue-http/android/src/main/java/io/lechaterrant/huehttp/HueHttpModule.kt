@@ -49,6 +49,22 @@ class TileRecord : Record {
   @Field val extra: String = "{}"
 }
 
+class HomeNoticeButtonRecord : Record {
+  @Field val title: String = ""
+  // JSON [[path, body], ...].
+  @Field val batch: String = "[]"
+  @Field val done: String = ""
+  // JSON {key, min, lights}: a path's auto-off, set when the button lights it.
+  @Field val pathOff: String? = null
+}
+
+class HomeNoticeRecord : Record {
+  @Field val title: String = ""
+  @Field val text: String = ""
+  @Field val problem: Boolean = false
+  @Field val button: HomeNoticeButtonRecord? = null
+}
+
 class FxRecord : Record {
   @Field val kind: String = ""
   @Field val x: Double = 0.0
@@ -119,6 +135,13 @@ class HueHttpModule : Module() {
 
     AsyncFunction("cancelPathOff") { key: String ->
       appContext.reactContext?.let { PathOff.cancel(it, key) }
+    }
+
+    // Arriving or leaving home says what it did (HomeNotice.kt), with an optional button whose
+    // requests are sent from native code.
+    AsyncFunction("notifyHome") { n: HomeNoticeRecord ->
+      val context = appContext.reactContext ?: return@AsyncFunction
+      HomeNotice.post(context, n.title, n.text, n.problem, n.button?.let { HomeNotice.Button(it.title, it.batch, it.done, it.pathOff) })
     }
 
     // What "sleep fade now" changes on the bridge, for widget and tile taps (GlimSleep.kt).

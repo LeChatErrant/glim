@@ -1,12 +1,12 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Alert, AppState, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { setRoom, type Snapshot } from '../../lib/hue/client';
 import { refreshHome, useHome } from '../../lib/hue/useHome';
 import type { Mood } from '../../lib/moods';
-import { syncGeofence } from '../../lib/rituals/arrive';
+import { fixWatch, syncGeofence, watchProblem, type WatchProblem } from '../../lib/rituals/arrive';
 import { ARRIVE_READY } from '../../lib/rituals/flags';
 import { deleteRhythm, RHYTHM_PRESETS, saveRhythm, setRhythmEnabled, type RhythmRitual } from '../../lib/rituals/rhythm';
 import {
@@ -22,9 +22,10 @@ import {
   type SleepRun,
   type WakeRitual,
 } from '../../lib/rituals/rituals';
-import { saveRitualSettings, type RitualSettings } from '../../lib/rituals/store';
+import { askNotifications } from '../../lib/rituals/homeNotice';
+import { saveRitualSettings, type HomeRun, type RitualSettings } from '../../lib/rituals/store';
 import { cachedRituals, fetchRituals, localRituals, rememberRituals, type RitualsView } from '../../lib/rituals/view';
-import { clock, daysLabel, EVERY_DAY, fmtClock, nextAt, WEEKDAYS, whenPhrase } from '../../lib/rituals/time';
+import { clock, daysLabel, EVERY_DAY, fmtClock, nextAt, pastLabel, WEEKDAYS, whenPhrase } from '../../lib/rituals/time';
 import { ModalSheet } from '../../ui/ModalSheet';
 import { ArriveSheet, type HomeRitual } from '../../ui/rituals/ArriveSheet';
 import { DashedButton, RitualCard, RitualGlyph, targetNames, type RitualGlyphKind } from '../../ui/rituals/parts';
@@ -52,6 +53,16 @@ function rhythmTargets(s: Snapshot | null): string[] {
   const outdoor = ['terrace', 'balcony', 'garden', 'driveway', 'porch', 'barbecue', 'pool', 'front_door', 'carport'];
   return (s?.rooms ?? []).filter((r) => !outdoor.includes(r.archetype) && r.lightIds.some((id) => s?.lights.find((l) => l.id === id)?.mirekRange)).map((r) => r.id);
 }
+
+/** Why arriving and leaving home aren't running, on their cards. */
+const WATCH_PROBLEMS: Record<WatchProblem, string> = {
+  access: 'Not running: location isn’t allowed all the time',
+  'location-off': 'Not running: location is off on this phone',
+  'not-watching': 'Not running: Glim couldn’t watch for home',
+};
+
+/** The second line of an arriving or leaving card: what it did last ("18:42 · Relax came on"). */
+const lastRun = (r: HomeRun | null | undefined) => (r ? { text: `${pastLabel(new Date(r.at))} · ${r.text}`, warn: r.kind === 'failed' } : null);
 
 const newWake = (s: Snapshot | null, at: number, days: WakeRitual['days']): WakeRitual => ({
   kind: 'wake',
@@ -107,6 +118,12 @@ export default function RitualsScreen() {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<WatchProblem | null>(null);
+  const checkWatch = useCallback(() => {
+    watchProblem()
+      .then(setProblem)
+      .catch(() => null);
+  }, []);
 
   const show = useCallback((v: RitualsView) => {
     setBridge(v.bridge);
@@ -141,7 +158,15 @@ export default function RitualsScreen() {
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load]),
+      checkWatch();
+      // Back from Android's settings (location, permissions): check again.
+      const sub = AppState.addEventListener('change', (st) => {
+        if (st !== 'active') return;
+        load();
+        checkWatch();
+      });
+      return () => sub.remove();
+    }, [load, checkWatch]),
   );
 
   /** Runs a bridge change, then reads everything back so the list shows what the bridge has. */
@@ -240,14 +265,18 @@ export default function RitualsScreen() {
   const saveArrive = async (change: Pick<RitualSettings, 'home' | 'arrive' | 'leave'>) => {
     setEditing(null);
     setSettings(await saveRitualSettings(change));
-    syncGeofence().catch((e) => Alert.alert("Couldn't watch for home", String(e?.message ?? e)));
+    await syncGeofence().catch((e) => Alert.alert("Couldn't watch for home", String(e?.message ?? e)));
+    checkWatch();
   };
 
   const toggleHome = async (which: 'arrive' | 'leave') => {
     if (!settings?.home) return setEditing({ kind: 'arrive', which });
     const next = which === 'arrive' ? { arrive: { ...settings.arrive, enabled: !settings.arrive.enabled } } : { leave: { enabled: !settings.leave.enabled } };
+    // Turning on: each run says what it did in a notification.
+    if (next.arrive?.enabled || next.leave?.enabled) await askNotifications();
     setSettings(await saveRitualSettings(next));
     const watching = await syncGeofence().catch(() => false);
+    checkWatch();
     // Turned on without "Allow all the time": the sheet asks for it.
     if (!watching && (next.arrive?.enabled || next.leave?.enabled)) setEditing({ kind: 'arrive', which });
   };
@@ -266,6 +295,18 @@ export default function RitualsScreen() {
   const total = wakes.length + sleeps.length + rhythms.length + (ARRIVE_READY ? 2 : 0);
   // The list appears whole: the bridge's part read (or known unreachable) and the phone's settings.
   const ready = !!settings && (bridge !== null || !!error);
+  // Where the phone is, as the circle last saw it (shown while it's watched).
+  const homeBadge = problem || settings?.atHome == null ? null : settings.atHome ? 'Home' : 'Away';
+  const fix = problem
+    ? {
+        title: 'Fix',
+        onPress: async () => {
+          const left = await fixWatch(problem).catch(() => problem);
+          setProblem(left);
+          if (left === 'not-watching') Alert.alert('Still not watching for home', 'Turn location on, then try again. Restarting the phone can help.');
+        },
+      }
+    : null;
   const moodName = (id: string | null) => (id ? (moods.find((m) => m.id === id)?.name ?? 'Removed mood') : null);
   const arriveSummary = !settings?.home
     ? 'Set your home first'
@@ -345,8 +386,28 @@ export default function RitualsScreen() {
           ))}
           {settings && ARRIVE_READY && (
             <>
-              <RitualCard kind="arrive" name="Arriving home" summary={arriveSummary} on={arriveOn} onToggle={() => toggleHome('arrive')} onPress={() => setEditing({ kind: 'arrive', which: 'arrive' })} />
-              <RitualCard kind="leave" name="Leaving home" summary={settings.home ? 'All off' : 'Set your home first'} on={leaveOn} onToggle={() => toggleHome('leave')} onPress={() => setEditing({ kind: 'arrive', which: 'leave' })} />
+              <RitualCard
+                kind="arrive"
+                name="Arriving home"
+                badge={homeBadge}
+                summary={arriveSummary}
+                status={arriveOn && problem ? { text: WATCH_PROBLEMS[problem], warn: true } : lastRun(settings.lastArrive)}
+                action={arriveOn && fix ? fix : undefined}
+                on={arriveOn}
+                onToggle={() => toggleHome('arrive')}
+                onPress={() => setEditing({ kind: 'arrive', which: 'arrive' })}
+              />
+              <RitualCard
+                kind="leave"
+                name="Leaving home"
+                badge={homeBadge}
+                summary={settings.home ? 'All off' : 'Set your home first'}
+                status={leaveOn && problem ? { text: WATCH_PROBLEMS[problem], warn: true } : lastRun(settings.lastLeave)}
+                action={leaveOn && fix ? fix : undefined}
+                on={leaveOn}
+                onToggle={() => toggleHome('leave')}
+                onPress={() => setEditing({ kind: 'arrive', which: 'leave' })}
+              />
             </>
           )}
           <DashedButton title="New ritual" onPress={() => setEditing({ kind: 'new' })} />

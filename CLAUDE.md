@@ -606,6 +606,28 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   tab; "I'm home now" asks for location while in use if needed. Settings
   group screens show their sections together: each reports when its data is
   in (`useSectionReady`), the page appears when all are (700 ms at most).
+- 2026-11-14: **Arriving and leaving home say what they did.** They ran
+  silently (errors swallowed), and a card stayed "on" while nothing watched
+  the circle. Now every run posts one notification (the newest replaces the
+  last; `HomeNotice.kt`, posted from the geofence task through
+  `notifyHome`, built in `src/lib/rituals/homeNotice.ts` and `arrive.ts`).
+  Arriving: "Welcome home · Relax is on" with **Turn off** / **Put back**
+  (the lights it touched, as they were), *also when it worked* (the
+  maintainer's call), and when skipped ("Lights left as they are: it's
+  before sunset (17:42)", **Turn on**). Leaving: "You left home · 4 lights
+  off" naming them, with **Turn back on** (someone still home), or "Every
+  light was already off". Can't reach the lights: "Couldn't turn your
+  lights off / on" with **Try again** (from the last known lights). The
+  button's requests are sent natively (`FastRoute`, locked and away; a
+  path's auto-off is set too), then the notice says it's done. Two
+  channels: what happened (no sound, gone after an hour) and problems
+  (sound, pops up). Notifications are asked when arriving or leaving is
+  turned on (Android 13+), never blocking it. Cards: a Home / Away badge
+  (`atHome`), the last run ("18:42 · Relax came on", `lastArrive` /
+  `lastLeave`), or a champagne "Not running" line (location not allowed
+  all the time, location off, circle not watched; `watchProblem`, checked
+  on focus and on return from Android's settings) with **Fix**. Not built:
+  a history of crossings, a "Tell me" setting per ritual.
 - 2026-11-14: **Glim Fresh, a sandbox for testing the first-time setup.**
   A second build installed beside the real app (package
   `io.lechaterrant.huelab.fresh`, "Glim Fresh", scheme `glimfresh://`, its own

@@ -62,6 +62,18 @@ declare class HueHttpModule extends NativeModule<Events> {
    */
   schedulePathOff?(key: string, at: number, lights: string): Promise<void>;
   cancelPathOff?(key: string): Promise<void>;
+  /**
+   * Arriving or leaving home says what it did (HomeNotice.kt): one notification, the newest
+   * replacing the last. `problem` uses the channel that pops up. The button's `batch` (JSON
+   * [[path, body], ...]) is sent from native code when tapped; the notice then says `done`.
+   * Missing in older builds.
+   */
+  notifyHome?(notice: {
+    title: string;
+    text: string;
+    problem: boolean;
+    button?: { title: string; batch: string; done: string; pathOff?: string | null } | null;
+  }): Promise<void>;
   /** What "sleep fade now" changes on the bridge, for native widget and tile taps (GlimSleep.kt). */
   setSleepPool?(json: string | null): Promise<void>;
   /** Notes shared with native code about fades stopped by hand: `sleepStopped`, `sleepPaused`. */

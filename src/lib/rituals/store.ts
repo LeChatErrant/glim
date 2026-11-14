@@ -16,12 +16,20 @@ export type Arrive = {
   hours: [Clock, Clock] | null;
 };
 
+/**
+ * What arriving or leaving home did the last time it ran (shown on its card): `done`, `nothing`
+ * (leaving with every light already off), `skipped` (arriving outside its hours) or `failed`.
+ */
+export type HomeRun = { at: number; kind: 'done' | 'nothing' | 'skipped' | 'failed'; text: string };
+
 export type RitualSettings = {
   home: HomeArea | null;
   arrive: Arrive;
   leave: { enabled: boolean };
   /** Last side of the circle the phone was seen on (null: not known yet). */
   atHome: boolean | null;
+  lastArrive?: HomeRun | null;
+  lastLeave?: HomeRun | null;
 };
 
 const DEFAULTS: RitualSettings = {

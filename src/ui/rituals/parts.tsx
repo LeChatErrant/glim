@@ -86,12 +86,16 @@ function GlyphDisc({ kind, on }: { kind: RitualGlyphKind; on: boolean }) {
   );
 }
 
-/** A ritual in the list: glyph, name (and a champagne badge), one-line summary, on/off switch. */
+/**
+ * A ritual in the list: glyph, name (and a champagne badge), one-line summary, on/off switch.
+ * `status`: a second line, what happened last or a problem (`warn`, in champagne).
+ */
 export function RitualCard({
   kind,
   name,
   badge,
   summary,
+  status,
   on,
   onToggle,
   onPress,
@@ -101,6 +105,7 @@ export function RitualCard({
   name: string;
   badge?: string | null;
   summary: string;
+  status?: { text: string; warn?: boolean } | null;
   on: boolean;
   onToggle?: () => void;
   onPress: () => void;
@@ -124,7 +129,7 @@ export function RitualCard({
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel={`${name}. ${summary}. Edit`}
+        accessibilityLabel={`${name}. ${summary}.${status ? ` ${status.text}.` : ''} Edit`}
         style={({ pressed }) => ({ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, opacity: pressed ? 0.6 : 1 })}
       >
         <GlyphDisc kind={kind} on={on} />
@@ -142,6 +147,11 @@ export function RitualCard({
           <Txt size={12.5} tone={on ? 'secondary' : 'muted'} numberOfLines={1} style={{ lineHeight: 17 }}>
             {summary}
           </Txt>
+          {status ? (
+            <Txt size={12} tone={status.warn ? 'champagne' : 'muted'} numberOfLines={1} style={{ lineHeight: 16 }}>
+              {status.text}
+            </Txt>
+          ) : null}
         </View>
       </Pressable>
       {action && (

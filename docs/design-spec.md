@@ -366,6 +366,11 @@ and an editor:
    mood. Parameters: home location and radius (set from the phone's position
    while home; a map picker later), mood, only after sunset (toggle), active
    hours. Can also do **Leaving home:** all off when leaving.
+   Each run says what it did (2026-11-14): a notification every time, with
+   a button to undo it ("Welcome home · Relax is on" → Put back; "You left
+   home · 4 lights off" → Turn back on), or to try again when the lights
+   couldn't be reached. Their cards show Home / Away, the last run, and a
+   "Not running" line with Fix when location stops them.
 
 Design an onboarding moment for location permission ("Allow all the time" is
 required; explain why in plain words).

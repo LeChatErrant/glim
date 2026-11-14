@@ -7,6 +7,8 @@
   <!-- A night path's auto-off (PathOff.kt): an exact alarm, on time with the phone locked. -->
   <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
   <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+  <!-- Arriving and leaving home say what they did (HomeNotice.kt). Asked when one is turned on. -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
   <application>
     <service
@@ -20,6 +22,8 @@
       </intent-filter>
     </receiver>
     <receiver android:name="io.lechaterrant.huehttp.PathOffReceiver" android:exported="false" />
+    <!-- The button on an arriving or leaving home notification (Put back, Try again...). -->
+    <receiver android:name="io.lechaterrant.huehttp.HomeNoticeReceiver" android:exported="false" />
     <!-- Quick Settings tile (GlimTile.kt): a room, the whole home or a mood. -->
     <service
       android:name="io.lechaterrant.huehttp.GlimTileService"

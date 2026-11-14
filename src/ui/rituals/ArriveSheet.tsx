@@ -5,6 +5,7 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import type { Snapshot } from '../../lib/hue/client';
 import type { Mood } from '../../lib/moods';
 import { askLocationAccess, hereNow, locationAccess } from '../../lib/rituals/arrive';
+import { askNotifications, notificationsAllowed } from '../../lib/rituals/homeNotice';
 import type { Arrive, HomeArea, RitualSettings } from '../../lib/rituals/store';
 import { sunTimes } from '../../lib/rituals/sun';
 import { clock, fmtClock } from '../../lib/rituals/time';
@@ -49,6 +50,7 @@ export function ArriveSheet({
   const [access, setAccess] = useState<'all' | 'foreground' | 'none' | null>(null);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notices, setNotices] = useState<boolean | null>(null);
   const { locating, setHere } = useHere((home) => setS((x) => ({ ...x, home: { ...home, radius: x.home?.radius ?? 150 } })), setError);
   // A mood picked, or about to be (the "A mood" choice before one is chosen).
   const [moodMode, setMoodMode] = useState(!!initial.arrive.moodId);
@@ -58,7 +60,14 @@ export function ArriveSheet({
 
   useEffect(() => {
     locationAccess().then(setAccess);
+    notificationsAllowed().then(setNotices);
   }, []);
+
+  /** Saves it on, after asking for notifications (each run says what it did; never blocks). */
+  const turnOn = async () => {
+    if (!notices) setNotices(await askNotifications());
+    onSave(draft(true));
+  };
 
   const draft = (enabled: boolean): Draft =>
     which === 'arrive' ? { ...s, arrive: { ...s.arrive, enabled, moodId: moodMode ? s.arrive.moodId : null } } : { ...s, leave: { enabled } };
@@ -66,14 +75,14 @@ export function ArriveSheet({
   /** Turn on or save: asks for location "all the time" first when it's missing. */
   const confirm = async () => {
     if (access !== 'all') return setAsking(true);
-    onSave(draft(true));
+    turnOn();
   };
 
   const ask = async () => {
     setError(null);
     const a = await askLocationAccess().catch(() => 'none' as const);
     setAccess(a);
-    if (a === 'all') return onSave(draft(true));
+    if (a === 'all') return turnOn();
     setError(a === 'foreground' ? 'Choose “Allow all the time” so it works with the app closed.' : 'Location is off for Glim.');
   };
 
@@ -187,9 +196,23 @@ export function ArriveSheet({
         </Txt>
       )}
 
-      <Txt size={12} tone="muted">
-        Uses your phone’s location: expect 1 to 3 minutes of delay.
-      </Txt>
+      <View style={{ gap: 6 }}>
+        <Txt size={12} tone="muted">
+          Uses your phone’s location: expect 1 to 3 minutes of delay.
+        </Txt>
+        {notices === false && wasOn ? (
+          <>
+            <Txt size={12} tone="champagne">
+              Notifications are off for Glim: you won’t see when it runs.
+            </Txt>
+            <PillButton title="Allow notifications" kind="text" height={36} onPress={async () => setNotices(await askNotifications(true))} style={{ alignSelf: 'flex-start' }} />
+          </>
+        ) : (
+          <Txt size={12} tone="muted">
+            {which === 'arrive' ? 'A notification says what it did each time, with a button to put the lights back.' : 'A notification says which lights went off, with a button to turn them back on.'}
+          </Txt>
+        )}
+      </View>
       <PillButton
         title={!s.home ? 'Set your home first' : moodMode && which === 'arrive' && !pickedMood ? 'Pick a mood' : wasOn ? 'Save' : 'Turn on'}
         kind="primary"
