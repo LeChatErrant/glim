@@ -12,7 +12,7 @@ import { WIDGET_NAMES } from '../../widgets/task-handler';
 import { loadTilesWidgetSettings } from '../../widgets/tiles';
 import { Section } from '../controls';
 import { Txt } from '../text';
-import { SettingsRow } from './parts';
+import { SettingsRow, useSectionReady } from './parts';
 
 type Placed = { info: WidgetInfo; title: string; sub: string };
 
@@ -65,6 +65,7 @@ export function Widgets() {
     }, []),
   );
 
+  useSectionReady(Platform.OS !== 'android' || placed !== null);
   if (Platform.OS !== 'android' || placed === null) return null;
   return (
     <Section title="Widgets">

@@ -10,6 +10,7 @@ import { PillButton, Rule, Section } from '../controls';
 import { Icon } from '../icons';
 import { Display, Txt } from '../text';
 import { color } from '../theme';
+import { useSectionReady } from './parts';
 
 type BridgeInfo = { name: string; model?: string; software?: string };
 
@@ -57,6 +58,7 @@ export function Bridge() {
     );
   }
 
+  useSectionReady(!!bridge && !!info);
   if (!bridge) return null;
   const counts = snapshot ? `${snapshot.lights.length} lights · ${snapshot.rooms.length} rooms` : null;
   const details = [info?.model && info.model !== info.name ? info.model : null, info?.software ? `Software ${info.software}` : null].filter(Boolean).join(' · ');

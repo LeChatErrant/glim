@@ -4,7 +4,7 @@ import { View } from 'react-native';
 
 import { useHome } from '../../lib/hue/useHome';
 import { PillButton, Section } from '../controls';
-import { SettingsRow } from './parts';
+import { SettingsRow, useSectionReady } from './parts';
 
 /**
  * Settings → Lights and rooms: every room, group and light, each opening its own screen, where it
@@ -15,6 +15,7 @@ export function LightsAndRooms() {
   const router = useRouter();
   const { snapshot } = useHome(15_000);
   const [showLights, setShowLights] = useState(false);
+  useSectionReady(!!snapshot);
   if (!snapshot) return null;
 
   const count = (n: number) => `${n} ${n === 1 ? 'light' : 'lights'}`;

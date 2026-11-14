@@ -48,8 +48,8 @@ export function ArriveSheet({
   const [s, setS] = useState<Draft>({ home: initial.home, arrive: initial.arrive, leave: initial.leave });
   const [access, setAccess] = useState<'all' | 'foreground' | 'none' | null>(null);
   const [asking, setAsking] = useState(false);
-  const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { locating, setHere } = useHere((home) => setS((x) => ({ ...x, home: { ...home, radius: x.home?.radius ?? 150 } })), setError);
   // A mood picked, or about to be (the "A mood" choice before one is chosen).
   const [moodMode, setMoodMode] = useState(!!initial.arrive.moodId);
   const arrive = s.arrive;
@@ -59,19 +59,6 @@ export function ArriveSheet({
   useEffect(() => {
     locationAccess().then(setAccess);
   }, []);
-
-  const setHere = async () => {
-    setLocating(true);
-    setError(null);
-    try {
-      const p = await hereNow();
-      setS((x) => ({ ...x, home: { lat: p.lat, lon: p.lon, radius: x.home?.radius ?? 150 } }));
-    } catch {
-      setError('Couldn’t get your position. Try again by a window.');
-    } finally {
-      setLocating(false);
-    }
-  };
 
   const draft = (enabled: boolean): Draft =>
     which === 'arrive' ? { ...s, arrive: { ...s.arrive, enabled, moodId: moodMode ? s.arrive.moodId : null } } : { ...s, leave: { enabled } };
@@ -210,6 +197,51 @@ export function ArriveSheet({
         onPress={confirm}
       />
       {wasOn && <PillButton title="Turn off" kind="text" height={40} onPress={() => onSave(draft(false))} style={{ alignSelf: 'flex-start' }} />}
+    </ModalSheet>
+  );
+}
+
+/** "I'm home now": takes the phone's position. */
+function useHere(onPlace: (p: { lat: number; lon: number }) => void, setError: (e: string | null) => void) {
+  const [locating, setLocating] = useState(false);
+  const setHere = async () => {
+    setLocating(true);
+    setError(null);
+    try {
+      const p = await hereNow();
+      onPlace({ lat: p.lat, lon: p.lon });
+    } catch (e) {
+      const off = String((e as Error)?.message ?? '').startsWith('Location is off');
+      setError(off ? 'Location is off for Glim: allow it to set your home.' : 'Couldn’t get your position. Try again by a window.');
+    } finally {
+      setLocating(false);
+    }
+  };
+  return { locating, setHere };
+}
+
+/**
+ * Settings → Home location: where home is and how far around it counts, set right there (the
+ * same block as in the Arriving and Leaving home sheets).
+ */
+export function HomeSheet({ initial, onSave, onClose }: { initial: HomeArea | null; onSave: (home: HomeArea) => void; onClose: () => void }) {
+  const [home, setHome] = useState(initial);
+  const [error, setError] = useState<string | null>(null);
+  const { locating, setHere } = useHere((p) => setHome((h) => ({ ...p, radius: h?.radius ?? 150 })), setError);
+  const changed = !!home && (home.lat !== initial?.lat || home.lon !== initial?.lon || home.radius !== initial?.radius);
+  return (
+    <ModalSheet visible title="Home location" onClose={onClose}>
+      <ApproachArt />
+      <Txt size={14} tone="secondary">
+        Arriving and Leaving home watch a circle around your home. Its place stays on this phone.
+      </Txt>
+      <HomeBlock home={home} locating={locating} onHere={setHere} onRadius={(radius) => setHome((h) => h && { ...h, radius })} />
+      {error && (
+        <Txt size={13} tone="champagne">
+          {error}
+        </Txt>
+      )}
+      <PillButton title={home ? 'Save' : 'Set your home first'} kind="primary" disabled={!changed} onPress={() => home && onSave(home)} />
     </ModalSheet>
   );
 }

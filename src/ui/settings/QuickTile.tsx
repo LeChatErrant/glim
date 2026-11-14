@@ -17,6 +17,7 @@ import { Icon, type IconName } from '../icons';
 import { Choice } from '../scan/parts';
 import { Display, Label, Txt } from '../text';
 import { color, hairline } from '../theme';
+import { useSectionReady } from './parts';
 
 const targetKey = (t: TileTarget) => (t.kind === 'home' ? 'home' : t.kind === 'mood' || t.kind === 'sleep' ? `${t.kind}:${itemKey(t.item)}` : `${t.kind}:${t.id}`);
 
@@ -49,6 +50,7 @@ export function QuickTile() {
     }, []),
   );
 
+  useSectionReady(Platform.OS !== 'android' || (!!target && !!snapshot));
   if (Platform.OS !== 'android' || !target || !snapshot) return null;
 
   const pick = (t: TileTarget) => {

@@ -38,6 +38,11 @@ export function rememberRituals(view: RitualsView) {
   memo = view;
 }
 
+/** Settings changed elsewhere (Settings → Home location): the next visit starts from them. */
+export function rememberSettings(settings: RitualSettings) {
+  if (memo) memo = { ...memo, settings };
+}
+
 /** Everything that's on the phone, plus the bridge's part as last read. Fast: no bridge request. */
 export async function localRituals(): Promise<RitualsView> {
   const [settings, moods, rhythms, raw] = await Promise.all([

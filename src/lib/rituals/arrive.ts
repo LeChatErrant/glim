@@ -103,8 +103,10 @@ export async function askLocationAccess(): Promise<'all' | 'foreground' | 'none'
   return bg.granted ? 'all' : 'foreground';
 }
 
-/** Where the phone is now, precisely (to set the home circle). */
+/** Where the phone is now, precisely (to set the home circle). Asks for location while in use if needed. */
 export async function hereNow() {
+  const fg = await Location.getForegroundPermissionsAsync();
+  if (!fg.granted && !(await Location.requestForegroundPermissionsAsync()).granted) throw new Error('Location is off for Glim.');
   const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
   return { lat: p.coords.latitude, lon: p.coords.longitude, accuracy: p.coords.accuracy ?? null };
 }

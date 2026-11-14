@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useLayoutEffect, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { Icon, type IconName } from '../icons';
@@ -30,4 +30,20 @@ export function SettingsRow({ icon, title, sub, onPress, right }: { icon?: IconN
       {body}
     </Pressable>
   );
+}
+
+/** Set by a Settings group screen: sections say when their data is in. */
+export const SectionReady = createContext<((id: string, ready: boolean) => void) | null>(null);
+
+/**
+ * A section reports whether its data is loaded, so its group screen shows every section at once
+ * instead of one popping in after the others. Call it before any early `return null`.
+ */
+export function useSectionReady(ready: boolean) {
+  const report = useContext(SectionReady);
+  const id = useId();
+  useLayoutEffect(() => {
+    report?.(id, ready);
+  }, [report, id, ready]);
+  useEffect(() => () => report?.(id, true), [report, id]);
 }

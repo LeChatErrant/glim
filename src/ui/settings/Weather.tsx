@@ -19,6 +19,7 @@ import { PillButton, Rule, Section, Slider, Switch, TagButton } from '../control
 import { Label, Txt } from '../text';
 import { color, font, hairline } from '../theme';
 import { refreshAllWidgets } from '../../widgets/task-handler';
+import { useSectionReady } from './parts';
 
 const KIND_LABEL: Record<WeatherKind, string> = { clear: 'Clear', cloudy: 'Cloudy', fog: 'Fog', rain: 'Rain', storm: 'Storm', snow: 'Snow' };
 
@@ -62,6 +63,7 @@ export function Weather() {
     }
   };
 
+  useSectionReady(!!settings);
   if (!settings) return null;
   const sun = live?.sun ?? DEFAULT_SUN;
   const forced = settings.weather !== 'live' || settings.time !== 'live';

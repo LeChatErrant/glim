@@ -591,6 +591,21 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   only on Turn on, not as a wall on opening. **Map widget:** a tap outside
   every light and room opens the app (the whole widget carries `OPEN_APP`;
   its id sorts first, so it lies under the tap areas).
+- 2026-11-14, later: **Every ritual sheet reads the same way, and Settings
+  sets home in place.** Sunrise, Sleep fade and Day rhythm follow the
+  Arriving home sheet: a sentence at the top kept live while editing
+  ("On weekdays, Chambre glows up from 6:35, fully lit at 7:05.", `Sentence`
+  in `src/ui/rituals/parts.tsx`), then the settings in the sentence's order,
+  and one footer (`SheetFooter`): Add (new), Turn on (off) or Save (on), Turn
+  off under it, Delete at the right. No more "On" switch inside the sheets.
+  Sleep fade: "Start now · N min" right under the sentence, When = "When I
+  start it" / "On a schedule". Day rhythm: presets first, then the curve with
+  a hint, the picked point in its own card (time, warm / neutral / cool, K,
+  brightness). Settings → Your home → Home location opens its own sheet
+  (`HomeSheet`, "I'm home now", radius) instead of jumping to the Rituals
+  tab; "I'm home now" asks for location while in use if needed. Settings
+  group screens show their sections together: each reports when its data is
+  in (`useSectionReady`), the page appears when all are (700 ms at most).
 
 ## Vocabulary
 

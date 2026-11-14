@@ -10,11 +10,11 @@ import { Field, ModalSheet } from '../ModalSheet';
 import { Choice } from '../scan/parts';
 import { Display, Label, Txt } from '../text';
 import { color, hairline } from '../theme';
-import { Block, DaysRow, NumberTabs, SwitchRow, TargetChips, TimePicker } from './parts';
+import { Block, daysPhrase, DaysRow, NumberTabs, Sentence, SheetFooter, TargetChips, targetNames, TimePicker } from './parts';
 
 const BRIDGE_NOTE = 'Runs on your bridge, even with your phone off.';
 
-/** Sunrise wake-up: wake-up time, days, rooms, how long the fade takes, how bright it ends. */
+/** Sunrise wake-up: when you wake up, which days, which rooms, how long the fade, how bright. */
 export function WakeSheet({
   initial,
   snapshot,
@@ -30,30 +30,28 @@ export function WakeSheet({
 }) {
   const [r, setR] = useState(initial);
   const set = (c: Partial<WakeRitual>) => setR((x) => ({ ...x, ...c }));
-  const start = r.at - r.fadeMin;
-  const next = nextAt(r.at, r.days);
+  const start = (r.at - r.fadeMin + 1440) % 1440;
+  const isNew = !initial.id;
+  const sentence = r.targets.length
+    ? `${cap(daysPhrase(r.days))}, ${targetNames(snapshot, r.targets)} ${r.targets.length === 1 ? 'glows' : 'glow'} up from ${fmtClock(start)}, fully lit at ${fmtClock(r.at)}.`
+    : 'Pick the rooms to wake up.';
   return (
-    <ModalSheet visible title={initial.id ? 'Sunrise' : 'New sunrise'} onClose={onClose}>
+    <ModalSheet visible title={isNew ? 'New sunrise' : r.name} onClose={onClose}>
       <SunriseStrip fadeMin={r.fadeMin} start={start} end={r.at} />
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+      <Sentence>{sentence}</Sentence>
+      <Block label="Wake up at" right={initial.enabled && !isNew ? <Txt size={12} tone="secondary">{`Next: ${whenLabel(nextAt(initial.at, initial.days))}`}</Txt> : undefined}>
         <TimePicker value={r.at} onChange={(at) => set({ at })} label="Wake-up time" />
-        <View style={{ alignItems: 'flex-end', gap: 4, paddingBottom: 8 }}>
-          <Label size={9}>Wake-up time</Label>
-          <Txt size={12} tone="secondary">
-            {r.enabled ? whenLabel(next) : 'Off'}
-          </Txt>
-        </View>
-      </View>
+      </Block>
       <Block label={`Days · ${daysLabel(r.days)}`}>
         <DaysRow days={r.days} onChange={(days) => set({ days })} />
       </Block>
-      <Block label="Lights">
+      <Block label="Rooms">
         <TargetChips snapshot={snapshot} targets={r.targets} onChange={(targets) => set({ targets })} />
       </Block>
       <Block label="Fade in">
         <NumberTabs values={[10, 20, 30, 45, 60]} value={r.fadeMin} onChange={(fadeMin) => set({ fadeMin })} unit="min" />
       </Block>
-      <Block label={`Ends at · ${r.brightness}%`}>
+      <Block label={`Brightness at ${fmtClock(r.at)} · ${r.brightness}%`}>
         <Slider value={r.brightness} min={10} max={100} tint="#FFE7CC" ground={color.sheet} label="Brightness at wake-up time" onChange={(brightness) => set({ brightness })} onCommit={(brightness) => set({ brightness })} />
       </Block>
       <Block label="Light">
@@ -63,12 +61,17 @@ export function WakeSheet({
         </View>
       </Block>
       <Field label="Name" value={r.name} onChange={(name) => set({ name })} />
-      <SwitchRow title="On" sub={r.enabled ? `Starts ${fmtClock(start)}, ${daysLabel(r.days).toLowerCase()}` : 'Kept, but won’t run'} on={r.enabled} onToggle={() => set({ enabled: !r.enabled })} />
       <Txt size={12} tone="muted">
         {BRIDGE_NOTE}
       </Txt>
-      <PillButton title="Save" kind="primary" disabled={!r.targets.length} onPress={() => onSave({ ...r, name: r.name.trim() || 'Sunrise' })} />
-      {onDelete && <PillButton title="Delete sunrise" kind="text" height={40} onPress={onDelete} style={{ alignSelf: 'flex-start' }} />}
+      <SheetFooter
+        isNew={isNew}
+        on={initial.enabled}
+        noun="sunrise"
+        missing={!r.targets.length ? 'Pick a room' : !r.days.length ? 'Pick the days' : null}
+        onSave={(enabled) => onSave({ ...r, enabled, name: r.name.trim() || 'Sunrise' })}
+        onDelete={onDelete}
+      />
     </ModalSheet>
   );
 }
@@ -109,8 +112,8 @@ function SunriseStrip({ fadeMin, start, end }: { fadeMin: number; start: number;
 }
 
 /**
- * Sleep fade: start it now (lights dim from where they are to off), and optionally on a schedule.
- * While one runs, the sheet shows the time left with Stop and Lights off now.
+ * Sleep fade: lights dim from where they are to off. Start it now (the button near the top), and
+ * optionally on a schedule too. While one runs, the sheet opens on the time left.
  */
 export function SleepSheet({
   initial,
@@ -137,37 +140,56 @@ export function SleepSheet({
 }) {
   const [r, setR] = useState(initial);
   const set = (c: Partial<SleepRitual>) => setR((x) => ({ ...x, ...c }));
+  const isNew = !initial.id;
+  const rooms = targetNames(snapshot, r.targets);
+  const sentence = !r.targets.length
+    ? 'Pick the rooms to fade.'
+    : `${rooms} ${r.targets.length === 1 ? 'dims' : 'dim'} to dark over ${r.fadeMin} min, ${r.enabled ? `${daysPhrase(r.days)} at ${fmtClock(r.at)}, or when you start it` : 'when you start it'}.`;
   return (
-    <ModalSheet visible title={initial.id ? r.name : 'New sleep fade'} onClose={onClose}>
-      {run ? <SleepRunning run={run} snapshot={snapshot} onStop={onStop} onAllOff={onAllOff} onExtend={onExtend} /> : null}
-      <Block label="Lights">
+    <ModalSheet visible title={isNew ? 'New sleep fade' : r.name} onClose={onClose}>
+      {run ? <SleepRunning run={run} snapshot={snapshot} onStop={onStop} onAllOff={onAllOff} onExtend={onExtend} /> : <Sentence>{sentence}</Sentence>}
+      {!run && <PillButton title={`Start now · ${r.fadeMin} min`} icon="sleep" disabled={!r.targets.length} onPress={() => onStart(r)} />}
+      <Block label="Rooms">
         <TargetChips snapshot={snapshot} targets={r.targets} onChange={(targets) => set({ targets })} />
       </Block>
       <Block label="Fade out">
         <NumberTabs values={[5, 10, 20, 30, 45, 60]} value={r.fadeMin} onChange={(fadeMin) => set({ fadeMin })} unit="min" />
       </Block>
-      {!run && <PillButton title={`Start now · ${r.fadeMin} min`} kind="primary" disabled={!r.targets.length} onPress={() => onStart(r)} />}
-      <SwitchRow
-        title="On a schedule"
-        sub={r.enabled ? `${daysLabel(r.days)} at ${fmtClock(r.at)}` : 'Only when you start it'}
-        on={r.enabled}
-        onToggle={() => set({ enabled: !r.enabled })}
-      />
-      {r.enabled && (
-        <>
-          <TimePicker value={r.at} onChange={(at) => set({ at })} label="Fade starts at" />
-          <DaysRow days={r.days} onChange={(days) => set({ days })} />
-        </>
-      )}
+      <Block label="When">
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Choice label="When I start it" chosen={!r.enabled} onPress={() => set({ enabled: false })} />
+          <Choice label="On a schedule" chosen={r.enabled} onPress={() => set({ enabled: true })} />
+        </View>
+        {r.enabled && (
+          <View style={{ gap: 10, marginTop: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Label size={9} style={{ width: 44 }}>
+                Starts
+              </Label>
+              <TimePicker value={r.at} onChange={(at) => set({ at })} label="Fade starts at" />
+            </View>
+            <DaysRow days={r.days} onChange={(days) => set({ days })} />
+          </View>
+        )}
+      </Block>
       <Field label="Name" value={r.name} onChange={(name) => set({ name })} />
       <Txt size={12} tone="muted">
-        {BRIDGE_NOTE}
+        {r.enabled ? BRIDGE_NOTE : 'Start it here, from the Rituals tab, a Moods widget button or the Quick Settings tile.'}
       </Txt>
-      <PillButton title="Save" disabled={!r.targets.length} onPress={() => onSave({ ...r, name: r.name.trim() || 'Sleep fade' })} />
-      {onDelete && <PillButton title="Delete sleep fade" kind="text" height={40} onPress={onDelete} style={{ alignSelf: 'flex-start' }} />}
+      <SheetFooter
+        isNew={isNew}
+        on
+        toggle={false}
+        noun="sleep fade"
+        missing={!r.targets.length ? 'Pick a room' : r.enabled && !r.days.length ? 'Pick the days' : null}
+        onSave={() => onSave({ ...r, name: r.name.trim() || 'Sleep fade' })}
+        onDelete={onDelete}
+      />
     </ModalSheet>
   );
 }
+
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** "Fading to dark": a ring with the time left, Stop and keep lights, Lights off now. */
 function SleepRunning({ run, snapshot, onStop, onAllOff, onExtend }: { run: SleepRun; snapshot: Snapshot | null; onStop: () => void; onAllOff: () => void; onExtend: () => void }) {

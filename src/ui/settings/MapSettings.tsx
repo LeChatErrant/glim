@@ -5,7 +5,7 @@ import { Alert, View } from 'react-native';
 import { loadMap, resetMap, type HomeMap } from '../../lib/map/map';
 import { refreshAllWidgets } from '../../widgets/task-handler';
 import { PillButton, Section } from '../controls';
-import { SettingsRow } from './parts';
+import { SettingsRow, useSectionReady } from './parts';
 
 /** Settings → Map: what's on it, scan or edit it, or start over. */
 export function MapSettings() {
@@ -16,6 +16,7 @@ export function MapSettings() {
       loadMap().then(setMap);
     }, []),
   );
+  useSectionReady(map !== undefined);
   if (map === undefined) return null;
 
   const rooms = map?.rooms.filter((r) => r.points.length >= 3).length ?? 0;

@@ -6,22 +6,25 @@ import { mirekToHex } from '../../lib/hue/color';
 import type { Snapshot } from '../../lib/hue/client';
 import { RHYTHM_PRESETS, sortPoints, valueAt, type RhythmPoint, type RhythmRitual } from '../../lib/rituals/rhythm';
 import { fmtClock } from '../../lib/rituals/time';
-import { PillButton, Slider } from '../controls';
+import { Slider } from '../controls';
 import { Field, ModalSheet } from '../ModalSheet';
 import { Choice } from '../scan/parts';
 import { Label, Txt } from '../text';
 import { color, hairline } from '../theme';
-import { Block, SwitchRow, TargetChips } from './parts';
+import { Block, Sentence, SheetFooter, TargetChips, targetNames } from './parts';
 
 const K_MIN = 2200;
 const K_MAX = 6500;
 const H = 170;
 export const kelvinHex = (k: number) => mirekToHex(1_000_000 / k);
 
+/** "warm", "neutral", "cool": a white's temperature in a word. */
+const tone = (k: number) => (k < 3500 ? 'warm' : k < 5000 ? 'neutral' : 'cool');
+
 /**
  * Day rhythm: the curve of white over 24 hours (cool and bright by day, warm and low at night).
- * Pick a preset or drag a point (sideways: when; up and down: how cool); the point picked shows
- * its brightness.
+ * Start from a preset, then drag a point (sideways: when; up and down: how cool); the point
+ * picked shows its time, white and brightness under the curve.
  */
 export function RhythmSheet({
   isNew,
@@ -49,37 +52,51 @@ export function RhythmSheet({
   const lightCount = new Set(
     r.targets.flatMap((t) => (snapshot?.rooms.find((x) => x.id === t) ?? snapshot?.zones?.find((x) => x.id === t))?.lightIds ?? []).filter((id) => snapshot?.lights.find((l) => l.id === id)?.kind !== 'onoff'),
   ).size;
+  const one = r.targets.length === 1;
+  const sentence = r.targets.length
+    ? `${targetNames(snapshot, r.targets)} ${one ? 'follows' : 'follow'} the day: right now ${tone(now.kelvin)} white at ${now.brightness}%.`
+    : 'Pick the rooms that follow the day.';
   return (
-    <ModalSheet visible title={isNew ? 'New day rhythm' : 'Day rhythm'} onClose={onClose}>
-      <Txt size={13} tone="secondary">
-        Cool and bright by day, warm and low at night. Drag a point to make it yours.
-      </Txt>
-      <Curve points={pts} picked={picked} onPick={setPicked} onMove={setPoint} nowMin={nowMin} />
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Label size={9}>{`Now ${fmtClock(nowMin)}`}</Label>
-        <Txt size={12} tone="secondary">{`${now.kelvin} K · ${now.brightness}%`}</Txt>
-      </View>
+    <ModalSheet visible title={isNew ? 'New day rhythm' : r.name} onClose={onClose}>
+      <Sentence>{sentence}</Sentence>
       <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
         {RHYTHM_PRESETS.map((p) => (
           <Choice key={p.id} label={p.name} chosen={r.preset === p.id} onPress={() => set({ preset: p.id, points: p.points })} />
         ))}
         {r.preset === 'custom' && <Choice label="Yours" chosen onPress={() => null} />}
       </View>
+      <View style={{ gap: 8 }}>
+        <Curve points={pts} picked={picked} onPick={setPicked} onMove={setPoint} nowMin={nowMin} />
+        <Txt size={12} tone="muted">
+          Drag a point: sideways for the time, up for cooler, down for warmer.
+        </Txt>
+      </View>
       {pt && (
-        <Block label={`Point at ${fmtClock(pt.at)} · ${pt.kelvin} K · ${pt.brightness}%`}>
+        <View style={{ borderRadius: 18, borderWidth: 1, borderColor: hairline(0.1), padding: 16, gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: kelvinHex(pt.kelvin), boxShadow: `0 0 8px 1px ${kelvinHex(pt.kelvin)}` }} />
+            <Txt size={15} style={{ flex: 1 }}>{`At ${fmtClock(pt.at)}`}</Txt>
+            <Txt size={13} tone="secondary">{`${tone(pt.kelvin)} · ${pt.kelvin} K`}</Txt>
+          </View>
+          <Label size={9}>{`Brightness · ${pt.brightness}%`}</Label>
           <Slider value={pt.brightness} min={5} max={100} tint={kelvinHex(pt.kelvin)} ground={color.sheet} label="Brightness at this point" onChange={(brightness) => setPoint(picked, { brightness })} onCommit={(brightness) => setPoint(picked, { brightness })} />
-        </Block>
+        </View>
       )}
-      <Block label={`Lights · ${lightCount} ${lightCount === 1 ? 'light' : 'lights'}`}>
+      <Block label={`Rooms · ${lightCount} ${lightCount === 1 ? 'light' : 'lights'}`}>
         <TargetChips snapshot={snapshot} targets={r.targets} onChange={(targets) => set({ targets })} />
       </Block>
-      <Txt size={12} tone="muted">
-        Lights follow the curve while you leave them be. Changing them by hand pauses it until you turn the room on again from Glim. Runs on your bridge, even with your phone off.
-      </Txt>
       <Field label="Name" value={r.name} onChange={(name) => set({ name })} />
-      <SwitchRow title="On" on={r.enabled} onToggle={() => set({ enabled: !r.enabled })} />
-      <PillButton title="Save" kind="primary" disabled={!r.targets.length} onPress={() => onSave({ ...r, name: r.name.trim() || 'Day rhythm', points: sortPoints(r.points) })} />
-      {onDelete && <PillButton title="Delete day rhythm" kind="text" height={40} onPress={onDelete} style={{ alignSelf: 'flex-start' }} />}
+      <Txt size={12} tone="muted">
+        Runs on your bridge, even with your phone off. Changing these lights by hand pauses it until you turn the room on from Glim.
+      </Txt>
+      <SheetFooter
+        isNew={isNew}
+        on={initial.enabled}
+        noun="day rhythm"
+        missing={!r.targets.length ? 'Pick a room' : null}
+        onSave={(enabled) => onSave({ ...r, enabled, name: r.name.trim() || 'Day rhythm', points: sortPoints(r.points) })}
+        onDelete={onDelete}
+      />
     </ModalSheet>
   );
 }

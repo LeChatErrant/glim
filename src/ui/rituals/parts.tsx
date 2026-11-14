@@ -3,8 +3,8 @@ import { Pressable, ScrollView, View } from 'react-native';
 import Svg, { Circle, Defs, G, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import type { Snapshot } from '../../lib/hue/client';
-import { DAY_LETTERS, DAY_NAMES, DAYS, fmtClock, type Clock, type Day } from '../../lib/rituals/time';
-import { Switch } from '../controls';
+import { DAY_LETTERS, DAY_NAMES, DAYS, daysLabel, fmtClock, type Clock, type Day } from '../../lib/rituals/time';
+import { PillButton, Switch } from '../controls';
 import { Icon } from '../icons';
 import { Choice } from '../scan/parts';
 import { Display, Label, Txt } from '../text';
@@ -347,5 +347,57 @@ function RepeatButton({ label, onPress, rotate }: { label: string; onPress: () =
     >
       <Icon name="chevronDown" size={16} tint={color.secondary} stroke={1.6} />
     </Pressable>
+  );
+}
+
+/** "every day", "on weekdays", "on Mon, Wed": days inside a sentence. */
+export function daysPhrase(days: Day[]) {
+  const l = daysLabel(days);
+  return l === 'Every day' ? 'every day' : l === 'Once' ? 'once' : l === 'Weekdays' || l === 'Weekends' ? `on ${l.toLowerCase()}` : `on ${l}`;
+}
+
+/**
+ * The ritual in one sentence, at the top of its sheet, kept up to date while editing: what will
+ * happen, to which lights, and when. Reading it is enough to know the sheet is right.
+ */
+export function Sentence({ children }: { children: string }) {
+  return (
+    <Display size={22} weight={300} style={{ lineHeight: 29 }}>
+      {children}
+    </Display>
+  );
+}
+
+/**
+ * The end of a ritual sheet, the same everywhere: one main button (Add for a new ritual, Turn on
+ * for one that's off, Save for one that's on), Turn off under it, Delete last. While something
+ * is missing the main button says what (`missing`).
+ */
+export function SheetFooter({
+  isNew,
+  on,
+  noun,
+  missing,
+  toggle = true,
+  onSave,
+  onDelete,
+}: {
+  isNew: boolean;
+  on: boolean;
+  noun: string;
+  missing?: string | null;
+  /** false: no Turn off (a sleep fade turns its schedule off in the sheet itself). */
+  toggle?: boolean;
+  onSave: (enabled: boolean) => void;
+  onDelete?: () => void;
+}) {
+  return (
+    <View style={{ gap: 4 }}>
+      <PillButton title={missing ?? (isNew ? `Add ${noun}` : on ? 'Save' : 'Turn on')} kind="primary" disabled={!!missing} onPress={() => onSave(true)} />
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        {toggle && !isNew && on ? <PillButton title="Turn off" kind="text" height={40} onPress={() => onSave(false)} /> : <View />}
+        {onDelete && <PillButton title="Delete" kind="text" height={40} onPress={onDelete} />}
+      </View>
+    </View>
   );
 }

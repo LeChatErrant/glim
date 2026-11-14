@@ -8,6 +8,7 @@ import { PillButton, Rule, Section } from '../controls';
 import { Icon, type IconName } from '../icons';
 import { Display, Txt } from '../text';
 import { color } from '../theme';
+import { useSectionReady } from './parts';
 
 /**
  * Settings → Away from home: connect a Hue account so lights and widgets work through Hue's cloud
@@ -34,6 +35,8 @@ export function AwayFromHome() {
       stop();
     };
   }, []);
+
+  useSectionReady(account !== undefined);
 
   async function connect() {
     setError(null);
