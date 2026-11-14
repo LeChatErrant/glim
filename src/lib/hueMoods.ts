@@ -3,6 +3,7 @@ import { findGroup } from './actions';
 import { mirekToHex, mirekToKelvin, xyToHex } from './hue/color';
 import { recallScene, sceneRecallBody, type BridgeScene, type Snapshot } from './hue/client';
 import { addMood, moodLightColor, planLights, type MoodLight } from './moods';
+import { markColors } from './moodMarks';
 
 /**
  * Moods "from the Hue app": the scenes stored on the bridge (made in the Hue app, e.g. "Base",
@@ -41,6 +42,12 @@ export function sceneMoodLights(scene: BridgeScene): MoodLight[] {
 export function sceneColors(scene: BridgeScene): string[] {
   if (scene.palette.length) return [...new Set(scene.palette)];
   return [...new Set(sceneMoodLights(scene).map((m) => moodLightColor(m) ?? (m.on ? mirekToHex(370) : null)).filter((c): c is string => !!c))];
+}
+
+/** Its mark's colors: near shades merged, the biggest share first (`markColors`). */
+export function sceneMarkColors(scene: BridgeScene): string[] {
+  if (scene.palette.length) return markColors(scene.palette);
+  return markColors(sceneMoodLights(scene).map((m) => moodLightColor(m) ?? (m.on ? mirekToHex(370) : null)));
 }
 
 /** The one request that applies it, for native taps (widgets, Quick Settings tile). */

@@ -1,10 +1,9 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { effectLabel } from '../../lib/effects';
-import { mirekToHex } from '../../lib/hue/color';
 import type { Snapshot } from '../../lib/hue/client';
 import { useHome } from '../../lib/hue/useHome';
 import { planScene } from '../../lib/hueMoods';
@@ -15,6 +14,7 @@ import {
   deleteMood,
   isMapAware,
   loadMoods,
+  moodColors,
   moodLightColor,
   moodLights,
   PATH_TONES,
@@ -35,8 +35,11 @@ import { HueMoodsSection } from '../../ui/HueMoods';
 import { ColorDot } from '../../ui/LightControls';
 import { KIND_TITLES, MapMoodSheet, type MapMoodKind } from '../../ui/MapMoodSheet';
 import { livingSpeedLabel } from '../../lib/living';
-import { MoodDots, openMoodEditor } from '../../ui/MoodChips';
-import { MoodMap } from '../../ui/MoodMap';
+import { markColors, moodGlyph, suggestGlyph } from '../../lib/moodMarks';
+import { tintHex } from '../../lib/tints';
+import { openMoodEditor } from '../../ui/MoodChips';
+import { MoodMap, moodFrame } from '../../ui/MoodMap';
+import { MoodMark } from '../../ui/MoodMark';
 import { PathPreview, PathSheet } from '../../ui/PathSheet';
 import { Choice } from '../../ui/scan/parts';
 import { Display, Label, Txt } from '../../ui/text';
@@ -354,19 +357,15 @@ function PresetPill({ preset, applied, onPress, onLongPress }: { preset: Preset;
         alignItems: 'center',
         gap: 10,
         height: 40,
-        paddingHorizontal: 14,
+        paddingLeft: 8,
+        paddingRight: 14,
         borderRadius: 20,
         borderWidth: 1,
         borderColor: applied ? color.champagne : hairline(0.16),
         opacity: pressed ? 0.6 : 1,
       })}
     >
-      <View style={{ flexDirection: 'row', gap: 4 }}>
-        {preset.tones.slice(0, 4).map((t, i) => {
-          const c = t.hex ?? mirekToHex(1_000_000 / (t.kelvin ?? 2700));
-          return <View key={i} style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: c, boxShadow: `0 0 7px 1px ${c}88` }} />;
-        })}
-      </View>
+      <MoodMark colors={markColors(preset.tones.map(tintHex))} glyph={suggestGlyph(preset.name)} size={24} />
       <Txt size={13} tone={applied ? 'champagne' : 'ivory'} style={{ lineHeight: 17 }}>
         {preset.name}
       </Txt>
@@ -433,15 +432,21 @@ function MoodCard({
     .filter(Boolean)
     .join(' · ');
   return (
-    <View style={{ borderRadius: 22, borderWidth: 1, borderColor: hairline(expanded ? 0.14 : 0.1), backgroundColor: color.card, paddingVertical: 10, paddingLeft: 18, paddingRight: 8 }}>
+    <View style={{ borderRadius: 22, borderWidth: 1, borderColor: hairline(expanded ? 0.14 : 0.1), backgroundColor: color.card, paddingVertical: 10, paddingLeft: 14, paddingRight: 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44 }}>
-        <Pressable onPress={onApply} onLongPress={onEdit} accessibilityRole="button" accessibilityLabel={`Apply ${mood.name}`} style={({ pressed }) => ({ flex: 1, minWidth: 0, gap: 7, opacity: pressed ? 0.6 : 1 })}>
-          <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
-            {mood.name}
-          </Display>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <MoodDots mood={mood} size={7} />
-            <Label size={9} tone={applied || livingNow ? 'champagne' : 'muted'}>
+        <Pressable
+          onPress={onApply}
+          onLongPress={onEdit}
+          accessibilityRole="button"
+          accessibilityLabel={`Apply ${mood.name}`}
+          style={({ pressed }) => ({ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 14, opacity: pressed ? 0.6 : 1 })}
+        >
+          <MoodMark colors={moodColors(mood, lights)} glyph={moodGlyph(mood)} size={38} />
+          <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
+            <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
+              {mood.name}
+            </Display>
+            <Label size={9} tone={applied || livingNow ? 'champagne' : 'muted'} numberOfLines={1}>
               {applied && !livingNow ? 'Applied' : `${kind ? `${kind} · ` : ''}${lights.length} ${lights.length === 1 ? 'light' : 'lights'} · tap to apply`}
             </Label>
           </View>
@@ -461,6 +466,7 @@ function MoodCard({
       </View>
       {expanded && (
         <>
+          {map && <MoodCardMap map={map} lights={lights} wholeHome={mood.targetId === null} />}
           {lights.map((m) => (
             <MoodLightRow key={m.lightId} m={m} name={snapshot?.lights.find((l) => l.id === m.lightId)?.name ?? 'Removed light'} />
           ))}
@@ -470,6 +476,18 @@ function MoodCard({
           </View>
         </>
       )}
+    </View>
+  );
+}
+
+/** The mood on the map: its lights glowing where they stand, framed on its rooms. */
+function MoodCardMap({ map, lights, wholeHome }: { map: HomeMap; lights: MoodLight[]; wholeHome: boolean }) {
+  const ids = lights.map((m) => m.lightId).join(',');
+  const { placed, frame } = useMemo(() => moodFrame(map, ids.split(','), wholeHome), [map, ids, wholeHome]);
+  if (!placed.length) return null;
+  return (
+    <View style={{ borderRadius: 16, borderWidth: 1, borderColor: hairline(0.08), overflow: 'hidden', marginTop: 8, marginBottom: 6, marginRight: 6 }}>
+      <MoodMap map={map} lights={lights} height={150} frame={frame} />
     </View>
   );
 }

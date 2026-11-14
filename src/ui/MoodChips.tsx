@@ -3,16 +3,17 @@ import { useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 
 import type { BridgeScene, Light } from '../lib/hue/client';
-import { addMood, captureLights, deleteMood, moodLightColor, suggestName, updateMood, type Mood } from '../lib/moods';
-import { tintHex } from '../lib/tints';
+import { moodGlyph } from '../lib/moodMarks';
+import { addMood, captureLights, deleteMood, moodColors, suggestName, updateMood, type Mood } from '../lib/moods';
 import { PillButton } from './controls';
 import { HueMoodPill } from './HueMoods';
 import { Icon } from './icons';
+import { MoodMark } from './MoodMark';
 import { Field, ModalSheet } from './ModalSheet';
 import { Label, Txt } from './text';
 import { color, hairline } from './theme';
 
-/** A mood as a pill: a dot per light (its color, hollow when off) and the name. */
+/** A mood as a pill: its mark and its name. */
 export function MoodPill({ mood, onPress, onLongPress }: { mood: Mood; onPress: () => void; onLongPress?: () => void }) {
   return (
     <Pressable
@@ -24,16 +25,17 @@ export function MoodPill({ mood, onPress, onLongPress }: { mood: Mood; onPress: 
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
+        gap: 9,
         height: 40,
-        paddingHorizontal: 14,
+        paddingLeft: 8,
+        paddingRight: 14,
         borderRadius: 20,
         borderWidth: 1,
         borderColor: hairline(0.16),
         opacity: pressed ? 0.6 : 1,
       })}
     >
-      <MoodDots mood={mood} />
+      <MoodMark colors={moodColors(mood)} glyph={moodGlyph(mood)} size={24} />
       <Txt size={13} numberOfLines={1} style={{ lineHeight: 17, maxWidth: 160 }}>
         {mood.name}
       </Txt>
@@ -43,37 +45,6 @@ export function MoodPill({ mood, onPress, onLongPress }: { mood: Mood; onPress: 
 
 /** Opens the mood editor on a mood (or a new one: `params` say what it starts from). */
 export const openMoodEditor = (params: { id?: string; target?: string; preset?: string }) => router.push({ pathname: '/mood', params });
-
-export function MoodDots({ mood, size = 8 }: { mood: Mood; size?: number }) {
-  // A palette shows its colors in order.
-  if (mood.palette)
-    return (
-      <View style={{ flexDirection: 'row', gap: size * 0.6 }}>
-        {mood.palette.tones.slice(0, 6).map((t, i) => {
-          const c = tintHex(t);
-          return <View key={i} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: c, boxShadow: `0 0 ${size}px 1px ${c}88` }} />;
-        })}
-      </View>
-    );
-  return (
-    <View style={{ flexDirection: 'row', gap: size * 0.6 }}>
-      {/* Lit lights first: a whole-home mood with a few lights on shows their colors. */}
-      {[...mood.lights.filter((m) => m.on), ...mood.lights.filter((m) => !m.on)].slice(0, 6).map((m) => {
-        const c = moodLightColor(m) ?? (m.on ? color.champagne : null);
-        return (
-          <View
-            key={m.lightId}
-            style={
-              c
-                ? { width: size, height: size, borderRadius: size / 2, backgroundColor: c, boxShadow: `0 0 ${size}px 1px ${c}88` }
-                : { width: size, height: size, borderRadius: size / 2, borderWidth: 1, borderColor: hairline(0.45) }
-            }
-          />
-        );
-      })}
-    </View>
-  );
-}
 
 /**
  * The moods of a room or a group: tap to apply, long-press to edit, update, rename or delete, and

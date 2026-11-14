@@ -338,7 +338,8 @@ generator with parameters:
 - Save, or save as new.
 - Built (2026-11-13): a full screen (`src/app/mood.tsx`) with the tabs Per
   light, Palette and On your map (the map tab opens the path, sweep,
-  spotlight and room glow sheets). No icon yet. Entry points: New mood on
+  spotlight and room glow sheets). Its mark (2026-11-14) sits next to the
+  name: tap it to pick a glyph or colors only. Entry points: New mood on
   the Moods tab, the pencil (or long-press) on a mood card, long-press a mood
   chip on a room or group sheet, and "Duplicate and edit" on a preset.
 

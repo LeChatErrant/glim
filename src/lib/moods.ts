@@ -11,6 +11,7 @@ import { call, setLight, stateBody, type Light, type LightState, type Snapshot }
 import { findRoute, lightsAlongRoute } from './map/route';
 import type { FloorPoint, HomeMap, MapLight } from './map/map';
 import { glowRooms, spotWeights, sweepPositions } from './map/spread';
+import { markColors, type MoodGlyph } from './moodMarks';
 import { presetLights, type Palette } from './moodPresets';
 import { colorName, kelvinName } from './palette';
 import { savedDataChanged } from './savedData';
@@ -109,6 +110,8 @@ export type Mood = {
   recipe?: MapRecipe;
   transition?: number;
   living?: Living;
+  /** Its mark's glyph: picked in the editor, null for colors only, absent to suggest one from the name. */
+  glyph?: MoodGlyph | null;
 };
 
 /** How a mood is played beyond each light's look: its fade, and its living scenes. */
@@ -258,6 +261,18 @@ export function moodLights(s: Snapshot, mood: Mood, map: HomeMap | null): MoodLi
   if (mood.recipe) return recipeLights(s, mood.recipe, map) ?? [];
   if (mood.palette) return presetLights(mood.palette, targetLights(s, mood.targetId), map);
   return mood.lights;
+}
+
+/**
+ * The colors of a mood's mark: a palette's colors in order, a sweep's, spotlight's or room glow's,
+ * a path's tone; else its lit lights' colors with near shades merged, the biggest share first.
+ * `lights`: the mood as worked out today, when a palette or recipe is already worked out.
+ */
+export function moodColors(mood: Mood, lights: MoodLight[] = mood.lights): string[] {
+  if (mood.path) return [(PATH_TONES.find((t) => t.id === mood.path!.tone) ?? PATH_TONES[0]).hex];
+  if (mood.recipe) return markColors(recipeColors(mood.recipe));
+  if (mood.palette) return markColors(mood.palette.tones.map(tintHex));
+  return markColors(lights.map(moodLightColor));
 }
 
 /** Puts every light of the mood back as it was saved. Lights gone from the bridge are skipped. */

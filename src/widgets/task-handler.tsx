@@ -130,7 +130,7 @@ export async function render(info: WidgetInfo, state: State, force = true) {
   }
   if (info.widgetName === 'Moods') {
     const buttons = await shownMoodButtons(info, snapshot, stale);
-    if (alreadyDrawn(info, drawKey(info, [shown(snapshot, stale), stale, buttons.map((b) => [b.key, b.name, b.dots, b.showing])]), force)) return null;
+    if (alreadyDrawn(info, drawKey(info, [shown(snapshot, stale), stale, buttons.map((b) => [b.key, b.name, b.dots, b.glyph ?? null, b.showing])]), force)) return null;
     return <MoodsWidget snapshot={snapshot} buttons={buttons} width={info.width} height={info.height} stale={stale} />;
   }
   if (info.widgetName === 'Light' || info.widgetName === 'Grid') {

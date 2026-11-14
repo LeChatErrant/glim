@@ -11,7 +11,7 @@ import { useHome } from '../lib/hue/useHome';
 import { lightTypeLabel } from '../lib/lights';
 import { canLive, LIVING_SPEEDS, livingSpeedLabel, putLiving, removeLiving } from '../lib/living';
 import { loadMap, type HomeMap } from '../lib/map/map';
-import { roomAt } from '../lib/map/spread';
+import { GLYPH_LIST, markColors, suggestGlyph, type MoodGlyph } from '../lib/moodMarks';
 import { PRESETS, presetLights, type Palette } from '../lib/moodPresets';
 import {
   addMood,
@@ -39,7 +39,8 @@ import { Icon } from '../ui/icons';
 import { Dial, ModeTabs, Orb, ringColor } from '../ui/LightControls';
 import { KIND_TITLES, MapMoodSheet, TintPicker, type MapMoodKind } from '../ui/MapMoodSheet';
 import { ModalSheet } from '../ui/ModalSheet';
-import { MoodMap, type MapTouch } from '../ui/MoodMap';
+import { MoodMap, moodFrame, type MapTouch } from '../ui/MoodMap';
+import { MoodMark } from '../ui/MoodMark';
 import { PathSheet } from '../ui/PathSheet';
 import { Choice } from '../ui/scan/parts';
 import { Display, Label, Txt } from '../ui/text';
@@ -68,6 +69,8 @@ type Draft = {
   palette: Palette;
   transition?: number;
   living: number | null;
+  /** The mark's glyph: picked, null for colors only, undefined to follow the name. */
+  glyph?: MoodGlyph | null;
 };
 
 const TRANSITIONS: { label: string; ms?: number }[] = [
@@ -133,6 +136,7 @@ export default function MoodEditor() {
         palette: m.palette ?? paletteFrom(m.lights),
         transition: m.transition,
         living: m.living ? m.living.speed : null,
+        glyph: m.glyph,
       };
     }
     const targetId = params.target || null;
@@ -201,6 +205,7 @@ export default function MoodEditor() {
       lights: draft.mode === 'palette' ? [] : draft.lights,
       palette: draft.mode === 'palette' ? draft.palette : undefined,
       transition: draft.transition,
+      glyph: draft.glyph,
     };
     const editing = original && !asNew ? original : null;
     let list = editing ? await updateMood(editing.id, { ...fields, palette: fields.palette, living: undefined }) : await addMood(fields);
@@ -264,15 +269,25 @@ export default function MoodEditor() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: insets.bottom + 40, gap: 14 }} keyboardShouldPersistTaps="handled">
-        <TextInput
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          {draft.mode !== 'map' && (
+            <MarkButton
+              name={draft.name.trim() || suggestName(shown)}
+              glyph={draft.glyph}
+              colors={draft.mode === 'palette' ? markColors(draft.palette.tones.map(tintHex)) : markColors(shown.map(moodLightColor))}
+              onPick={(glyph) => setDraft({ ...draft, glyph })}
+            />
+          )}
+          <TextInput
           value={draft.name}
           onChangeText={(name) => set({ name, named: true })}
           placeholder={suggestName(shown)}
           placeholderTextColor={color.muted}
           selectionColor={color.champagne}
           accessibilityLabel="Mood name"
-          style={{ fontFamily: font.display, fontSize: 28, color: color.ivory, paddingVertical: 4, borderBottomWidth: 1, borderStyle: 'dashed', borderBottomColor: hairline(0.22) }}
-        />
+          style={{ flex: 1, minWidth: 0, fontFamily: font.display, fontSize: 28, color: color.ivory, paddingVertical: 4, borderBottomWidth: 1, borderStyle: 'dashed', borderBottomColor: hairline(0.22) }}
+          />
+        </View>
         <TargetPicker snapshot={snapshot} targetId={draft.targetId} name={targetName} count={lightsOfTarget.length} onPick={changeTarget} />
 
         <ModeTabs
@@ -286,7 +301,7 @@ export default function MoodEditor() {
         />
 
         {draft.mode === 'lights' && <PerLight snapshot={snapshot} map={map ?? null} lights={lightsOfTarget} mood={draft.lights} targetId={draft.targetId} onChange={setLights} />}
-        {draft.mode === 'palette' && <PaletteEditor snapshot={snapshot} lights={lightsOfTarget} palette={draft.palette} shown={shown} onChange={setPalette} />}
+        {draft.mode === 'palette' && <PaletteEditor snapshot={snapshot} map={map ?? null} targetId={draft.targetId} lights={lightsOfTarget} palette={draft.palette} shown={shown} onChange={setPalette} />}
         {draft.mode === 'map' && <MapKinds map={map ?? null} onPick={setMapSheet} />}
 
         {draft.mode !== 'map' && (
@@ -370,6 +385,69 @@ export default function MoodEditor() {
 }
 
 /** "Salon · 4 lights ›": tap to pick the whole home, a room or a group. */
+/**
+ * The mood's mark, next to its name: tap to pick its glyph, colors only, or follow the name
+ * (the glyph suggested from it: "Cinéma" → screen).
+ */
+function MarkButton({ name, glyph, colors, onPick }: { name: string; glyph: MoodGlyph | null | undefined; colors: string[]; onPick: (g: MoodGlyph | null | undefined) => void }) {
+  const [open, setOpen] = useState(false);
+  const suggested = suggestGlyph(name);
+  const shownGlyph = glyph === undefined ? suggested : glyph;
+  const label = (g: MoodGlyph | null) => (g ? (GLYPH_LIST.find((x) => x.id === g)?.label ?? g) : 'Colors only');
+  const pick = (g: MoodGlyph | null | undefined) => {
+    onPick(g);
+    setOpen(false);
+  };
+  return (
+    <>
+      <Pressable
+        onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`Mark: ${label(shownGlyph)}${glyph === undefined ? ', from the name' : ''}. Change`}
+        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+      >
+        <MoodMark colors={colors} glyph={shownGlyph} size={44} />
+      </Pressable>
+      {open && (
+        <ModalSheet visible title="Mark" onClose={() => setOpen(false)}>
+          <Txt size={13} tone="secondary">
+            {glyph === undefined
+              ? suggested
+                ? `${label(suggested)}, from the name. Pick another, or colors only.`
+                : 'Nothing in the name suggests one: its colors show. Pick a sign if you like.'
+              : 'Shown on the Moods tab, room sheets and the Moods widget, over the mood\'s colors.'}
+          </Txt>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 16 }}>
+            {[null, ...GLYPH_LIST.map((g) => g.id)].map((g) => {
+              const chosen = shownGlyph === g;
+              return (
+                <Pressable
+                  key={g ?? 'none'}
+                  onPress={() => pick(g)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: chosen }}
+                  accessibilityLabel={label(g)}
+                  style={({ pressed }) => ({ width: '25%', alignItems: 'center', gap: 6, opacity: pressed ? 0.6 : 1 })}
+                >
+                  <View style={{ borderRadius: 26, padding: 3, borderWidth: 1, borderColor: chosen ? color.champagne : 'transparent' }}>
+                    <MoodMark colors={colors} glyph={g} size={44} />
+                  </View>
+                  <Txt size={11} tone={chosen ? 'champagne' : 'muted'} numberOfLines={1}>
+                    {label(g)}
+                  </Txt>
+                </Pressable>
+              );
+            })}
+          </View>
+          {glyph !== undefined && suggested !== glyph && (
+            <PillButton title={suggested ? `Follow the name (${label(suggested).toLowerCase()})` : 'Follow the name'} kind="text" height={40} onPress={() => pick(undefined)} style={{ alignSelf: 'flex-start' }} />
+          )}
+        </ModalSheet>
+      )}
+    </>
+  );
+}
+
 function TargetPicker({ snapshot, targetId, name, count, onPick }: { snapshot: Snapshot; targetId: string | null; name: string; count: number; onPick: (id: string | null) => void }) {
   const [open, setOpen] = useState(false);
   return (
@@ -439,17 +517,8 @@ function PerLight({
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const byId = new Map(mood.map((m) => [m.lightId, m]));
-  const placed = useMemo(() => {
-    const ids = new Set(lights.map((l) => l.id));
-    return map?.lights.filter((p) => ids.has(p.lightId)) ?? [];
-  }, [map, lights]);
   // Frame the rooms these lights stand in (all of the home for the whole home).
-  const frame = useMemo(() => {
-    if (!map || targetId === null) return undefined;
-    const rooms = new Set(placed.map((p) => roomAt(map, p)?.id).filter(Boolean));
-    const pts = map.rooms.filter((r) => rooms.has(r.id)).flatMap((r) => r.points);
-    return pts.length ? pts : placed.map((p) => ({ x: p.x, z: p.z }));
-  }, [map, targetId, placed]);
+  const { placed, frame } = useMemo(() => (map ? moodFrame(map, lights.map((l) => l.id), targetId === null) : { placed: [], frame: undefined }), [map, lights, targetId]);
 
   const put = (lightId: string, m: MoodLight | null) => {
     const rest = mood.filter((x) => x.lightId !== lightId);
@@ -636,8 +705,26 @@ function TuneSheet({ light, m, onPick, onClose }: { light: Light; m: MoodLight; 
 }
 
 /** Mode B: 1 to 5 colors and a brightness, spread over the lights; an effect for lights that have it. */
-function PaletteEditor({ snapshot, lights, palette, shown, onChange }: { snapshot: Snapshot; lights: Light[]; palette: Palette; shown: MoodLight[]; onChange: (p: Palette) => void }) {
+function PaletteEditor({
+  snapshot,
+  map,
+  targetId,
+  lights,
+  palette,
+  shown,
+  onChange,
+}: {
+  snapshot: Snapshot;
+  map: HomeMap | null;
+  targetId: string | null;
+  lights: Light[];
+  palette: Palette;
+  shown: MoodLight[];
+  onChange: (p: Palette) => void;
+}) {
   const [sel, setSel] = useState(0);
+  // Where the colors fall: the map of the target, its lights as the palette sets them.
+  const { placed, frame } = useMemo(() => (map ? moodFrame(map, lights.map((l) => l.id), targetId === null) : { placed: [], frame: undefined }), [map, lights, targetId]);
   const i = Math.min(sel, palette.tones.length - 1);
   const tones = palette.tones;
   const supported = EFFECTS.filter((e) => lights.some((l) => l.effects?.includes(e.id))).map((e) => e.id);
@@ -711,6 +798,11 @@ function PaletteEditor({ snapshot, lights, palette, shown, onChange }: { snapsho
 
       <View style={{ gap: 10, marginTop: 4 }}>
         <Label tone="label">{`Spread across ${shown.length} ${shown.length === 1 ? 'light' : 'lights'}`}</Label>
+        {map && placed.length > 0 && (
+          <View style={{ borderRadius: 18, borderWidth: 1, borderColor: hairline(0.1), overflow: 'hidden' }}>
+            <MoodMap map={map} lights={shown} height={170} frame={frame} />
+          </View>
+        )}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 14 }}>
           {lights.map((l) => {
             const m = byId.get(l.id);

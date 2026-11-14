@@ -1,12 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { hasTemperature, mirekFor } from '../lib/actions';
-import { mirekToHex, readbackHexes } from '../lib/hue/color';
+import { readbackHexes } from '../lib/hue/color';
 import type { Snapshot } from '../lib/hue/client';
 import type { HomeMap } from '../lib/map/map';
-import { sceneColors, sceneMoodLights, sceneRequest, sceneShowing } from '../lib/hueMoods';
+import { sceneMarkColors, sceneMoodLights, sceneRequest, sceneShowing } from '../lib/hueMoods';
+import { markColors, moodGlyph, suggestGlyph, type MoodGlyph } from '../lib/moodMarks';
 import { PRESETS, presetLights } from '../lib/moodPresets';
-import { moodLightColor, moodLights, PATH_TONES, pathOffFor, recipeColors, type Mood, type MoodLight, type MoodOptions, type PathOff } from '../lib/moods';
+import { moodColors, moodLights, PATH_TONES, pathOffFor, type Mood, type MoodLight, type MoodOptions, type PathOff } from '../lib/moods';
 import { tintHex } from '../lib/tints';
 import { near } from '../lib/palette';
 
@@ -68,6 +69,8 @@ export type MoodButton = {
   key: string;
   name: string;
   dots: string[];
+  /** The mark's glyph (null: colors only). */
+  glyph?: MoodGlyph | null;
   lights: MoodLight[] | null;
   path: boolean;
   opts?: MoodOptions;
@@ -84,14 +87,13 @@ export function moodButtons(items: MoodItem[], moods: Mood[], s: Snapshot, map: 
     if (i.kind === 'scene') {
       const sc = s.scenes?.find((x) => x.id === i.id);
       if (!sc) return [];
-      return [{ key: itemKey(i), name: sc.name, dots: sceneColors(sc), lights: sceneMoodLights(sc), path: false, scene: sc.id, request: sceneRequest(sc) }];
+      return [{ key: itemKey(i), name: sc.name, dots: sceneMarkColors(sc), glyph: suggestGlyph(sc.name), lights: sceneMoodLights(sc), path: false, scene: sc.id, request: sceneRequest(sc) }];
     }
     if (i.kind === 'sleep') return [{ key: itemKey(i), name: i.name, dots: [], lights: [], path: false, sleep: { targets: i.targets, fadeMin: i.fadeMin } }];
     if (i.kind === 'preset') {
       const p = PRESETS.find((x) => x.id === i.id);
       if (!p) return [];
-      const dots = p.tones.map((t) => t.hex ?? mirekToHex(1_000_000 / (t.kelvin ?? 2700)));
-      return [{ key: itemKey(i), name: p.name, dots, lights: presetLights(p, s.lights, map), path: false }];
+      return [{ key: itemKey(i), name: p.name, dots: markColors(p.tones.map(tintHex)), glyph: suggestGlyph(p.name), lights: presetLights(p, s.lights, map), path: false }];
     }
     const m = moods.find((x) => x.id === i.id);
     if (!m) return [];
@@ -101,11 +103,8 @@ export function moodButtons(items: MoodItem[], moods: Mood[], s: Snapshot, map: 
       const tint = (PATH_TONES.find((t) => t.id === m.path!.tone) ?? PATH_TONES[0]).hex;
       return [{ key: itemKey(i), name: m.name, dots: [tint, tint, tint], lights, path: true, opts, off: pathOffFor(s, m, map) }];
     }
-    // A sweep shows its colors in order, a spotlight its color, a room glow one dot per room color.
-    if (m.recipe) return [{ key: itemKey(i), name: m.name, dots: recipeColors(m.recipe), lights, path: false, opts }];
-    // A palette shows its colors in order, even when they fall on fewer lights.
-    const dots = m.palette ? m.palette.tones.map(tintHex) : [...new Set(lights.map((l) => moodLightColor(l)).filter((c): c is string => !!c))];
-    return [{ key: itemKey(i), name: m.name, dots, lights, path: false, opts }];
+    // Its mark: a palette's or recipe's colors, else its lights' colors (near shades merged).
+    return [{ key: itemKey(i), name: m.name, dots: moodColors(m, lights), glyph: moodGlyph(m), lights, path: false, opts }];
   });
 }
 

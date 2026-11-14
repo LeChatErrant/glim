@@ -543,7 +543,7 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   applied from the tab, a living mood from the tab, the tile and the Moods
   widget ("Living now" each time), a palette mood from the widget. Not
   seen: the drift itself (nobody home to look; the bridge accepted the
-  scenes and reports the lights playing). Not yet: a mood icon, living
+  scenes and reports the lights playing). Not yet: living
   preview while editing (it plays once saved).
 - 2026-11-13: **Settings sections** (and a Map widget mood strip, removed).
   Settings now also has Home location (the Arriving home circle, the
@@ -630,6 +630,25 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   lights into test rooms and restoring after (touches the real bridge), and
   backing up then wiping the bridge (restored scenes get new IDs, the tap
   dial and Hue app shortcuts break).
+- 2026-11-14: **Mood marks** (options:
+  <https://claude.ai/artifact/JbzRfsXM4gWzx4pRfTZrrf>, "Glim mood marks",
+  picked B falling back to A). A mood no longer shows one dot per light
+  (a whole-home mood was six near-identical warm dots): it has one mark,
+  a glyph (about 20 Nocturne line icons: sofa, book, screen, moon, candle,
+  dinner...) in ivory over a soft pool of its colors, or without a glyph
+  its colors as up to three overlapping orbs, like the Palette tab's. Its
+  colors: near shades merged, the biggest share first, plugs and off
+  lights left out (`markColors`, `moodColors`). The glyph follows the name
+  unless picked (`suggestGlyph`, English and French words: "Cinéma" →
+  screen, "Bonne nuit" → moon; `Mood.glyph`: absent = from the name, null =
+  colors only). One SVG string (`src/lib/moodMarks.ts`) drawn by the app
+  (`MoodMark`) and the Moods widget (20 dp). On mood cards, room-sheet
+  pills, presets, moods from the Hue app (glyph from the name only) and
+  widget buttons; paths keep the night path mark, All off and sleep fade
+  their icons. Picked in the editor: the mark sits left of the name, tap
+  it. **The mood on the map** (option D, kept as a view, not a mark): an
+  open mood card shows the map of its rooms with its lights glowing, and
+  the editor's Palette tab shows where the colors fall.
 - 2026-11-14: **Music, TV and three smaller ideas designed** (no app code
   yet; each doc in `docs/design/` ends with the choices waiting for the
   maintainer and its build steps). **Album colors**

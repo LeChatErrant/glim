@@ -3,12 +3,14 @@ import { Alert, Pressable, View } from 'react-native';
 
 import { effectLabel } from '../lib/effects';
 import type { BridgeScene, Snapshot } from '../lib/hue/client';
-import { hueMoodPlace, hueMoods, keepAsMood, sceneColors, sceneMoodLights } from '../lib/hueMoods';
+import { hueMoodPlace, hueMoods, keepAsMood, sceneMarkColors, sceneMoodLights } from '../lib/hueMoods';
+import { suggestGlyph } from '../lib/moodMarks';
 import { moodLightColor, type Mood, type MoodLight } from '../lib/moods';
 import { colorName, kelvinName } from '../lib/palette';
 import { PillButton } from './controls';
 import { Icon } from './icons';
 import { ColorDot } from './LightControls';
+import { MoodMark } from './MoodMark';
 import { Display, Label, Txt } from './text';
 import { color, hairline } from './theme';
 
@@ -17,17 +19,6 @@ import { color, hairline } from './theme';
  * a room's own moods on its sheet. Tap applies (the bridge recalls it); "Keep as my mood" copies
  * it into a Glim mood, light by light, so it can be edited. Never called "scenes" on screen.
  */
-
-/** A row of small glowing dots, one per color. */
-export function Dots({ colors, size = 8 }: { colors: string[]; size?: number }) {
-  return (
-    <View style={{ flexDirection: 'row', gap: size * 0.6 }}>
-      {colors.slice(0, 6).map((c, i) => (
-        <View key={i} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: c, boxShadow: `0 0 ${size}px 1px ${c}88` }} />
-      ))}
-    </View>
-  );
-}
 
 const confirmKeep = (scene: BridgeScene, place: string, onKept: (moods: Mood[]) => void) =>
   Alert.alert(scene.name, `From the Hue app, for ${place}`, [
@@ -83,7 +74,7 @@ function HueMoodCard({
   const showing = scene.active !== 'inactive';
   const kind = scene.living ? 'Living mood' : place;
   return (
-    <View style={{ borderRadius: 22, borderWidth: 1, borderColor: hairline(expanded ? 0.14 : 0.1), backgroundColor: color.card, paddingVertical: 10, paddingLeft: 18, paddingRight: 8 }}>
+    <View style={{ borderRadius: 22, borderWidth: 1, borderColor: hairline(expanded ? 0.14 : 0.1), backgroundColor: color.card, paddingVertical: 10, paddingLeft: 14, paddingRight: 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44 }}>
         <Pressable
           onPress={onApply}
@@ -91,14 +82,14 @@ function HueMoodCard({
           accessibilityRole="button"
           accessibilityLabel={`Apply ${scene.name}, ${place}, from the Hue app`}
           accessibilityHint="Long-press to keep it as your own mood"
-          style={({ pressed }) => ({ flex: 1, minWidth: 0, gap: 7, opacity: pressed ? 0.6 : 1 })}
+          style={({ pressed }) => ({ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 14, opacity: pressed ? 0.6 : 1 })}
         >
-          <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
-            {scene.name}
-          </Display>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Dots colors={sceneColors(scene)} size={7} />
-            <Label size={9} tone={showing ? 'champagne' : 'muted'} numberOfLines={1} style={{ flexShrink: 1 }}>
+          <MoodMark colors={sceneMarkColors(scene)} glyph={suggestGlyph(scene.name)} size={38} />
+          <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
+            <Display size={17} weight={400} numberOfLines={1} style={{ lineHeight: 20 }}>
+              {scene.name}
+            </Display>
+            <Label size={9} tone={showing ? 'champagne' : 'muted'} numberOfLines={1}>
               {showing ? `${scene.living ? 'Playing' : 'Showing'} · ${place}` : scene.living ? `${kind} · ${place}` : `${place} · tap to apply`}
             </Label>
           </View>
@@ -162,16 +153,17 @@ export function HueMoodPill({ scene, place, onPress, onKept }: { scene: BridgeSc
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
+        gap: 9,
         height: 40,
-        paddingHorizontal: 14,
+        paddingLeft: 8,
+        paddingRight: 14,
         borderRadius: 20,
         borderWidth: 1,
         borderColor: showing ? color.champagne : hairline(0.16),
         opacity: pressed ? 0.6 : 1,
       })}
     >
-      <Dots colors={sceneColors(scene)} />
+      <MoodMark colors={sceneMarkColors(scene)} glyph={suggestGlyph(scene.name)} size={24} />
       <Txt size={13} tone={showing ? 'champagne' : 'ivory'} numberOfLines={1} style={{ lineHeight: 17, maxWidth: 160 }}>
         {scene.name}
       </Txt>

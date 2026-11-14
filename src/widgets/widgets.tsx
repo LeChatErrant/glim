@@ -7,6 +7,7 @@ import { hitAreas } from '../lib/map/hitAreas';
 import { capsWidth, labelSpot } from '../lib/map/labels';
 import { fitPlan, type Plan } from '../lib/map/map';
 import { iconSvg, jewelSvg, lightJewelSvg, planToSvg } from '../lib/map/svg';
+import { moodMarkSvg } from '../lib/moodMarks';
 import { moodRequests } from '../lib/moods';
 import { GLASS, type WidgetBackground } from '../lib/weather/scene';
 import { iconPath, type IconName } from '../ui/icons';
@@ -552,33 +553,23 @@ export function MapWidget({
   );
 }
 
-/**
- * A mood's colors as a row of small glowing dots; a path gets the night path mark instead (a
- * dashed trail through three glowing dots). Drawn as SVG: widgets can't blur a view.
- */
-function moodDotsSvg(dots: string[], path: boolean, stale: boolean) {
+/** The night path mark: a dashed trail through three glowing dots. Drawn as SVG: widgets can't blur a view. */
+function pathMarkSvg(dots: string[], stale: boolean) {
   const h = 14;
   const a = stale ? 0.5 : 1;
-  if (path) {
-    const c = dots[0] ?? color.champagne;
-    const pts = [
-      [6, 10],
-      [22, 4],
-      [40, 9],
-    ];
-    const glow = pts.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="5" fill="url(#g)"/><circle cx="${x}" cy="${y}" r="2" fill="${c}" opacity="${a}"/>`).join('');
-    return (
-      `<svg xmlns="http://www.w3.org/2000/svg" width="46" height="${h}" viewBox="0 0 46 ${h}">` +
-      `<defs><radialGradient id="g"><stop offset="0" stop-color="${c}" stop-opacity="${0.6 * a}"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></radialGradient></defs>` +
-      `<path d="M6 10 Q14 2 22 4 T40 9" fill="none" stroke="${color.champagne}" stroke-opacity="${0.6 * a}" stroke-width="1" stroke-dasharray="2 3" stroke-linecap="round"/>` +
-      `${glow}</svg>`
-    );
-  }
-  const shown = dots.slice(0, 5);
-  const w = Math.max(14, shown.length * 10 + 4);
-  const defs = shown.map((c, i) => `<radialGradient id="g${i}"><stop offset="0" stop-color="${c}" stop-opacity="${0.55 * a}"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></radialGradient>`).join('');
-  const body = shown.map((c, i) => `<circle cx="${7 + i * 10}" cy="7" r="6" fill="url(#g${i})"/><circle cx="${7 + i * 10}" cy="7" r="3" fill="${c}" opacity="${a}"/>`).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs>${defs}</defs>${body}</svg>`;
+  const c = dots[0] ?? color.champagne;
+  const pts = [
+    [6, 10],
+    [22, 4],
+    [40, 9],
+  ];
+  const glow = pts.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="5" fill="url(#g)"/><circle cx="${x}" cy="${y}" r="2" fill="${c}" opacity="${a}"/>`).join('');
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="46" height="${h}" viewBox="0 0 46 ${h}">` +
+    `<defs><radialGradient id="g"><stop offset="0" stop-color="${c}" stop-opacity="${0.6 * a}"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></radialGradient></defs>` +
+    `<path d="M6 10 Q14 2 22 4 T40 9" fill="none" stroke="${color.champagne}" stroke-opacity="${0.6 * a}" stroke-width="1" stroke-dasharray="2 3" stroke-linecap="round"/>` +
+    `${glow}</svg>`
+  );
 }
 
 /** The moon for a sleep fade button. */
@@ -619,22 +610,26 @@ function moodClick(b: MoodTile, snapshot: Snapshot) {
   return click;
 }
 
-/** A mood button's mark: its colors as dots, the night path mark, a moon (sleep fade) or power (All off). */
+/** A mood button's mark size (dp). */
+const MARK = 20;
+
+/** A mood button's mark: the mood's mark, the night path mark, a moon (sleep fade) or power (All off). */
 function moodMark(b: MoodTile, stale: boolean) {
   const live = b.showing && !stale;
   const off = b.lights === null;
   const path = b.path;
   const dots = b.dots;
-  const svg = b.sleep ? moonSvg(live ? color.champagne : color.secondary) : off ? powerSvg(live ? color.champagne : color.secondary) : moodDotsSvg(dots, path, stale);
-  const width = off || b.sleep ? 14 : path ? 46 : Math.max(14, Math.min(5, dots.length) * 10 + 4);
-  return { svg, width };
+  if (b.sleep || off) return { svg: b.sleep ? moonSvg(live ? color.champagne : color.secondary) : powerSvg(live ? color.champagne : color.secondary), width: 14, height: 14 };
+  if (path) return { svg: pathMarkSvg(dots, stale), width: 46, height: 14 };
+  // A mood's mark: its glyph over a pool of its colors, or its colors as orbs.
+  return { svg: moodMarkSvg({ colors: dots, glyph: b.glyph ?? null, size: MARK, faded: stale }), width: MARK, height: MARK };
 }
 
 /** One mood button: its colors on top, its name below. Champagne edge while the lights look like it. */
 function MoodButtonTile({ b, snapshot, stale, width, lines }: { b: MoodTile; snapshot: Snapshot; stale: boolean; width: number; lines: 1 | 2 }) {
   const click = moodClick(b, snapshot);
   const live = b.showing && !stale;
-  const { svg: dotSvg, width: dotW } = moodMark(b, stale);
+  const { svg: dotSvg, width: dotW, height: dotH } = moodMark(b, stale);
   return (
     <FlexWidget
       {...click}
@@ -653,7 +648,7 @@ function MoodButtonTile({ b, snapshot, stale, width, lines }: { b: MoodTile; sna
         justifyContent: 'space-between',
       }}
     >
-      <SvgWidget svg={dotSvg} style={{ width: dotW, height: 14 }} />
+      <SvgWidget svg={dotSvg} style={{ width: dotW, height: dotH }} />
       <TextWidget
         text={b.name}
         maxLines={lines}

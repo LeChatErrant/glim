@@ -3,10 +3,23 @@ import { PanResponder, View } from 'react-native';
 import Svg, { Circle, Defs, G, Line, LinearGradient, Path, Polygon, RadialGradient, Stop } from 'react-native-svg';
 
 import { fitPlan, mapToPlan, planToMap, toPlan, type FloorPoint, type HomeMap } from '../lib/map/map';
-import { roomsWithin, sweepArrow } from '../lib/map/spread';
+import { roomAt, roomsWithin, sweepArrow } from '../lib/map/spread';
 import { moodLightColor, type MapRecipe, type MoodLight } from '../lib/moods';
 import { tintHex } from '../lib/tints';
 import { color, hairline } from './theme';
+
+/**
+ * What a mood's map frames: the rooms its lights stand in (undefined: the whole home, for a
+ * whole-home mood). Empty `placed` means none of its lights is on the map.
+ */
+export function moodFrame(map: HomeMap, lightIds: string[], wholeHome: boolean) {
+  const ids = new Set(lightIds);
+  const placed = map.lights.filter((p) => ids.has(p.lightId));
+  if (wholeHome) return { placed, frame: undefined };
+  const rooms = new Set(placed.map((p) => roomAt(map, p)?.id).filter(Boolean));
+  const pts = map.rooms.filter((r) => rooms.has(r.id)).flatMap((r) => r.points);
+  return { placed, frame: pts.length ? pts : placed.map((p) => ({ x: p.x, z: p.z })) };
+}
 
 export type MapTouch = { p: FloorPoint; phase: 'start' | 'move' | 'end'; moved: boolean };
 
