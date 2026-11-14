@@ -635,7 +635,10 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   picked B falling back to A). A mood no longer shows one dot per light
   (a whole-home mood was six near-identical warm dots): it has one mark,
   a glyph (about 20 Nocturne line icons: sofa, book, screen, moon, candle,
-  dinner...) in ivory over a soft pool of its colors, or without a glyph
+  dinner...) in ivory over a soft pool of its colors (ivory kept over a
+  glyph lit in the mood's colors, compared:
+  <https://claude.ai/artifact/SqZ2wRiZau7ZGRQW7g1uLZ>; lit may come back
+  for multicolor moods), or without a glyph
   its colors as up to three overlapping orbs, like the Palette tab's. Its
   colors: near shades merged, the biggest share first, plugs and off
   lights left out (`markColors`, `moodColors`). The glyph follows the name
