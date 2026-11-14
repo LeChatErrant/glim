@@ -57,8 +57,21 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   transports.
 - **Customization is a core principle.** Widgets, moods, rituals: expose
   options and presets instead of fixed behavior.
+- **Music and TV** (2026-11-14): **Album colors** (the song playing on the
+  phone sets the lights from its album art), **Listening room** (lights
+  follow music in real time through Hue's Entertainment API, rippling
+  across the map), and the maintainer's **Philips Ambilight TV** working with
+  Glim. Built first. Designs in `docs/design/`.
+- **Smaller ideas, designed now, built after Music and TV:** Sunrise
+  follows the phone's alarm, Window light (lights near windows follow the
+  sky and the weather), Notification glow (an app or contact makes one light
+  pulse).
 - **Every feature listed above will be implemented.** Out of scope for now:
-  paint mode, tap dial remapping, music sync.
+  paint mode, tap dial remapping.
+- **Ideas kept for later** (not designed yet): **Bedtime trigger** (Do Not
+  Disturb on + charging + late evening starts the sleep fade); **app icon
+  shortcuts** (long-press Glim's icon for moods and paths, also reachable
+  by voice through "Hey Google, open…").
 - The full screen-by-screen spec is in [docs/design-spec.md](docs/design-spec.md)
   (written as a handoff to Claude Design). Keep it in sync when scope changes.
 
