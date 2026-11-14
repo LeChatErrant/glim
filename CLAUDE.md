@@ -159,7 +159,7 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   a visor (ring + ticks, dashed when aiming at nothing); every placed point
   ripples on the floor and buzzes; the rubber band shows its length.
 - 2026-10-26: Rooms are optional. Lights in no room show as their own cards in
-  the Rooms tab ("On their own"), not inside a fake room. "Part of" on a light
+  the Rooms tab (under "Lights", 2026-11-14: was "On their own"), not inside a fake room. "Part of" on a light
   opens a picker: one room (or none, or a new one) and any groups. Room and
   group light pickers list lights under their room.
 - 2026-10-26: Lights in a mapped room but not placed in it are never placed

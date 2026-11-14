@@ -99,7 +99,7 @@ export default function RoomsScreen() {
           ))}
           {homeless.length > 0 && topLevel.length > 0 && (
             <Label tone="label" style={{ marginTop: 14 }}>
-              On their own
+              Lights
             </Label>
           )}
           {homeless.map((l) => (
