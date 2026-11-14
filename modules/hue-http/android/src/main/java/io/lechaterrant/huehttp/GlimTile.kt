@@ -191,9 +191,9 @@ object GlimTile {
 
   fun extra(c: Config): JSONObject = try { JSONObject(c.extra) } catch (_: Exception) { JSONObject() }
 
-  /** Opens the tile's section in Settings (`glim://settings?section=tile`). */
+  /** Opens the tile's section in Settings (`glim://settings?section=tile`; Glim Fresh has `glimfresh://`). */
   fun settingsIntent(context: Context): Intent =
-    Intent(Intent.ACTION_VIEW, Uri.parse("glim://settings?section=tile")).setPackage(context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    Intent(Intent.ACTION_VIEW, Uri.parse("${if (Sandbox.on) "glimfresh" else "glim"}://settings?section=tile")).setPackage(context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 }
 
 /**

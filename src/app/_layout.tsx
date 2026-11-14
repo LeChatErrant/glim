@@ -5,6 +5,7 @@ import { SplashScreen, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
+import { SandboxBadge } from '../ui/SandboxBadge';
 import { color, font } from '../ui/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => null);
@@ -41,6 +42,7 @@ export default function RootLayout() {
         <Stack.Screen name="settings/[group]" options={{ headerShown: false }} />
         <Stack.Screen name="room/[id]" options={{ headerShown: false, presentation: 'transparentModal', animation: 'fade', contentStyle: { backgroundColor: 'transparent' } }} />
       </Stack>
+      <SandboxBadge />
     </>
   );
 }

@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 
 import { HueHttp } from '../../../modules/hue-http';
 import { disconnectCloud } from './cloud';
+import { SANDBOX } from './sandbox';
 import { syncNativeCloud } from './transport';
 
 export type BridgeConfig = {
@@ -86,7 +87,8 @@ export async function pairOnce(bridge: { id: string; ip: string }): Promise<Pair
     const r = await HueHttp.request({
       url: `https://${bridge.ip}/api`,
       method: 'POST',
-      body: JSON.stringify({ devicetype: 'glim#android', generateclientkey: true }),
+      // Glim Fresh pairs under its own name, so its key is easy to tell apart (and remove) in the Hue app.
+      body: JSON.stringify({ devicetype: SANDBOX ? 'glimfresh#android' : 'glim#android', generateclientkey: true }),
       bridgeId: bridge.id,
       timeoutMs: 4000,
     });

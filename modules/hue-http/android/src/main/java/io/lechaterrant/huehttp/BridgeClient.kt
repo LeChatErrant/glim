@@ -73,6 +73,8 @@ object BridgeClient {
     pin: String = "",
     timeoutMs: Int = 5000,
   ): BridgeResponse {
+    // Glim Fresh never changes the bridge's configuration (Sandbox.kt).
+    Sandbox.check(URL(url).path, method, body)?.let { return it }
     val (socketFactory, trust) = factory(bridgeId, pin)
     val conn = URL(url).openConnection() as HttpURLConnection
     if (conn is HttpsURLConnection) {
@@ -221,6 +223,7 @@ object CloudClient {
   }
 
   fun request(path: String, method: String, body: String?, accessToken: String, appKey: String, timeoutMs: Int = 8000): BridgeResponse {
+    Sandbox.check(path, method, body)?.let { return it }
     val conn = URL(BASE + path).openConnection() as HttpURLConnection
     try {
       conn.requestMethod = method

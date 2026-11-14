@@ -120,6 +120,7 @@
           ]
         }
       ],
+      "./plugins/with-fresh-variant",
       [
         "expo-build-properties",
         {

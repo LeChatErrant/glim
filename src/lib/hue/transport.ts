@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HueHttp } from '../../../modules/hue-http';
 import type { BridgeConfig } from './bridge';
 import { cloudRequest, freshCloud, getCloud, watchCloud } from './cloud';
+import { SANDBOX, sandboxSend } from './sandbox';
 
 /**
  * How requests reach the bridge: straight to it on the home network ("local"), or through Hue's
@@ -85,6 +86,8 @@ export function probeLocal(bridge: BridgeConfig, force = false) {
  * reply) and cloud access is connected, switches to the cloud and sends it there.
  */
 export async function send(bridge: BridgeConfig, path: string, method: Method, body?: string): Promise<{ status: number; body: string }> {
+  // Glim Fresh: rooms, groups, scenes and behaviors live on the phone, the bridge only lends its lights.
+  if (SANDBOX) return sandboxSend(bridge.id, path, method, body, (p, m, b) => local(bridge, p, m, b));
   await loaded;
   if (route === 'cloud') {
     probeLocal(bridge);

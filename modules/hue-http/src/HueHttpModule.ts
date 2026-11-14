@@ -18,6 +18,13 @@ type Events = { onChange: () => void };
 
 declare class HueHttpModule extends NativeModule<Events> {
   request(options: HueHttpRequest): Promise<HueHttpResponse>;
+  /**
+   * Glim Fresh, the sandbox build (package ID ending in `.fresh`): native code refuses every
+   * request that would change the bridge's configuration. Missing in older builds.
+   */
+  isSandbox?(): boolean;
+  /** Sandbox rooms and groups: {"groupedLightId": ["lightId", ...]}, for native widget and tile taps. */
+  setSandboxGroups?(json: string | null): Promise<void>;
   /** Credentials the native widget provider uses for instant taps. Null clears them. */
   setFastConfig(config: { ip: string; id: string; appKey: string; pin: string } | null): Promise<void>;
   /**

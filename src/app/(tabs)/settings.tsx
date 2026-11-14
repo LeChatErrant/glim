@@ -14,6 +14,7 @@ import { SettingsRow } from '../../ui/settings/parts';
 import { Display } from '../../ui/text';
 import { TAB_BAR_SPACE } from '../../ui/theme';
 import { WIDGET_NAMES } from '../../widgets/task-handler';
+import { SANDBOX } from '../../lib/hue/sandbox';
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -73,7 +74,9 @@ export default function SettingsScreen() {
       Platform.OS === 'android'
         ? [widgets === null ? null : widgets ? `${plural(widgets, 'widget', 'widgets')} on your home screen` : 'No widget yet', tileName && `Tile: ${tileName}`].filter(Boolean).join(' · ')
         : 'Home-screen widgets',
-    connection: connection === 'home' ? 'At home · straight to your bridge' : connection === 'cloud' ? 'Away · through Hue’s cloud' : 'Offline · your bridge doesn’t answer',
+    connection: SANDBOX
+      ? 'Glim Fresh · a sandbox, the bridge is read-only'
+      : connection === 'home' ? 'At home · straight to your bridge' : connection === 'cloud' ? 'Away · through Hue’s cloud' : 'Offline · your bridge doesn’t answer',
     outside: !weather
       ? ''
       : !weather.outside

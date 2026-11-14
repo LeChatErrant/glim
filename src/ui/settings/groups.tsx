@@ -8,6 +8,7 @@ import { HomeLocation } from './HomeLocation';
 import { LightsAndRooms } from './LightsAndRooms';
 import { MapSettings } from './MapSettings';
 import { QuickTile } from './QuickTile';
+import { SandboxSection } from './Sandbox';
 import { Weather } from './Weather';
 import { Widgets } from './Widgets';
 
@@ -32,7 +33,7 @@ export const GROUPS: Record<GroupId, { title: string; icon: IconName; sections: 
   connection: {
     title: 'Bridge and connection',
     icon: 'bridge',
-    sections: [{ node: <Bridge /> }, { node: <AwayFromHome /> }],
+    sections: [{ node: <SandboxSection /> }, { node: <Bridge /> }, { node: <AwayFromHome /> }],
   },
   outside: {
     title: 'Weather on the map',

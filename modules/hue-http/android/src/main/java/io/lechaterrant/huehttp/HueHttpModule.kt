@@ -84,6 +84,15 @@ class HueHttpModule : Module() {
       mapOf("status" to r.status, "body" to r.body, "pin" to r.pin, "cn" to r.cn)
     }
 
+    // Glim Fresh (Sandbox.kt): the bridge's configuration is read-only, rooms and groups live on the phone.
+    Function("isSandbox") { Sandbox.on }
+
+    // Which lights each sandbox room or group holds, for widget and tile taps.
+    AsyncFunction("setSandboxGroups") { json: String? ->
+      val context = appContext.reactContext ?: return@AsyncFunction
+      Sandbox.saveGroups(context, json)
+    }
+
     // Lets widget taps reach the bridge from native code, without waiting for JS to start.
     AsyncFunction("setFastConfig") { c: FastConfigRecord? ->
       val context = appContext.reactContext ?: return@AsyncFunction

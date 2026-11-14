@@ -606,6 +606,30 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   tab; "I'm home now" asks for location while in use if needed. Settings
   group screens show their sections together: each reports when its data is
   in (`useSectionReady`), the page appears when all are (700 ms at most).
+- 2026-11-14: **Glim Fresh, a sandbox for testing the first-time setup.**
+  A second build installed beside the real app (package
+  `io.lechaterrant.huelab.fresh`, "Glim Fresh", scheme `glimfresh://`, its own
+  storage), from a `fresh` Gradle build type (`plugins/with-fresh-variant.js`:
+  release plus `applicationIdSuffix`). Same code: being Fresh is read at run
+  time from the process name. **It must never change the real bridge's
+  configuration** (the maintainer's call: touching it would be catastrophic).
+  Two layers: `Sandbox.kt` in the `hue-http` module checks every request
+  (bridge and cloud) and answers 403 to anything but reads, pairing (POST
+  `/api`, one app key named `glimfresh#android`) and light state (`PUT
+  light`/`grouped_light` with state keys only, `PUT device` with only
+  `identify`); if the process name can't be read, it counts as Fresh. In JS,
+  `src/lib/hue/sandbox.ts` answers rooms, groups, scenes, behaviors, smart
+  scenes and device names from the phone, like the bridge would: the bridge
+  looks new (no rooms, every light on its own), the real lights still blink
+  and change. Sandbox rooms get their own grouped light ids, expanded to one
+  request per light (in JS, and natively from `sandboxGroups` in
+  `huelab_fast`). No cloud route (it would skip the sandbox). Rituals are
+  saved but never run; a living mood plays its still look. A "Fresh ·
+  sandbox" capsule tops every screen; Settings → Bridge and connection →
+  Start over from scratch wipes Fresh and restarts it. Rejected: moving real
+  lights into test rooms and restoring after (touches the real bridge), and
+  backing up then wiping the bridge (restored scenes get new IDs, the tap
+  dial and Hue app shortcuts break).
 
 ## Vocabulary
 
@@ -790,6 +814,13 @@ shrinking is on: libraries that use reflection need keep rules in
 `expo-build-properties` → `extraProguardRules` in `app.json` (WorkManager broke
 widgets until kept). If widgets go blank after an install, check `adb logcat`
 for `WM-` errors first.
+
+Glim Fresh (the sandbox build, see 2026-11-14), installed beside the real app:
+`(cd android && ./gradlew :app:assembleFresh -PreactNativeArchitectures=arm64-v8a)`,
+then `adb install -r android/app/build/outputs/apk/fresh/app-fresh.apk`. Its log
+tag is `GlimSandbox` (every refused request is logged). To prove a test session
+left the bridge alone: `node scripts/bridge-config.mjs save before.json` before,
+`node scripts/bridge-config.mjs diff before.json` after (read-only, home network).
 
 The maintainer's phone is a Pixel 11 Pro XL (ARCore supported), connected over
 USB debugging. Use `adb exec-out screencap -p > shot.png` to check the screen

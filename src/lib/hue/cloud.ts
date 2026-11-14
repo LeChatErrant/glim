@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Linking } from 'react-native';
 
 import type { BridgeConfig } from './bridge';
+import { SANDBOX } from './sandbox';
 
 /**
  * Control from anywhere: the Hue Remote API (Hue's cloud), same CLIP v2 requests as the bridge.
@@ -13,7 +14,8 @@ import type { BridgeConfig } from './bridge';
  */
 
 /** Our token server, e.g. https://glim.expo.app. Empty in builds without cloud access. */
-const SERVER = String(Constants.expoConfig?.extra?.cloudServer ?? '').replace(/\/$/, '');
+// Glim Fresh (sandbox.ts) has no cloud access: Hue's cloud route would skip the sandbox.
+const SERVER = SANDBOX ? '' : String(Constants.expoConfig?.extra?.cloudServer ?? '').replace(/\/$/, '');
 export const cloudConfigured = SERVER.length > 0;
 
 const REMOTE = 'https://api.meethue.com/route';

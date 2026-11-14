@@ -44,7 +44,9 @@ object FastRoute {
    * take it, side by side (a whole-home mood through the cloud would take seconds one after
    * another). False if no route answered.
    */
-  fun sendAll(context: Context, requests: List<Pair<String, String>>): Boolean {
+  fun sendAll(context: Context, batch: List<Pair<String, String>>): Boolean {
+    // Glim Fresh: a room made in the sandbox is one request per light (Sandbox.kt).
+    val requests = Sandbox.expand(context, batch)
     if (requests.isEmpty()) return true
     val (firstPath, firstBody) = requests.first()
     var route: HueSend? = null
