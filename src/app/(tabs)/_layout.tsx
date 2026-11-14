@@ -1,5 +1,8 @@
 import { Tabs, type BottomTabBarProps } from 'expo-router/tabs';
+import { useEffect } from 'react';
 import { Pressable, View } from 'react-native';
+
+import { primeRituals } from '../../lib/rituals/view';
 
 import { Icon, type IconName } from '../../ui/icons';
 import { Label } from '../../ui/text';
@@ -14,6 +17,8 @@ const TABS: Record<string, { title: string; icon: IconName }> = {
 };
 
 export default function TabsLayout() {
+  // The Rituals tab opens with its whole list at once: read what the phone keeps for it now.
+  useEffect(primeRituals, []);
   return (
     <Tabs
       tabBar={(props) => <TabBar {...props} />}

@@ -449,8 +449,14 @@ export function MapWidget({
   // With the outside, its ground image carries the background (this image lies over it).
   const backgroundColor = outside || clear ? ('#00000000' as Hex) : background === 'glass' ? (GLASS as Rgba) : GROUND;
 
+  // The whole widget opens the app; the tap areas below lie over it. Its id ("0-0") sorts before
+  // theirs, so the library adds it first, at the bottom of the stack: only taps outside every room
+  // and light reach it.
   return (
-    <OverlapWidget style={{ ...shell, backgroundColor, borderColor: line(stale ? 0.07 : 0.09), ...(clear ? { borderWidth: 0 } : {}) }}>
+    <OverlapWidget
+      clickAction="OPEN_APP"
+      style={{ ...shell, backgroundColor, borderColor: line(stale ? 0.07 : 0.09), ...(clear ? { borderWidth: 0 } : {}) }}
+    >
       <SvgWidget
         svg={planToSvg(plan, lights, box.width, box.height, { padding: pad, ground: GROUND, stale, outdoorOpen: outside })}
         style={{ width: box.width, height: box.height, marginLeft: box.left, marginTop: box.top }}

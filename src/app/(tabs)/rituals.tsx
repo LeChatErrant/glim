@@ -1,19 +1,18 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { setRoom, type Snapshot } from '../../lib/hue/client';
 import { refreshHome, useHome } from '../../lib/hue/useHome';
-import { loadMoods, type Mood } from '../../lib/moods';
+import type { Mood } from '../../lib/moods';
 import { syncGeofence } from '../../lib/rituals/arrive';
 import { ARRIVE_READY } from '../../lib/rituals/flags';
-import { checkRhythms, deleteRhythm, RHYTHM_PRESETS, saveRhythm, setRhythmEnabled, type RhythmRitual } from '../../lib/rituals/rhythm';
+import { deleteRhythm, RHYTHM_PRESETS, saveRhythm, setRhythmEnabled, type RhythmRitual } from '../../lib/rituals/rhythm';
 import {
   createBridgeRitual,
   deleteBridgeRitual,
   extendSleep,
-  loadBridgeRituals,
   saveBridgeRitual,
   setBridgeRitualEnabled,
   startSleepNow,
@@ -23,10 +22,11 @@ import {
   type SleepRun,
   type WakeRitual,
 } from '../../lib/rituals/rituals';
-import { loadRitualSettings, saveRitualSettings, type RitualSettings } from '../../lib/rituals/store';
+import { saveRitualSettings, type RitualSettings } from '../../lib/rituals/store';
+import { cachedRituals, fetchRituals, localRituals, rememberRituals, type RitualsView } from '../../lib/rituals/view';
 import { clock, daysLabel, EVERY_DAY, fmtClock, nextAt, WEEKDAYS, whenPhrase } from '../../lib/rituals/time';
 import { ModalSheet } from '../../ui/ModalSheet';
-import { ArriveSheet } from '../../ui/rituals/ArriveSheet';
+import { ArriveSheet, type HomeRitual } from '../../ui/rituals/ArriveSheet';
 import { DashedButton, RitualCard, RitualGlyph, targetNames, type RitualGlyphKind } from '../../ui/rituals/parts';
 import { RhythmSheet } from '../../ui/rituals/RhythmSheet';
 import { SleepSheet, WakeSheet } from '../../ui/rituals/WakeSleepSheets';
@@ -37,7 +37,7 @@ type Editing =
   | { kind: 'wake'; r: WakeRitual }
   | { kind: 'sleep'; r: SleepRitual }
   | { kind: 'rhythm'; r: RhythmRitual }
-  | { kind: 'arrive' }
+  | { kind: 'arrive'; which: HomeRitual }
   | { kind: 'new' };
 
 /** A bedroom first (wake-ups and sleep fades), else the first room with lights. */
@@ -96,28 +96,47 @@ const newRhythm = (s: Snapshot | null, preset = RHYTHM_PRESETS[0]): RhythmRitual
 export default function RitualsScreen() {
   const insets = useSafeAreaInsets();
   const { snapshot } = useHome();
-  const [bridge, setBridge] = useState<BridgeRitual[] | null>(null);
-  const [rhythms, setRhythms] = useState<RhythmRitual[]>([]);
-  const [settings, setSettings] = useState<RitualSettings | null>(null);
-  const [moods, setMoods] = useState<Mood[]>([]);
-  const [sleepRun, setSleepRun] = useState<SleepRun | null>(null);
+  // The last view first (kept between visits and on the phone), then the bridge read back: the
+  // list shows whole, at once, never card by card.
+  const [first] = useState(cachedRituals);
+  const [bridge, setBridge] = useState<BridgeRitual[] | null>(first?.bridge ?? null);
+  const [rhythms, setRhythms] = useState<RhythmRitual[]>(first?.rhythms ?? []);
+  const [settings, setSettings] = useState<RitualSettings | null>(first?.settings ?? null);
+  const [moods, setMoods] = useState<Mood[]>(first?.moods ?? []);
+  const [sleepRun, setSleepRun] = useState<SleepRun | null>(first?.sleepRun ?? null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const show = useCallback((v: RitualsView) => {
+    setBridge(v.bridge);
+    setSleepRun(v.sleepRun);
+    setRhythms(v.rhythms);
+    setSettings(v.settings);
+    setMoods(v.moods);
+  }, []);
+
   const load = useCallback(async () => {
-    loadRitualSettings().then(setSettings);
-    loadMoods().then(setMoods);
+    let fetched = false;
+    // Nothing on screen yet: the phone's copy, if it has the bridge's part (else wait for the bridge).
+    if (!cachedRituals()?.bridge) localRituals().then((v) => !fetched && v.bridge && show(v)).catch(() => null);
     try {
-      const [b, r] = await Promise.all([loadBridgeRituals(), checkRhythms()]);
-      setBridge(b.rituals);
-      setSleepRun(b.sleepRun);
-      setRhythms(r);
+      const v = await fetchRituals();
+      fetched = true;
+      show(v);
       setError(null);
     } catch (e) {
+      fetched = true;
       setError(String((e as Error)?.message ?? e));
+      // Unreachable: still show what's kept on the phone (arriving home works without the bridge).
+      localRituals().then(show).catch(() => null);
     }
-  }, []);
+  }, [show]);
+
+  // What's on screen (optimistic changes included) is what the next visit starts from.
+  useEffect(() => {
+    if (settings) rememberRituals({ bridge, sleepRun, rhythms, settings, moods });
+  }, [bridge, sleepRun, rhythms, settings, moods]);
 
   useFocusEffect(
     useCallback(() => {
@@ -225,12 +244,12 @@ export default function RitualsScreen() {
   };
 
   const toggleHome = async (which: 'arrive' | 'leave') => {
-    if (!settings?.home) return setEditing({ kind: 'arrive' });
+    if (!settings?.home) return setEditing({ kind: 'arrive', which });
     const next = which === 'arrive' ? { arrive: { ...settings.arrive, enabled: !settings.arrive.enabled } } : { leave: { enabled: !settings.leave.enabled } };
     setSettings(await saveRitualSettings(next));
     const watching = await syncGeofence().catch(() => false);
     // Turned on without "Allow all the time": the sheet asks for it.
-    if (!watching && (next.arrive?.enabled || next.leave?.enabled)) setEditing({ kind: 'arrive' });
+    if (!watching && (next.arrive?.enabled || next.leave?.enabled)) setEditing({ kind: 'arrive', which });
   };
 
   // What comes next, for the header and the cards.
@@ -245,6 +264,8 @@ export default function RitualsScreen() {
   const leaveOn = !!settings?.leave.enabled && !!settings.home;
   const active = wakes.filter((r) => r.enabled).length + sleeps.filter((r) => r.enabled).length + rhythms.filter((r) => r.enabled).length + (arriveOn ? 1 : 0) + (leaveOn ? 1 : 0);
   const total = wakes.length + sleeps.length + rhythms.length + (ARRIVE_READY ? 2 : 0);
+  // The list appears whole: the bridge's part read (or known unreachable) and the phone's settings.
+  const ready = !!settings && (bridge !== null || !!error);
   const moodName = (id: string | null) => (id ? (moods.find((m) => m.id === id)?.name ?? 'Removed mood') : null);
   const arriveSummary = !settings?.home
     ? 'Set your home first'
@@ -261,7 +282,7 @@ export default function RitualsScreen() {
       <Display style={{ marginTop: 14 }}>Rituals</Display>
       <Txt size={14} tone="secondary" style={{ marginTop: 8 }}>
         {'Next: '}
-        <Txt size={14}>{next ? `${next.what} ${whenPhrase(next.at)}` : arriveOn ? 'Arriving home' : 'Nothing scheduled'}</Txt>
+        <Txt size={14}>{!ready ? ' ' : next ? `${next.what} ${whenPhrase(next.at)}` : arriveOn ? 'Arriving home' : 'Nothing scheduled'}</Txt>
       </Txt>
 
       {error && (
@@ -270,67 +291,69 @@ export default function RitualsScreen() {
         </Txt>
       )}
 
-      <View style={{ marginTop: 22, gap: 8, opacity: busy ? 0.7 : 1 }}>
-        {wakes.map((r) => (
-          <RitualCard
-            key={r.id}
-            kind="wake"
-            name={r.name}
-            badge={`Starts ${fmtClock(r.at - r.fadeMin)}`}
-            summary={`${daysLabel(r.days)} · ${fmtClock(r.at)} · ${targetNames(snapshot, r.targets)}`}
-            on={r.enabled}
-            onToggle={() => toggleBridge(r)}
-            onPress={() => setEditing({ kind: 'wake', r })}
-          />
-        ))}
-        {sleeps.map((r) => {
-          const running = !!sleepRun && sleepRun.targets.join() === r.targets.join();
-          return (
+      {ready && (
+        <View style={{ marginTop: 22, gap: 8, opacity: busy ? 0.7 : 1 }}>
+          {wakes.map((r) => (
             <RitualCard
               key={r.id}
-              kind="sleep"
+              kind="wake"
               name={r.name}
-              badge={running ? 'Fading' : null}
-              summary={r.enabled ? `${daysLabel(r.days)} · ${fmtClock(r.at)} · ${r.fadeMin} min · ${targetNames(snapshot, r.targets)}` : `${r.fadeMin} min · ${targetNames(snapshot, r.targets)}`}
-              on={r.enabled || running}
-              action={running ? { title: '+5 min', onPress: extendSleepRun } : { title: 'Start', onPress: () => startSleep(r) }}
+              badge={`Starts ${fmtClock(r.at - r.fadeMin)}`}
+              summary={`${daysLabel(r.days)} · ${fmtClock(r.at)} · ${targetNames(snapshot, r.targets)}`}
+              on={r.enabled}
               onToggle={() => toggleBridge(r)}
-              onPress={() => setEditing({ kind: 'sleep', r })}
+              onPress={() => setEditing({ kind: 'wake', r })}
             />
-          );
-        })}
-        {sleepRun && !sleeps.some((r) => r.targets.join() === sleepRun.targets.join()) && (
-          <RitualCard
-            kind="sleep"
-            name="Sleep fade"
-            badge="Fading"
-            summary={`${Math.round(sleepRun.fadeMin)} min · ${targetNames(snapshot, sleepRun.targets)}`}
-            on
-            action={{ title: '+5 min', onPress: extendSleepRun }}
-            onPress={() => setEditing({ kind: 'sleep', r: { ...newSleep(snapshot, false), targets: sleepRun.targets, fadeMin: Math.round(sleepRun.fadeMin) } })}
-          />
-        )}
-        {rhythms.map((r) => (
-          <RitualCard
-            key={r.id}
-            kind="rhythm"
-            name={r.name}
-            summary={`${RHYTHM_PRESETS.find((p) => p.id === r.preset)?.name ?? 'Your curve'} · ${lightCount(r)} lights · ${targetNames(snapshot, r.targets)}`}
-            on={r.enabled}
-            onToggle={() => toggleRhythm(r)}
-            onPress={() => setEditing({ kind: 'rhythm', r })}
-          />
-        ))}
-        {settings && ARRIVE_READY && (
-          <>
-            <RitualCard kind="arrive" name="Arriving home" summary={arriveSummary} on={arriveOn} onToggle={() => toggleHome('arrive')} onPress={() => setEditing({ kind: 'arrive' })} />
-            <RitualCard kind="leave" name="Leaving home" summary={settings.home ? 'All off' : 'Set your home first'} on={leaveOn} onToggle={() => toggleHome('leave')} onPress={() => setEditing({ kind: 'arrive' })} />
-          </>
-        )}
-        <DashedButton title="New ritual" onPress={() => setEditing({ kind: 'new' })} />
-      </View>
+          ))}
+          {sleeps.map((r) => {
+            const running = !!sleepRun && sleepRun.targets.join() === r.targets.join();
+            return (
+              <RitualCard
+                key={r.id}
+                kind="sleep"
+                name={r.name}
+                badge={running ? 'Fading' : null}
+                summary={r.enabled ? `${daysLabel(r.days)} · ${fmtClock(r.at)} · ${r.fadeMin} min · ${targetNames(snapshot, r.targets)}` : `${r.fadeMin} min · ${targetNames(snapshot, r.targets)}`}
+                on={r.enabled || running}
+                action={running ? { title: '+5 min', onPress: extendSleepRun } : { title: 'Start', onPress: () => startSleep(r) }}
+                onToggle={() => toggleBridge(r)}
+                onPress={() => setEditing({ kind: 'sleep', r })}
+              />
+            );
+          })}
+          {sleepRun && !sleeps.some((r) => r.targets.join() === sleepRun.targets.join()) && (
+            <RitualCard
+              kind="sleep"
+              name="Sleep fade"
+              badge="Fading"
+              summary={`${Math.round(sleepRun.fadeMin)} min · ${targetNames(snapshot, sleepRun.targets)}`}
+              on
+              action={{ title: '+5 min', onPress: extendSleepRun }}
+              onPress={() => setEditing({ kind: 'sleep', r: { ...newSleep(snapshot, false), targets: sleepRun.targets, fadeMin: Math.round(sleepRun.fadeMin) } })}
+            />
+          )}
+          {rhythms.map((r) => (
+            <RitualCard
+              key={r.id}
+              kind="rhythm"
+              name={r.name}
+              summary={`${RHYTHM_PRESETS.find((p) => p.id === r.preset)?.name ?? 'Your curve'} · ${lightCount(r)} lights · ${targetNames(snapshot, r.targets)}`}
+              on={r.enabled}
+              onToggle={() => toggleRhythm(r)}
+              onPress={() => setEditing({ kind: 'rhythm', r })}
+            />
+          ))}
+          {settings && ARRIVE_READY && (
+            <>
+              <RitualCard kind="arrive" name="Arriving home" summary={arriveSummary} on={arriveOn} onToggle={() => toggleHome('arrive')} onPress={() => setEditing({ kind: 'arrive', which: 'arrive' })} />
+              <RitualCard kind="leave" name="Leaving home" summary={settings.home ? 'All off' : 'Set your home first'} on={leaveOn} onToggle={() => toggleHome('leave')} onPress={() => setEditing({ kind: 'arrive', which: 'leave' })} />
+            </>
+          )}
+          <DashedButton title="New ritual" onPress={() => setEditing({ kind: 'new' })} />
+        </View>
+      )}
 
-      <View style={{ marginTop: 16, flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+      <View style={{ marginTop: 16, flexDirection: 'row', gap: 10, alignItems: 'flex-start', opacity: ready ? 1 : 0 }}>
         <View style={{ width: 16, height: 16, borderRadius: 5, borderWidth: 1.5, borderColor: color.muted, alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
           <View style={{ width: 6, height: 6, borderRadius: 3, borderWidth: 1.5, borderColor: color.muted }} />
         </View>
@@ -377,7 +400,7 @@ export default function RitualsScreen() {
           onClose={() => setEditing(null)}
         />
       )}
-      {editing?.kind === 'arrive' && settings && <ArriveSheet initial={settings} snapshot={snapshot} moods={moods} onSave={saveArrive} onClose={() => setEditing(null)} />}
+      {editing?.kind === 'arrive' && settings && <ArriveSheet which={editing.which} initial={settings} snapshot={snapshot} moods={moods} onSave={saveArrive} onClose={() => setEditing(null)} />}
     </ScrollView>
   );
 }
@@ -402,8 +425,9 @@ function NewRitualSheet({ snapshot, onPick, onStartSleep, onClose }: { snapshot:
         ))}
       </TypeBlock>
       {ARRIVE_READY && (
-        <TypeBlock kind="arrive" title="Arriving home" sub="Lights on as you get home; all off when you leave.">
-          <Preset label="Set it up" onPress={() => onPick({ kind: 'arrive' })} />
+        <TypeBlock kind="arrive" title="Arriving and leaving" sub="Lights on as you get home; all off when you leave.">
+          <Preset label="When I get home" onPress={() => onPick({ kind: 'arrive', which: 'arrive' })} />
+          <Preset label="When I leave" onPress={() => onPick({ kind: 'arrive', which: 'leave' })} />
         </TypeBlock>
       )}
     </ModalSheet>

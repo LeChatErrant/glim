@@ -562,6 +562,22 @@ their own lights (see 2026-11-12 in the [Decisions log](#decisions-log)).
   names go below their marker, else above, right or left, wherever they hit
   no other name, light or room name (`placeLabels` in `src/lib/map/labels.ts`). The old
   `components.tsx` kit and `RoomAssign.tsx` are deleted.
+- 2026-11-14: **Rituals tab opens whole, Arriving and Leaving apart, Map
+  widget opens the app.** The Rituals tab showed its list card by card (the
+  phone's arriving cards first, the bridge's after a second or more through
+  the cloud). Now `src/lib/rituals/view.ts` keeps the last view (in memory,
+  and the bridge's part on the phone, per bridge), read at app start
+  (`primeRituals` in the tabs layout); the tab shows it at once, reads the
+  bridge back, and only ever shows the list whole. **Arriving home** and
+  **Leaving home** each open their own sheet (home is shared), led by a
+  sentence of what will happen ("When you get home after sunset, Salon turns
+  on."): Home (set here, radius 100 / 150 / 250 / 400 m), What happens (Lights
+  on: whole home or a room / A mood), When (Any time / After sunset /
+  Between…: one choice, no longer sunset *and* hours). The main button says
+  Turn on or Save, Turn off sits under it; location "all the time" is asked
+  only on Turn on, not as a wall on opening. **Map widget:** a tap outside
+  every light and room opens the app (the whole widget carries `OPEN_APP`;
+  its id sorts first, so it lies under the tap areas).
 
 ## Vocabulary
 
